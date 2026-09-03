@@ -1,0 +1,21 @@
+# Alertmanager config — 把告警 webhook 到 ingestor
+# （实际生产 ingestor 是 opskeeper backend /v1/alerts/webhook）
+
+route:
+  group_by: ["host"]
+  group_wait: 10s
+  group_interval: 5m
+  repeat_interval: 1h
+  receiver: "opskeeper-ingest"
+  routes:
+    - matchers:
+        - alertname="PGConnectionPoolSaturation"
+      receiver: "opskeeper-ingest"
+
+receivers:
+  - name: "opskeeper-ingest"
+    webhook_configs:
+      # 真实生产：指向 opskeeper backend /v1/alerts/webhook
+      # 剧本里 fake-backend 在端口 18443 模拟
+      - url: "http://opskeeper-fake-backend:18443/v1/alerts/webhook"
+        send_resolved: false

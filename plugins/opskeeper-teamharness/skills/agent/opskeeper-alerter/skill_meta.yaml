@@ -1,0 +1,26 @@
+name: opskeeper-alerter
+version: 1.0.0
+description: 告警接入与聚合 worker
+inputs:
+  raw_alerts:
+    type: array
+    required: true
+    description: 原始告警列表
+  window:
+    type: string
+    required: false
+    description: 关联窗口，如 5m / 1h
+outputs:
+  incident_id:
+    type: string
+    required: true
+  alert_group:
+    type: array
+sample_inputs:
+  - raw_alerts: [{alert_id: "alt-1", severity: "warning"}]
+    window: "5m"
+est_cost_tokens: 1500
+blast_radius_default: host
+safety_level_default: L0
+artifacts:
+  skill_md_path: skills/agent/opskeeper-alerter/SKILL.md

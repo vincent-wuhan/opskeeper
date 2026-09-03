@@ -1,0 +1,35 @@
+# OpsKeeper TeamHarness eval scenario 02 — rca_loop
+#
+# 真实环境验证：根因错 → critic 否决 → 重派回路
+# 跑法：docker compose -f eval/scenarios/rca_loop/compose.yml up --abort-on-container-exit
+
+services:
+  opskeeper-fake-backend:
+    image: python:3.12-slim
+    working_dir: /plugin
+    command: ["python3", "eval/scenarios/rca_loop/fake_backend.py"]
+    environment:
+      OPSKEEPER_SKIP_HEALTH_CHECK: "1"
+    volumes:
+      - ../../../..:/plugin:ro
+    ports:
+      - "18444:8444"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:18444/healthz', timeout=2)"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+  runner:
+    image: python:3.12-slim
+    working_dir: /plugin
+    command: ["python3", "eval/runner.py", "--scenario", "rca_loop", "--out", "/reports"]
+    environment:
+      OPSKEEPER_BACKEND_URL: "http://opskeeper-fake-backend:18444"
+    volumes:
+      - ../../../..:/plugin:ro
+      - ./reports:/reports
+    depends_on:
+      opskeeper-fake-backend:
+        condition: service_healthy
+    restart: "no"

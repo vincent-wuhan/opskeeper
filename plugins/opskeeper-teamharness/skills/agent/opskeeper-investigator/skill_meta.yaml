@@ -1,0 +1,22 @@
+name: opskeeper-investigator
+version: 1.1.0
+description: 事故根因诊断 worker
+inputs:
+  incident_id:
+    type: string
+    required: true
+  alert_group:
+    type: array
+    required: false
+outputs:
+  root_cause_json:
+    type: object
+    required: true
+sample_inputs:
+  - incident_id: inc-001
+    alert_group: [alt-1, alt-2]
+est_cost_tokens: 4000
+blast_radius_default: cluster
+safety_level_default: L0
+artifacts:
+  skill_md_path: skills/agent/opskeeper-investigator/SKILL.md

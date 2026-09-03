@@ -1,0 +1,154 @@
+apiVersion: agentteams.agentteam/v1alpha1
+kind: AgentTeamPlugin
+metadata:
+  name: opskeeper-teamharness
+  version: 1.0.21
+  description: |
+    OpsKeeper TeamHarness plugin — provides 7 ops Worker skills
+    (alerter/investigator/critic/reviewer/repairer/verifier/postmortem)
+    + Manager dispatch decision tree + stdio MCP proxy to opskeeper
+    backend /v1/mcp.
+
+    v1.0.1 adds install-plugin HTTP endpoint (POST /api/opskeeper-teamharness/install-plugin)
+    so opskeeper Manager can dynamically push new plugin zips to the worker —
+    opskeeper itself calls `qwenpaw plugin install <path> --force` as a subprocess.
+    Closes the Dashboard-upload → worker-register end-to-end loop without
+    requiring Dockerfile changes or worker restart.
+
+    v1.0.2 adds opskeeper-postmortem Worker (RCA → postmortem.md → knowledge vault)
+    and the `knowledge.write` plugin-native MCP tool that posts to
+    opskeeper /v1/knowledge/docs (pgvector + BM25 dual-index). Without this
+    tool postmortem SKILL.md cannot persist its deliverable.
+
+    v1.0.5 adds fail-closed QwenPaw read-only middleware enforcement. Unknown and
+    mutating tools are denied before execution; trusted mutating workers must
+    explicitly set OPSKEEPER_PERMISSION_MODE=standard.
+
+    v1.0.6 keeps the read-only boundary fail-closed while allowing the AgentTeams
+    message coordination primitive, so Manager can dispatch tasks without enabling
+    file writes or command execution.
+
+    v1.0.11 terminates the Manager ReAct turn after a successful dispatch and resumes
+    only on matching results, new tasks, or admin instructions.
+
+    v1.0.12 fixes dispatch self-locking by recording markers only after the Manager
+    message tool successfully sends the task.
+
+    v1.0.13 queues QwenPaw's native pending-stop state directly after a successful
+    dispatch so the Manager ends its ReAct turn even when hot-reload did not attach
+    the plugin stop handler to an existing workspace.
+
+    v1.0.15 consumes Worker results that carry the required Matrix @manager wake-up
+    prefix on the same line as OPSKEEPER_RESULT.
+
+    v1.0.16 ensures result-only messages cannot be mistaken for new tasks through the
+    long task-ID fallback while a dispatched marker is pending.
+
+    v1.0.17 also accepts the manager-directed result prefix rendered without the full
+    Matrix ID, while prompts continue to require the complete @manager identifier.
+
+    v1.0.18 adds the case-owned PostgreSQL connection-pool exhaustion playbook:
+    evidence-bound RCA, reviewer/HITL-gated resize_pool, independent recovery
+    verification, and postmortem closure without touching shared PostgreSQL.
+
+    v1.0.19 fixes read-only normalization for postgres.analyze_status, whose
+    QwenPaw double-underscore form normalizes every underscore to a dot.
+
+    v1.0.20 aligns postgres.analyze_status with the backend array-based schema
+    (db_types/source_ids/device_ids) so PG diagnostics use valid arguments.
+
+    v1.0.21 allows QwenPaw's normalized teamharness.message coordination tool in
+    read-only mode without enabling file, shell, browser, or mutating tools.
+
+    v1.0.7 adds a plugin-native Manager continuation gate: dispatched task markers
+    wait for matching Worker results, while empty/self continuations are skipped.
+
+prompts:
+  team: prompts/team/OPSKEEPER-TEAMS.md
+  agent:
+    leader: prompts/agent/leader.md
+    worker: prompts/agent/worker.md
+    remoteMember: prompts/agent/remote-member.md
+  manager:
+    agents: prompts/manager/AGENTS.md
+    tools: prompts/manager/TOOLS.md
+    heartbeat: prompts/manager/HEARTBEAT.md
+
+skills:
+  agent:
+    - id: opskeeper-alerter
+      path: skills/agent/opskeeper-alerter
+      roles: [worker]
+    - id: opskeeper-investigator
+      path: skills/agent/opskeeper-investigator
+      roles: [worker]
+    - id: opskeeper-critic
+      path: skills/agent/opskeeper-critic
+      roles: [worker]
+    - id: opskeeper-reviewer
+      path: skills/agent/opskeeper-reviewer
+      roles: [worker]
+    - id: opskeeper-repairer
+      path: skills/agent/opskeeper-repairer
+      roles: [worker]
+    - id: opskeeper-verifier
+      path: skills/agent/opskeeper-verifier
+      roles: [worker]
+    - id: opskeeper-postmortem
+      path: skills/agent/opskeeper-postmortem
+      roles: [worker]
+  team:
+    - id: opskeeper-coordination
+      path: skills/team/opskeeper-coordination
+      roles: [manager]
+
+mcp:
+  servers:
+    - id: opskeeper
+      transport: stdio
+      command: python
+      args:
+        - mcp/server.py
+      tools:
+        - loop.investigate
+        - loop.correlate
+        - recovery.verify
+        - recovery.execute
+        - metric.query
+        - incident.list
+        - incident.get
+        - postgres.analyze_status
+        - host.get_load
+        - host.get_processes
+        - host.restart_service
+        - knowledge.query
+        - knowledge.write
+        - hitl.decide
+        - state.put
+        - state.get
+        - incident.record
+
+adapters:
+  - id: qwenpaw
+    path: adapters/qwenpaw
+  - id: claude-code
+    path: adapters/claude-code
+
+package:
+  include:
+    - plugin.yaml
+    - prompts/
+    - skills/
+    - mcp/
+    - adapters/
+    - scripts/
+    - loongsuite/
+    - examples/
+    - README.md
+    - CHANGELOG.md
+    - dashboard/
+
+# Dashboard 插件双 manifest 单包（生态兼容字段）
+# 同一插件包同时携带 plugin.yaml (AgentTeams) + dashboard/plugin.json (Dashboard)
+# AgentTeams runtime 只读 plugin.yaml；Dashboard runtime 只读 dashboard/plugin.json
+# 两者互不 import，共享 opskeeper backend HTTP API

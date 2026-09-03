@@ -1,0 +1,18 @@
+name: opskeeper-repairer
+version: 1.0.0
+description: 修复执行 worker
+inputs:
+  repair_plan:
+    type: object
+    required: true
+outputs:
+  action_log:
+    type: array
+    required: true
+sample_inputs:
+  - repair_plan: {action: "restart_service", target: "host-1"}
+est_cost_tokens: 2500
+blast_radius_default: host
+safety_level_default: L1
+artifacts:
+  skill_md_path: skills/agent/opskeeper-repairer/SKILL.md

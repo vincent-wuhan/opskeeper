@@ -1,0 +1,24 @@
+{
+  "name": "opskeeper-teamharness-dashboard-plugin",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Dashboard UI extension for opskeeper-teamharness (Dashboard plugin apiVersion dashboard.agentteams/v1).",
+  "scripts": {
+    "dev": "vite --port 5173 --strictPort",
+    "build": "vite build",
+    "preview": "vite preview --port 5173"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "dependencies": {
+    "zustand": "^5.0.0",
+    "mitt": "^3.0.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.0",
+    "vite": "^6.0.0"
+  }
+}

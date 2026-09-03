@@ -1,0 +1,17 @@
+{
+  "id": "opskeeper-teamharness",
+  "name": "OpsKeeper TeamHarness",
+  "version": "1.0.21",
+  "type": "general",
+  "description": "OpsKeeper RCA/recovery plugin for AgentTeams QwenPaw workers. Provides Worker skills, Manager dispatch, stdio MCP proxy, and fail-closed read-only middleware.",
+  "author": "OpsKeeper Plugin Contributors",
+  "entry": {
+    "backend": "plugin.py"
+  },
+  "dependencies": [],
+  "min_version": "2.0.1",
+  "qwenpaw_version": {
+    "min": "2.0.1",
+    "max": "2.1.0"
+  }
+}

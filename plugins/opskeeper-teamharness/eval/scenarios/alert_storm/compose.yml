@@ -1,0 +1,73 @@
+# OpsKeeper TeamHarness eval scenario 01 — alert_storm
+#
+# 真实环境验证：高频告警 → alerter dedup → 派活决策正确性
+#
+# 跑法：
+#   docker compose -f eval/scenarios/alert_storm/compose.yml up --abort-on-container-exit --exit-code-from runner
+#
+# 一键跑（从 plugin root）：
+#   ./eval/scenarios/alert_storm/run.sh
+#
+# 服务：
+#   - prometheus：模拟上游告警源（30s scrape，promQL 触发器 → alertmanager）
+#   - alertmanager：webhook → ingestor
+#   - opskeeper-fake-backend：plugin stdio MCP server 调它
+#   - runner：跑 eval/runner.py --scenario alert_storm
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/healthy"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports:
+      - "9093:9093"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
+  opskeeper-fake-backend:
+    image: python:3.12-slim
+    working_dir: /plugin
+    command: ["python3", "eval/scenarios/alert_storm/fake_backend.py"]
+    environment:
+      OPSKEEPER_SKIP_HEALTH_CHECK: "1"
+    volumes:
+      - ../../../..:/plugin:ro
+    ports:
+      - "18443:8443"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:18443/healthz', timeout=2)"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+  runner:
+    image: python:3.12-slim
+    working_dir: /plugin
+    command: ["python3", "eval/runner.py", "--scenario", "alert_storm", "--out", "/reports"]
+    environment:
+      OPSKEEPER_BACKEND_URL: "http://opskeeper-fake-backend:18443"
+    volumes:
+      - ../../../..:/plugin:ro
+      - ./reports:/reports
+    depends_on:
+      opskeeper-fake-backend:
+        condition: service_healthy
+    restart: "no"

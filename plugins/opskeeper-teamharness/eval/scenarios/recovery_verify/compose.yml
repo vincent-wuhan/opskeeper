@@ -1,0 +1,35 @@
+# OpsKeeper TeamHarness eval scenario 03 — recovery_verify
+#
+# 真实环境验证：修复 → recovery.verify → postmortem 闭环
+# 跑法：docker compose -f eval/scenarios/recovery_verify/compose.yml up --abort-on-container-exit
+
+services:
+  opskeeper-fake-backend:
+    image: python:3.12-slim
+    working_dir: /plugin
+    command: ["python3", "eval/scenarios/recovery_verify/fake_backend.py"]
+    environment:
+      OPSKEEPER_SKIP_HEALTH_CHECK: "1"
+    volumes:
+      - ../../../..:/plugin:ro
+    ports:
+      - "18445:8445"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:18445/healthz', timeout=2)"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+  runner:
+    image: python:3.12-slim
+    working_dir: /plugin
+    command: ["python3", "eval/runner.py", "--scenario", "recovery_verify", "--out", "/reports"]
+    environment:
+      OPSKEEPER_BACKEND_URL: "http://opskeeper-fake-backend:18445"
+    volumes:
+      - ../../../..:/plugin:ro
+      - ./reports:/reports
+    depends_on:
+      opskeeper-fake-backend:
+        condition: service_healthy
+    restart: "no"

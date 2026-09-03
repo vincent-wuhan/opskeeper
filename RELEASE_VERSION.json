@@ -1,0 +1,9 @@
+{
+  "schema": "opskeeper-plugin-release/v1",
+  "release_name": "opskeeper-plugins",
+  "release_date": "2026-09-03",
+  "scope": [
+    "plugins/agentteams-plugin-installer",
+    "plugins/opskeeper-teamharness"
+  ]
+}

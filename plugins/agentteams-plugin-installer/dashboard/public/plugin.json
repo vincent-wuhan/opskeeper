@@ -1,0 +1,22 @@
+{
+  "apiVersion": "dashboard.agentteams/v1",
+  "kind": "DashboardPlugin",
+  "id": "agentteams-plugin-installer",
+  "name": "AgentTeams Plugin Installer",
+  "version": "1.4.2",
+  "description": "OpsKeeper 控制台扩展：通过 Dashboard UI 浏览 / 安装 / 卸载 / 启用 / 同步 AgentTeams v1alpha1 plugin，让 OpsKeeper 成为 AgentTeams plugin 的运维控制台。",
+  "author": "OpsKeeper Plugin Contributors",
+  "entry": {
+    "dashboard": "main.js"
+  },
+  "dashboardVersion": ">=0.2.0",
+  "extensionPoints": [
+    "sidebar-menu",
+    "route",
+    "dashboard-widget",
+    "detail-panel",
+    "toolbar"
+  ],
+  "permissions": ["network"],
+  "homepage": "https://github.com/vincent-wuhan/opskeeper/blob/main/plugins/agentteams-plugin-installer"
+}

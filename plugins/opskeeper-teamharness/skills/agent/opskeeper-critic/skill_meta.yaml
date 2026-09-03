@@ -1,0 +1,18 @@
+name: opskeeper-critic
+version: 1.0.0
+description: 后置审计 worker
+inputs:
+  root_cause_json:
+    type: object
+    required: true
+outputs:
+  audit_result:
+    type: object
+    required: true
+sample_inputs:
+  - root_cause_json: {root_cause: "pg-conn-pool-saturation"}
+est_cost_tokens: 2000
+blast_radius_default: host
+safety_level_default: L0
+artifacts:
+  skill_md_path: skills/agent/opskeeper-critic/SKILL.md

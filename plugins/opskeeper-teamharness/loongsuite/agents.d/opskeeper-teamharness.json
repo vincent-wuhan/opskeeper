@@ -1,0 +1,17 @@
+{
+  "id": "opskeeper-teamharness",
+  "displayName": "OpsKeeper TeamHarness",
+  "deployMode": "plugin-probe",
+  "detection": {
+    "paths": ["~/.qwenpaw"],
+    "commands": ["qwenpaw"]
+  },
+  "pluginProbe": {
+    "source": {
+      "type": "tar",
+      "tarball": "$PILOT_DIR/plugins/opskeeper-teamharness.tar.gz",
+      "destDir": "$PILOT_DATA/plugins/opskeeper-teamharness"
+    },
+    "mountType": "wrapper"
+  }
+}

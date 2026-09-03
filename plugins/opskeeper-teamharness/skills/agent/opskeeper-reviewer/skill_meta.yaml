@@ -1,0 +1,18 @@
+name: opskeeper-reviewer
+version: 1.0.0
+description: 修复方案评审 worker
+inputs:
+  repair_plan:
+    type: object
+    required: true
+outputs:
+  approve:
+    type: boolean
+    required: true
+sample_inputs:
+  - repair_plan: {action: "restart", target: "host-1"}
+est_cost_tokens: 1500
+blast_radius_default: cluster
+safety_level_default: L0
+artifacts:
+  skill_md_path: skills/agent/opskeeper-reviewer/SKILL.md
