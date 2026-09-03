@@ -35,5 +35,8 @@
 3. **工具白名单**：每个 Worker SKILL.md 的 `disallowed_tools` 强制边界；opskeeper 服务端 cmdpolicy + Casbin 二次校验。
 4. **审计全留痕**：所有 mutating 操作 + HITL 决策 + 状态推进写 opskeeper audit。
 5. **复盘驱动改进**：postmortem 自动写 knowledge vault + 更新 RCA 模式。
-6. **标记等待**：Manager 派发携带 `OPSKEEPER TASK <task_id>`，Worker 用匹配的
-   `OPSKEEPER_RESULT <task_id>` 唤醒后续推进；无标记续跑由插件层跳过。
+6. **标记等待**：Manager 派发携带 `OPSKEEPER TASK <task_id>` 与回报地址，Worker 用
+   `@manager:<server> OPSKEEPER_RESULT <task_id>` 唤醒后续推进；无 @ Manager 的
+   群聊回报只进入历史缓存，不保证唤醒 Manager。
+7. **结果回流**：Worker 房间中的结果唤醒 Manager 后，Manager 必须向原始请求房间
+   回发 `@admin:<server> OPSKEEPER_COMPLETE <task_id>`，保证入口会话可见闭环。

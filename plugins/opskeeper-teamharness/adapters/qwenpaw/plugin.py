@@ -19,7 +19,9 @@ import tempfile
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+import uuid
 import zipfile
 from pathlib import Path
 from typing import Any, AsyncGenerator, Callable, Optional
@@ -65,19 +67,21 @@ def manager_prompt(_agent: Any) -> str:
 
 _SANITIZER_KEYWORDS_ENV = "AGENTTEAMS_OUTPUT_SANITIZE_KEYWORDS"
 _PERMISSION_MODE_ENV = "OPSKEEPER_PERMISSION_MODE"
-_PLUGIN_VERSION = "1.0.21"
+_PLUGIN_VERSION = "1.0.29"
 _READ_ONLY_LOGGER = logging.getLogger("opskeeper-teamharness.readonly")
 _MANAGER_GATE_LOGGER = logging.getLogger("opskeeper-teamharness.manager-gate")
 _MANAGER_GATE_TTL_ENV = "OPSKEEPER_MANAGER_GATE_TTL_SECONDS"
 _DEFAULT_MANAGER_GATE_TTL_SECONDS = 600.0
 _TASK_MARKER_PATTERN = re.compile(
-    r"(?m)^OPSKEEPER[\s_]+TASK[\s_]+([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\s*$"
+    r"\bOPSKEEPER[\s_]+TASK[\s_]+([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\b"
 )
 _TASK_RESULT_PATTERN = re.compile(
-    r"(?m)^(?:(?:@[A-Za-z0-9._=-]+(?::[A-Za-z0-9._=-]+)+|manager)[ \t]+)?"
-    r"OPSKEEPER[\s_]+RESULT[\s_]+([A-Za-z0-9][A-Za-z0-9._:-]{0,127})(?:\s|$)"
+    r"(?m)^(?:[`*_]*(?:@[A-Za-z0-9._=-]+(?::[A-Za-z0-9._=-]+)+|manager)[`*_]*[ \t]+)?"
+    r"[`*_]*[ \t]*OPSKEEPER[\s_]+RESULT[\s_]+"
+    r"([A-Za-z0-9][A-Za-z0-9._:-]{0,127})(?:\s|[`*_]|$)"
 )
 _TASK_ID_PATTERN = re.compile(r"\bOPSKEEPER-[A-Za-z0-9][A-Za-z0-9._:-]{2,127}\b")
+_TASK_COMPLETE_PATTERN = re.compile(r"\bOPSKEEPER_COMPLETE\s+[A-Za-z0-9][A-Za-z0-9._:-]{2,127}\b")
 _READ_ONLY_ALLOWED_TOOLS = frozenset({
     "message",
     "teamharness.message",
@@ -103,6 +107,8 @@ _READ_ONLY_ALLOWED_TOOLS = frozenset({
 
 
 def _extract_task_markers(message: str) -> tuple[str, ...]:
+    if _TASK_COMPLETE_PATTERN.search(message):
+        return ()
     markers = tuple(
         match.group(1)
         for match in _TASK_MARKER_PATTERN.finditer(message)
@@ -121,16 +127,43 @@ class ManagerDispatchGate:
 
     def __init__(self) -> None:
         self._pending: dict[tuple[str, str], float] = {}
+        self._origins: dict[tuple[str, str], str] = {}
+        self._request_origins: dict[str, str] = {}
         self._lock = threading.RLock()
 
-    def record(self, session_id: str, message: str) -> tuple[str, ...]:
+    def record_request_origin(self, session_id: str, message: str) -> tuple[str, ...]:
+        markers = _extract_task_markers(message)
+        if not markers:
+            return ()
+        with self._lock:
+            for marker in markers:
+                self._request_origins[marker] = session_id
+        _MANAGER_GATE_LOGGER.info(
+            "Manager request origin recorded markers=%s origin=%s",
+            list(markers),
+            session_id,
+        )
+        return markers
+
+    def record(
+        self,
+        session_id: str,
+        message: str,
+        origin_session_id: str = "",
+    ) -> tuple[str, ...]:
         markers = _extract_task_markers(message)
         if not markers:
             return ()
         now = time.monotonic()
         with self._lock:
             for marker in markers:
-                self._pending[(session_id, marker)] = now
+                key = (session_id, marker)
+                self._pending[key] = now
+                self._origins[key] = (
+                    self._request_origins.get(marker)
+                    or origin_session_id
+                    or session_id
+                )
         return markers
 
     def pending_markers(self, session_id: str) -> tuple[str, ...]:
@@ -149,16 +182,54 @@ class ManagerDispatchGate:
         with self._lock:
             return (session_id, marker) in self._pending
 
-    def consume_result(self, session_id: str, message: str) -> tuple[str, ...]:
+    def consume_result_with_origins(
+        self,
+        session_id: str,
+        message: str,
+    ) -> dict[str, str]:
         markers = tuple(match.group(1) for match in _TASK_RESULT_PATTERN.finditer(message))
         if not markers:
-            return ()
+            return {}
+        consumed: dict[str, str] = {}
         with self._lock:
-            consumed = tuple(marker for marker in markers if self._pending.pop((session_id, marker), None) is not None)
+            for marker in markers:
+                request_origin = self._request_origins.pop(marker, "")
+                matching_keys = [
+                    key for key in self._pending if key[1] == marker
+                ]
+                if matching_keys:
+                    origin = request_origin or self._origins.pop(
+                        matching_keys[0],
+                        session_id,
+                    )
+                    for key in matching_keys:
+                        self._pending.pop(key, None)
+                        self._origins.pop(key, None)
+                    consumed[marker] = origin
+                elif request_origin:
+                    consumed[marker] = request_origin
+        _MANAGER_GATE_LOGGER.info(
+            "Manager worker results consumed session=%s markers=%s consumed=%s",
+            session_id,
+            list(markers),
+            list(consumed),
+        )
         return consumed
+
+    def consume_result(self, session_id: str, message: str) -> tuple[str, ...]:
+        return tuple(self.consume_result_with_origins(session_id, message))
 
     def clear(self, session_id: str) -> None:
         with self._lock:
+            stale_origins = [key for key in self._origins if key[0] == session_id]
+            for key in stale_origins:
+                del self._origins[key]
+            stale_request_origins = [
+                marker for marker, origin in self._request_origins.items()
+                if origin == session_id
+            ]
+            for marker in stale_request_origins:
+                del self._request_origins[marker]
             self._pending = {
                 key: created_at for key, created_at in self._pending.items() if key[0] != session_id
             }
@@ -368,6 +439,41 @@ def _request_sender(request: Any) -> str:
     return ""
 
 
+def _relay_matrix_completion(marker: str, origin_session_id: str, result_body: str) -> str:
+    base_url = os.environ.get("AGENTTEAMS_MATRIX_URL", "").rstrip("/")
+    token = os.environ.get("AGENTTEAMS_MANAGER_MATRIX_TOKEN", "").strip()
+    room_id = origin_session_id
+    if room_id.startswith("matrix:"):
+        room_id = room_id[len("matrix:"):]
+    if not base_url or not token or not room_id.startswith("!"):
+        raise RuntimeError("Matrix completion relay is not configured")
+
+    domain = os.environ.get("AGENTTEAMS_MATRIX_DOMAIN", "").strip()
+    admin_id = os.environ.get("AGENTTEAMS_ADMIN_MATRIX_ID", "").strip() or (
+        f"@admin:{domain}" if domain else "@admin"
+    )
+    body = (
+        f"{admin_id} OPSKEEPER_COMPLETE {marker}\n"
+        f"Worker result received in the execution room. Result:\n{result_body[:4000]}"
+    )
+    request = urllib.request.Request(
+        f"{base_url}/_matrix/client/v3/rooms/"
+        f"{urllib.parse.quote(room_id, safe='')}/send/m.room.message/{uuid.uuid4()}",
+        data=json.dumps({"msgtype": "m.text", "body": body}).encode(),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="PUT",
+    )
+    with urllib.request.urlopen(request, timeout=5) as response:
+        payload = json.loads(response.read().decode())
+    event_id = str(payload.get("event_id", ""))
+    if not event_id:
+        raise RuntimeError("Matrix completion relay returned no event_id")
+    return event_id
+
+
 def _extract_session_id(context: Any) -> str:
     session_id = getattr(context, "session_id", "")
     if session_id:
@@ -538,12 +644,17 @@ def _readonly_enforcement_factory(context: Any, _agent_config: Any):
                 gate_sessions = _dispatch_gate_sessions(factory_session_id, arguments)
                 recorded: tuple[str, ...] = ()
                 for session_id in gate_sessions:
-                    recorded += _MANAGER_DISPATCH_GATE.record(session_id, message_text)
+                    recorded += _MANAGER_DISPATCH_GATE.record(
+                        session_id,
+                        message_text,
+                        factory_session_id,
+                    )
                 _queue_manager_stop_after_dispatch(agent)
                 _MANAGER_GATE_LOGGER.info(
-                    "Manager dispatch registered sessions=%s markers=%s",
+                    "Manager dispatch registered sessions=%s markers=%s origin=%s",
                     list(gate_sessions),
                     list(recorded),
+                    factory_session_id,
                 )
 
     return OpskeeperReadOnlyMiddleware()
@@ -654,11 +765,55 @@ def _register_manager_gate_hook(api: Any) -> None:
         async def run(self, ctx: Any) -> Any:
             session_id = _extract_session_id(ctx)
             message = _request_text(ctx.request)
-            if _MANAGER_DISPATCH_GATE.consume_result(session_id, message):
-                return HookResult()
-            if not _MANAGER_DISPATCH_GATE.pending_markers(session_id):
+            consumed_results = _MANAGER_DISPATCH_GATE.consume_result_with_origins(
+                session_id,
+                message,
+            )
+            if consumed_results:
+                relays = [
+                    (marker, origin)
+                    for marker, origin in consumed_results.items()
+                    if origin and origin != session_id
+                ]
+                failed_relays = []
+                for marker, origin in relays:
+                    try:
+                        event_id = await asyncio.to_thread(
+                            _relay_matrix_completion,
+                            marker,
+                            origin,
+                            message,
+                        )
+                        _MANAGER_GATE_LOGGER.info(
+                            "Manager relayed worker result marker=%s origin=%s event=%s",
+                            marker,
+                            origin,
+                            event_id,
+                        )
+                    except Exception:
+                        _MANAGER_GATE_LOGGER.warning(
+                            "Manager worker result relay failed marker=%s origin=%s",
+                            marker,
+                            origin,
+                            exc_info=True,
+                        )
+                        failed_relays.append(
+                            f"task {marker}: send one concise completion message to the original "
+                            f"Matrix session {origin} using target room {origin}; address @admin and "
+                            f"include OPSKEEPER_COMPLETE {marker}. Then stop this turn."
+                        )
+                if failed_relays:
+                    ctx.inject_context(
+                        "OpsKeeper worker result relay is required before any next action. "
+                        + " ".join(failed_relays),
+                        priority=0,
+                        source="opskeeper-manager-result-relay",
+                    )
                 return HookResult()
             if _has_new_task(message):
+                _MANAGER_DISPATCH_GATE.record_request_origin(session_id, message)
+                return HookResult()
+            if not _MANAGER_DISPATCH_GATE.pending_markers(session_id):
                 return HookResult()
 
             sender = _request_sender(ctx.request)

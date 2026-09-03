@@ -11,8 +11,9 @@
 
 ## 任务回报协议
 
-- 收到 `OPSKEEPER TASK <task_id>` 后，最终回报必须以
-  `OPSKEEPER_RESULT <task_id> {json}` 开头。
+- 收到 `OPSKEEPER TASK <task_id>` 后，最终回报第一行必须显式 @ Manager，并在同一行以
+  `@manager:<server> OPSKEEPER_RESULT <task_id> {json}` 开头；
+  `<server>` 使用运行时 Matrix server，不能省略。
 - Manager 在插件层等待该匹配结果；中间过程说明不能替代这一行结果。
 
 ## 决策不替 Manager 做

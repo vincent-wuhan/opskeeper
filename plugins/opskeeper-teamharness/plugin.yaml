@@ -2,7 +2,7 @@ apiVersion: agentteams.agentteam/v1alpha1
 kind: AgentTeamPlugin
 metadata:
   name: opskeeper-teamharness
-  version: 1.0.21
+  version: 1.0.29
   description: |
     Opskeeper TeamHarness plugin — provides 7 ops Worker skills
     (alerter/investigator/critic/reviewer/repairer/verifier/postmortem)
@@ -59,6 +59,34 @@ metadata:
 
     v1.0.21 allows QwenPaw's normalized teamharness.message coordination tool in
     read-only mode without enabling file, shell, browser, or mutating tools.
+
+    v1.0.22 makes the Matrix wake-up address explicit in the Worker result
+    contract. Worker final results must address Manager on the same line as
+    OPSKEEPER_RESULT so AgentTeams group channels wake the waiting Manager.
+
+    v1.0.23 records the original requesting Matrix room for each dispatched
+    task. When a Worker result wakes Manager from a Worker room, TeamHarness
+    injects a mandatory OPSKEEPER_COMPLETE relay instruction back to that room.
+
+    v1.0.24 makes the OPSKEEPER_COMPLETE relay deterministic: Manager's plugin
+    sends it directly through the Matrix client API when a Worker result wakes a
+    cross-room task, with prompt injection retained only as a fallback.
+
+    v1.0.25 records the requesting Matrix room when the administrator task first
+    enters Manager, before dispatch middleware runs in a Worker-room context.
+
+    v1.0.26 accepts Markdown-emphasized OPSKEEPER_RESULT protocol lines emitted by
+    the Worker runtime, preventing completed results from remaining pending while
+    the entry room waits for OPSKEEPER_COMPLETE.
+
+    v1.0.27 accepts Markdown-emphasized Manager mentions and consumes a matching
+    result marker across the dispatch/execution session boundary.
+
+    v1.0.28 relays a matching Worker result directly from the PRE_EXECUTE
+    request-origin map when dispatch middleware does not leave pending state.
+
+    v1.0.29 gives an explicit OPSKEEPER TASK contract precedence over an embedded
+    OPSKEEPER_RESULT instruction, ensuring the entry room is recorded reliably.
 
     v1.0.7 adds a plugin-native Manager continuation gate: dispatched task markers
     wait for matching Worker results, while empty/self continuations are skipped.

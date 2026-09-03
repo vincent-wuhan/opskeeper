@@ -146,11 +146,11 @@ class ManagerGateTest(unittest.TestCase):
         self.assertEqual(self.gate.pending_markers("session-2"), ())
         self.assertEqual(
             self.gate.consume_result("session-2", "OPSKEEPER_RESULT task-001 {}"),
-            (),
+            ("task-001",),
         )
         self.assertEqual(
             self.gate.consume_result("session-1", "OPSKEEPER_RESULT task-001 {}"),
-            ("task-001",),
+            (),
         )
         self.assertEqual(self.gate.pending_markers("session-1"), ())
 
@@ -176,6 +176,89 @@ class ManagerGateTest(unittest.TestCase):
             ("OPSKEEPER-GATE-001",),
         )
         self.assertEqual(self.gate.pending_markers("session-1"), ())
+
+    def test_markdown_bold_result_is_consumed(self):
+        self.gate.record("session-1", "OPSKEEPER TASK OPSKEEPER-GATE-001")
+        message = "**OPSKEEPER_RESULT OPSKEEPER-GATE-001**"
+        self.assertEqual(
+            self.gate.consume_result("session-1", message),
+            ("OPSKEEPER-GATE-001",),
+        )
+        self.assertEqual(self.gate.pending_markers("session-1"), ())
+
+    def test_markdown_bold_manager_mention_prefix_is_consumed(self):
+        self.gate.record("session-1", "OPSKEEPER TASK OPSKEEPER-GATE-001")
+        message = (
+            "**@manager:matrix-local.agentteams.io:18080** "
+            "OPSKEEPER_RESULT OPSKEEPER-GATE-001 {\"ok\":true}"
+        )
+        self.assertEqual(
+            self.gate.consume_result("session-1", message),
+            ("OPSKEEPER-GATE-001",),
+        )
+        self.assertEqual(self.gate.pending_markers("session-1"), ())
+
+    def test_result_consumes_marker_across_dispatch_and_execution_sessions(self):
+        self.gate.record_request_origin(
+            "matrix:entry-room",
+            "OPSKEEPER TASK OPSKEEPER-GATE-001",
+        )
+        self.gate.record(
+            "matrix:entry-room",
+            "OPSKEEPER TASK OPSKEEPER-GATE-001",
+        )
+        self.gate.record(
+            "matrix:execution-room",
+            "OPSKEEPER TASK OPSKEEPER-GATE-001",
+            "matrix:entry-room",
+        )
+        self.assertEqual(
+            self.gate.consume_result_with_origins(
+                "matrix:execution-room",
+                "**OPSKEEPER_RESULT OPSKEEPER-GATE-001**",
+            ),
+            {"OPSKEEPER-GATE-001": "matrix:entry-room"},
+        )
+        self.assertEqual(self.gate.pending_markers("matrix:entry-room"), ())
+        self.assertEqual(self.gate.pending_markers("matrix:execution-room"), ())
+
+    def test_result_relays_from_request_origin_without_dispatch_pending(self):
+        self.gate.record_request_origin(
+            "matrix:entry-room",
+            "OPSKEEPER TASK OPSKEEPER-GATE-001",
+        )
+        self.assertEqual(
+            self.gate.consume_result_with_origins(
+                "matrix:execution-room",
+                "**@manager:hs** OPSKEEPER_RESULT OPSKEEPER-GATE-001 {}",
+            ),
+            {"OPSKEEPER-GATE-001": "matrix:entry-room"},
+        )
+
+    def test_task_contract_with_result_instruction_is_new_task(self):
+        message = (
+            "@manager:hs OPSKEEPER TASK OPSKEEPER-GATE-001\\n"
+            "Worker result line: OPSKEEPER_RESULT OPSKEEPER-GATE-001 {}"
+        )
+        self.assertTrue(self.module._has_new_task(message))
+        self.assertEqual(
+            self.gate.record_request_origin("matrix:entry-room", message),
+            ("OPSKEEPER-GATE-001",),
+        )
+
+    def test_worker_prompt_requires_manager_matrix_prefix(self):
+        prompt_path = (
+            Path(__file__).resolve().parents[2]
+            / "prompts"
+            / "agent"
+            / "worker.md"
+        )
+        prompt = prompt_path.read_text(encoding="utf-8")
+        self.assertIn(
+            "`@manager:<server> OPSKEEPER_RESULT <task_id> {json}`",
+            prompt,
+        )
+        self.assertIn("不能省略", prompt)
 
     def test_marker_extraction_falls_back_to_long_task_id(self):
         self.assertEqual(
@@ -235,8 +318,8 @@ class ManagerGateTest(unittest.TestCase):
     def test_dispatch_records_in_source_and_target_sessions(self):
         source_session = "matrix:manager-room"
         target_session = "matrix:!worker-room:hs"
-        self.module._MANAGER_DISPATCH_GATE.clear(source_session)
-        self.module._MANAGER_DISPATCH_GATE.clear(target_session)
+        self.module._MANAGER_DISPATCH_GATE._pending.clear()
+        self.module._MANAGER_DISPATCH_GATE._origins.clear()
         middleware = self.module._readonly_enforcement_factory(
             SimpleNamespace(session_id=source_session),
             None,
@@ -257,8 +340,30 @@ class ManagerGateTest(unittest.TestCase):
             self.module._MANAGER_DISPATCH_GATE.pending_markers(target_session),
             ("task-001",),
         )
+
+    def test_dispatch_records_source_room_for_worker_result_relay(self):
+        source_session = "matrix:manager-room"
+        target_session = "matrix:!worker-room:hs"
+        self.module._MANAGER_DISPATCH_GATE._pending.clear()
+        self.module._MANAGER_DISPATCH_GATE._origins.clear()
         self.module._MANAGER_DISPATCH_GATE.clear(source_session)
         self.module._MANAGER_DISPATCH_GATE.clear(target_session)
+        middleware = self.module._readonly_enforcement_factory(
+            SimpleNamespace(session_id=source_session),
+            None,
+        )
+        self._dispatch_middleware(
+            middleware,
+            "OPSKEEPER TASK task-001",
+            target="room:!worker-room:hs",
+        )
+        self.assertEqual(
+            self.module._MANAGER_DISPATCH_GATE.consume_result_with_origins(
+                target_session,
+                "@manager:hs OPSKEEPER_RESULT task-001 {}",
+            ),
+            {"task-001": source_session},
+        )
 
     def test_dispatch_queues_react_pending_stop(self):
         source_session = "matrix:manager-room"
@@ -386,6 +491,35 @@ class ManagerGateTest(unittest.TestCase):
         )
         self.module._MANAGER_DISPATCH_GATE.clear("matrix:room-1")
 
+    def test_hook_records_request_room_before_dispatch(self):
+        source_session = "matrix:manager-room"
+        target_session = "matrix:!worker-room:hs"
+        self.module._MANAGER_DISPATCH_GATE.clear(source_session)
+        self.module._MANAGER_DISPATCH_GATE.clear(target_session)
+        context = self._hook_context(
+            "OPSKEEPER TASK task-001",
+            sender="@admin:hs",
+        )
+        context.session_id = source_session
+        result = asyncio.run(self._registered_hook().run(context))
+        self.assertEqual(result.action.value, "continue")
+        self.assertEqual(
+            self.module._MANAGER_DISPATCH_GATE.pending_markers(source_session),
+            (),
+        )
+        self.module._MANAGER_DISPATCH_GATE.record(
+            target_session,
+            "OPSKEEPER TASK task-001",
+            target_session,
+        )
+        self.assertEqual(
+            self.module._MANAGER_DISPATCH_GATE.consume_result_with_origins(
+                target_session,
+                "@manager:hs OPSKEEPER_RESULT task-001 {}",
+            ),
+            {"task-001": source_session},
+        )
+
     def test_hook_skips_rich_continuation_without_result(self):
         self.module._MANAGER_DISPATCH_GATE.record(
             "matrix:room-1",
@@ -446,6 +580,58 @@ class ManagerGateTest(unittest.TestCase):
         self.assertEqual(
             self.module._MANAGER_DISPATCH_GATE.pending_markers("matrix:room-1"),
             (),
+        )
+
+    def test_hook_consumes_markdown_bold_worker_result(self):
+        self.module._MANAGER_DISPATCH_GATE.clear("matrix:room-1")
+        self.module._MANAGER_DISPATCH_GATE.record(
+            "matrix:room-1",
+            "OPSKEEPER TASK OPSKEEPER-GATE-001",
+        )
+        message = "**OPSKEEPER_RESULT OPSKEEPER-GATE-001**\n\n```json\n{\"ok\":true}\n```"
+        result = asyncio.run(self._registered_hook().run(self._hook_context(message)))
+        self.assertEqual(result.action.value, "continue")
+        self.assertEqual(
+            self.module._MANAGER_DISPATCH_GATE.pending_markers("matrix:room-1"),
+            (),
+        )
+        self.module._MANAGER_DISPATCH_GATE.clear("matrix:room-1")
+
+    def test_hook_instructs_manager_to_relay_worker_room_result_to_origin(self):
+        source_session = "matrix:manager-room"
+        worker_session = "matrix:!worker-room:hs"
+        self.module._MANAGER_DISPATCH_GATE.clear(source_session)
+        self.module._MANAGER_DISPATCH_GATE.clear(worker_session)
+        self.module._MANAGER_DISPATCH_GATE.record(
+            worker_session,
+            "OPSKEEPER TASK task-001",
+            source_session,
+        )
+        context = self._hook_context(
+            "@manager:hs OPSKEEPER_RESULT task-001 {}",
+        )
+        context.session_id = worker_session
+        context.inject_context = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("direct relay should make prompt fallback unnecessary")
+        )
+        with patch.object(
+            self.module,
+            "_relay_matrix_completion",
+            return_value="$relay-event",
+        ) as relay:
+            result = asyncio.run(self._registered_hook().run(context))
+        self.assertEqual(result.action.value, "continue")
+        relay.assert_called_once()
+        self.assertEqual(relay.call_args.args[0], "task-001")
+        self.assertEqual(relay.call_args.args[1], source_session)
+        self.module._MANAGER_DISPATCH_GATE.clear(source_session)
+        self.module._MANAGER_DISPATCH_GATE.clear(worker_session)
+
+    def test_completion_notice_is_not_treated_as_new_dispatch(self):
+        self.assertFalse(
+            self.module._extract_task_markers(
+                "@admin:hs OPSKEEPER_COMPLETE task-001 result passed"
+            )
         )
 
     def test_hook_allows_admin_and_new_task(self):

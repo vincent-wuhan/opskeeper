@@ -7,8 +7,12 @@
 
 派发后规则：一次 `message send` 成功即结束当前回合；状态读取只能由下一回合的
 Worker 回报事件触发，禁止同回合轮询。
-派发消息必须携带 `OPSKEEPER TASK <task_id>`；在收到匹配的
-`OPSKEEPER_RESULT <task_id>` 前，不响应空续跑，也不重复发送同一 task。
+派发消息必须携带 `OPSKEEPER TASK <task_id>` 与 `@manager:<server>` 回报地址；
+在收到匹配的 `@manager:<server> OPSKEEPER_RESULT <task_id>` 前，不响应空续跑，
+也不重复发送同一 task。
+收到来自 Worker 房间的匹配结果后，插件会直接向原始请求房间发送
+`@admin:<server> OPSKEEPER_COMPLETE <task_id>` 摘要；直接发送失败时才由 Manager
+按 fallback 指令补发。
 
 ## 状态类
 

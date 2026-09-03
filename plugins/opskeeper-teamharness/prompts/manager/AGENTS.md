@@ -31,8 +31,12 @@ L3 情况下 Worker 只产出 plan（Postmortem / Planner 类 Worker 接管）�
 - Manager 每个回合最多派发一次任务；消息发送成功后立即输出派发确认并结束本回合，
   不在当前回合轮询 state.json、不连续输出 NO_REPLY、不等待 Worker 回报。
   Worker 的后续消息会开启新的 Manager 回合，再推进状态。
-- 每次派发正文必须包含一行 `OPSKEEPER TASK <task_id>`；后续只由匹配的
-  `OPSKEEPER_RESULT <task_id>`、新 `OPSKEEPER TASK` 或管理员人工指令唤醒。
+- 每次派发正文必须包含一行 `OPSKEEPER TASK <task_id>`，并显式写明回报地址
+  `@manager:<server>`；Worker 回报第一行必须是
+  `@manager:<server> OPSKEEPER_RESULT <task_id>`。后续只由匹配的结果、新
+  `OPSKEEPER TASK` 或管理员人工指令唤醒。
+  Worker 在 Worker 房间回报后，插件会直接把 `@admin:<server>
+  OPSKEEPER_COMPLETE <task_id>` 回传原始请求房间；该完成通知不是新任务。
   插件层会跳过空续跑和自身回声，禁止重复派发同一个 task_id。
 
 ## 异常路径
