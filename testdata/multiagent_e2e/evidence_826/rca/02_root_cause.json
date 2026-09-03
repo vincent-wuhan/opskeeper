@@ -1,0 +1,48 @@
+{
+  "schema_version": "v1",
+  "root_cause_object": {
+    "kind": "pg_long_tx",
+    "summary": "Evidence-backed investigation found pg issue on pg:primary",
+    "detail": {
+      "alert_id": "AL-MULTIAGENT-001",
+      "evidence_tool": "resource_alert",
+      "resource_type": "pg",
+      "target": "pg:primary"
+    }
+  },
+  "confidence": 0.75,
+  "evidence_chain": [
+    {
+      "type": "alert",
+      "ref": "resource_alert:resource_type=pg alert_id=AL-MULTIAGENT-001 window=[2026-08-27T03:21:30Z,2026-08-27T03:26:30Z]",
+      "observed_at": "2026-08-27T03:26:30.121441752Z",
+      "snippet": "resource_type=pg alert_id=AL-MULTIAGENT-001 window=[2026-08-27T03:21:30Z,2026-08-27T03:26:30Z]"
+    },
+    {
+      "type": "log",
+      "ref": "query_logql:{resource_type=\"pg\"} |= \"AL-MULTIAGENT-001\"",
+      "observed_at": "2026-08-27T03:26:30.121441752Z",
+      "snippet": "{resource_type=\"pg\"} |= \"AL-MULTIAGENT-001\""
+    }
+  ],
+  "time_window": {
+    "start": "2026-08-27T03:21:30.121441752Z",
+    "end": "2026-08-27T03:26:30.121441752Z"
+  },
+  "remediation_options": [
+    {
+      "action": "pg.vacuum_analyze",
+      "target": "pg:AL-MULTIAGENT-001",
+      "blast_radius": "single_device",
+      "rollback_plan": "Operator must review and reverse pg.vacuum_analyze on pg:AL-MULTIAGENT-001 before retrying.",
+      "confidence": 0.75
+    },
+    {
+      "action": "pg.terminate_long_tx",
+      "target": "pg:AL-MULTIAGENT-001",
+      "blast_radius": "cluster",
+      "rollback_plan": "Operator must review and reverse pg.terminate_long_tx on pg:AL-MULTIAGENT-001 before retrying.",
+      "confidence": 0.75
+    }
+  ]
+}

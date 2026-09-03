@@ -1,0 +1,14 @@
+{
+  "phase": "reviewer",
+  "incident_id": "INC-MULTIAGENT-001",
+  "approved": {
+    "action": "pg.vacuum_analyze",
+    "target": "pg:AL-MULTIAGENT-001",
+    "blast_radius": "single_device",
+    "rollback_plan": "Operator must review and reverse pg.vacuum_analyze on pg:AL-MULTIAGENT-001 before retrying.",
+    "confidence": 0.75
+  },
+  "decision": "approve",
+  "reason": "auto_approve=true & risk=safe & confidence>=0.7",
+  "ts": "2026-08-27T00:05:00Z"
+}

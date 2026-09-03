@@ -1,6 +1,6 @@
 # opskeeper-teamharness Plugin
 
-AgentTeams 插件，让 6 ops Worker（alerter/investigator/critic/reviewer/repairer/verifier）通过 stdio MCP proxy 调用 OpsKeeper 后端能力（RCA / 修复 / 验证 / postmortem）。
+AgentTeams 插件，让 6 ops Worker（alerter/investigator/critic/reviewer/repairer/verifier）通过 stdio MCP proxy 调用 opskeeper-v2 后端能力（RCA / 修复 / 验证 / postmortem）。
 
 ## 架构
 
@@ -12,7 +12,7 @@ AgentTeams 插件，让 6 ops Worker（alerter/investigator/critic/reviewer/repa
 │                                              Bearer GWKey      │
 │                                                               ▼
 │                                       ┌─────────────────────────────┐
-│                                       │ OpsKeeper backend            │
+│                                       │ opskeeper-v2 backend         │
 │                                       │   middleware/auth.go         │
 │                                       │   loop/mcp_adapter.go         │
 │                                       │   agentteams/state.go        │

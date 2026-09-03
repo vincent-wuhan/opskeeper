@@ -1,0 +1,28 @@
+id: pg/replication-lag
+description: 模拟 PG 流复制延迟（主从数据不一致）
+severity: P1
+tags: [pg, replication, ha]
+prerequisites:
+  - pg.cluster reachable
+  - pg.replica_configured
+inject:
+  - type: pg.inject_replica_lag
+    duration: 600s
+    params:
+      target_lag_mb: 500
+      apply_delay_ms: 5000
+expect:
+  time_to_detect: 120
+  time_to_remediate: 300
+  root_cause_lines:
+    - pg.replication_status
+    - pg.active_sessions
+  remediation_options:
+    - pg.kill_session
+rubric:
+  rca_accuracy: 0.85
+  time_to_remediate: 300
+  no_collateral_damage: true
+metadata:
+  owner: "@opskeeper-oncall"
+  created_at: "2026-07-13"

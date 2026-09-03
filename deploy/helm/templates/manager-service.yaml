@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "opskeeper.fullname" . }}-manager
+  labels:
+    {{- include "opskeeper.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+spec:
+  type: {{ .Values.manager.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.manager.service.port }}
+      targetPort: http
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "opskeeper.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: manager

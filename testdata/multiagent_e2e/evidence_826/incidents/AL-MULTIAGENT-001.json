@@ -1,0 +1,11 @@
+{
+  "alert_id": "AL-MULTIAGENT-001",
+  "severity": "critical",
+  "resource": "pg:primary",
+  "detected_at": "2026-08-27T00:00:00Z",
+  "summary": "Multi-agent test: pg connection pool exhausted (>95%, 30+ long tx)",
+  "labels": {
+    "env": "prod",
+    "team": "checkout"
+  }
+}

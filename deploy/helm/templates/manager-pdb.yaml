@@ -1,0 +1,19 @@
+{{- if .Values.manager.podDisruptionBudget }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "opskeeper.fullname" . }}-manager
+  labels:
+    {{- include "opskeeper.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+spec:
+  {{- if .Values.manager.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.manager.podDisruptionBudget.minAvailable }}
+  {{- else if .Values.manager.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.manager.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "opskeeper.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: manager
+{{- end }}

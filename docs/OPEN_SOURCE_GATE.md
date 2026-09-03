@@ -1,49 +1,47 @@
-# Open-source gate: plugins-only release
+# Open-source gate: full release
 
-**Status: READY FOR REVIEW**
+**Status: LOCAL PASS; REMOTE VERIFICATION PENDING**
 **Gate date: 2026-09-03**
-**Release:** OpsKeeper Plugins standalone initial release
+**Release:** OpsKeeper full public source release, stage 2
 
-This gate records the engineering admission review for publishing the AgentTeams
-Plugin Installer and OpsKeeper TeamHarness. It is not legal advice.
+This gate records the admission review for publishing the OpsKeeper backend, web console, plugins, public deployment assets, synthetic fixtures, documentation, and tests. It is not legal advice.
 
 ## Scope
 
-Only the following source scope is admitted:
+`RELEASE_VERSION.json` is the machine-readable source scope. Private delivery evidence, credentials, production topology, private project records, and non-public incident data are outside the release.
 
-- `plugins/agentteams-plugin-installer`
-- `plugins/opskeeper-teamharness`
+## Product and competition boundary
 
-The OpsKeeper backend, AgentTeams core, AgentTeams Dashboard source, private
-deployment topology, credentials, runtime evidence, and delivery material are
-outside this release.
+The public repository is product documentation, not event documentation. It must not contain event-stage language, judge-facing private evidence, internal task IDs, real incident markers, private execution records, or competition delivery state. Operational scenarios are published as reproducible synthetic examples.
 
-## Boundary audit
+## Attribution boundary
 
-The public release is plugin-only and does not distribute backend, core
-runtime, dashboard core, deployment topology, private evidence, or delivery
-material. Acknowledgments describe design appreciation only and do not assert
-code derivation, endorsement, or affiliation.
+OnGrid is allowed only in the compliance and acknowledgment layer. It must not appear as a product name, current runtime component, package name, UI label, or endorsement. References to AgentTeams and AgentTeams Dashboard describe integration and inspiration; they do not imply redistribution of their core source or endorsement by those projects.
 
-## AgentTeams boundary
+## Automated checks
 
-This repository distributes plugins that integrate with GoAI AgentTeams and
-AgentTeams Dashboard. It does not copy or redistribute their core source. The
-plugin protocols and extension points are used through their published runtime
-interfaces. Thanks are retained in `README.md` and `NOTICE.md`.
+Run before tagging:
 
-## Automated admission checks
+```bash
+gofmt_check="$(gofmt -l $(find cmd internal -name '*.go' -type f | tr '\n' ' '))"
+test -z "$gofmt_check"
+go build ./...
+go test ./... -count=1
+python3 scripts/audit_open_source.py
+```
 
-The release must continue to pass:
+The admission audit checks private identifiers, internal task IDs, event-stage language, private paths and IPs, prohibited repository references, hard secret shapes, disallowed OnGrid placement, private evidence directories, and required release files.
 
-1. `make verify`
-2. no secret-shaped strings, task IDs, public demo endpoints, private host
-   paths, or internal project-stage identifiers;
-3. no OnGrid references outside the allowed acknowledgment and governance files;
-4. package manifests, entry files, versions, licenses, notices, and archive
-   safety checks;
-5. all standalone plugin tests and the Installer self-check;
-6. a release-only version record in `RELEASE_VERSION.json`.
+## Build and functional checks
 
-The implementation of checks 2 and 3 is automated by
-`scripts/audit_open_source.py`.
+Before tagging, a clean tree must also pass web type checking/tests when tooling is available, plugin package construction, plugin self-checks, and the TeamHarness test suite. Any environment-specific skip must be recorded in the release validation log rather than silently treated as a pass.
+
+## Release decision
+
+A release may be tagged only when:
+
+1. automated and build checks pass;
+2. the source tree is a sanitized snapshot with no private Git history;
+3. the public repository remains `vincent-wuhan/opskeeper`;
+4. release metadata and acknowledgments are final;
+5. the resulting tag is verified from the public remote before packages are distributed.

@@ -1,0 +1,5 @@
+golang 1.25.11
+# 可选工具（如已安装对应 asdf plugin 再取消注释）：
+# golangci-lint 1.61.0
+# buf 1.47.2
+# migrate 4.18.1

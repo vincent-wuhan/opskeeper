@@ -5,7 +5,7 @@ description: 事故根因诊断 worker。调用 loop.investigate 顺因果链溯
 
 # opskeeper 根因调查 Worker
 
-本 Worker 由 opskeeper-teamharness 插件提供。SOUL 派生源：OpsKeeper incident investigator role。
+本 Worker 由 opskeeper-teamharness 插件提供。SOUL 派生源：`opskeeper-v2/../../../../agents/incident-investigator.md`。
 
 ## Available Tools (allowTools)
 

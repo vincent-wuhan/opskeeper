@@ -1,4 +1,4 @@
-# OpsKeeper TeamHarness eval scenario 03 — recovery_verify
+# OpsKeeper evaluation scenario 03 — recovery_verify
 #
 # 真实环境验证：修复 → recovery.verify → postmortem 闭环
 # 跑法：docker compose -f eval/scenarios/recovery_verify/compose.yml up --abort-on-container-exit

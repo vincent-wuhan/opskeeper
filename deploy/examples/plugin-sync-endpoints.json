@@ -1,0 +1,32 @@
+[
+  {
+    "WorkerName": "worker-alerter",
+    "BaseURL": "http://worker-opskeeper-alerter:8088",
+    "PluginPath": "/api/opskeeper-teamharness/install-plugin"
+  },
+  {
+    "WorkerName": "worker-investigator",
+    "BaseURL": "http://worker-opskeeper-investigator:8088",
+    "PluginPath": "/api/opskeeper-teamharness/install-plugin"
+  },
+  {
+    "WorkerName": "worker-critic",
+    "BaseURL": "http://worker-opskeeper-critic:8088",
+    "PluginPath": "/api/opskeeper-teamharness/install-plugin"
+  },
+  {
+    "WorkerName": "worker-reviewer",
+    "BaseURL": "http://worker-opskeeper-reviewer:8088",
+    "PluginPath": "/api/opskeeper-teamharness/install-plugin"
+  },
+  {
+    "WorkerName": "worker-repairer",
+    "BaseURL": "http://worker-opskeeper-repairer:8088",
+    "PluginPath": "/api/opskeeper-teamharness/install-plugin"
+  },
+  {
+    "WorkerName": "worker-verifier",
+    "BaseURL": "http://worker-opskeeper-verifier:8088",
+    "PluginPath": "/api/opskeeper-teamharness/install-plugin"
+  }
+]

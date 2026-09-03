@@ -1,0 +1,52 @@
+opskeeper (path A) 已安装。
+
+=== 访问入口 ===
+{{- if .Values.manager.ingress.enabled }}
+  URL: https://{{ (index .Values.manager.ingress.hosts 0).host }}
+{{- else }}
+  Port-forward:
+    kubectl port-forward svc/{{ include "opskeeper.fullname" . }}-manager {{ .Values.manager.service.port }}:{{ .Values.manager.service.port }}
+  然后访问 http://localhost:{{ .Values.manager.service.port }}
+{{- end }}
+
+=== 启用的可观测性栈 ===
+{{- if .Values.qdrant.enabled }}
+  ✓ Qdrant — 向量数据库（opskeeper knowledge 基础）
+{{- end }}
+{{- if .Values.prometheus.enabled }}
+  ✓ Prometheus — 指标采集（port-forward: kubectl port-forward svc/prometheus-server 9090）
+{{- end }}
+{{- if .Values.loki.enabled }}
+  ✓ Loki — 日志聚合
+{{- end }}
+{{- if .Values.tempo.enabled }}
+  ✓ Tempo — Trace 聚合
+{{- end }}
+{{- if .Values.grafana.enabled }}
+  ✓ Grafana — 可视化（admin / {{ .Values.grafana.adminPassword }}）
+    port-forward: kubectl port-forward svc/grafana 3000:80
+{{- end }}
+{{- if not (or .Values.qdrant.enabled .Values.prometheus.enabled .Values.loki.enabled .Values.tempo.enabled .Values.grafana.enabled) }}
+  ⚠ 未启用任何可观测性组件
+  启用方式：helm upgrade opskeeper ./deploy/helm --set qdrant.enabled=true,grafana.enabled=true
+{{- end }}
+
+=== 路径 A 集成（核心能力） ===
+{{- if .Values.manager.config.enableHarness }}
+  ✓ Harness 评测平台（judge + leaderboard + 20 黄金事故）
+{{- end }}
+{{- if .Values.manager.config.enableMiddleware }}
+  ✓ 中间件 Adapter（PG/Redis/MQ/K8s/Git — 5 类）
+{{- end }}
+{{- if .Values.manager.config.enableGitArtifact }}
+  ✓ git-artifact 反向索引（Linker 4 类 + CI 回调）
+{{- end }}
+
+=== 验证 ===
+  kubectl get pods -l app.kubernetes.io/name={{ include "opskeeper.name" . }}
+  kubectl logs -l app.kubernetes.io/name={{ include "opskeeper.name" . }} -c manager
+
+=== 下一步 ===
+  1. 跑 Harness 评测：opskeeper-eval list-cases
+  2. 测试 git-artifact：curl -X POST $MANAGER/api/v1/git-artifacts
+  3. 接入中间件资源：opskeeper-manager --add-resource pg --dsn "..."

@@ -1,0 +1,338 @@
+# opskeeper + AgentTeams demo 一键启动 compose
+#
+# 服务拓扑：
+#   postgres (5432) ──┐
+#                     ├─→ opskeeper (8080) ──→ agentteams-controller (8090)
+#   redis (6379) ─────┘            │
+#                                  └─→ hitl-monitor → element-web (8081)
+#   host-fixture (8091) ← case-owned kill_process
+#
+# 详细说明见 deploy/README.md；本地开发用 deploy/docker-compose.yml（MySQL + Prometheus/Grafana），
+# 正式生产走 deploy/install/ 或 deploy/helm/，**不要**拿这份 compose 上生产。
+
+services:
+  # ---------------------------------------------------------------------------
+  # host-fixture：T16 受控 CPU 进程 owner；只允许按 incident + process group
+  # 终止自己启动的 2-4 个进程，绝不接收客户端 PID。
+  # ---------------------------------------------------------------------------
+  host-fixture:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: opskeeper:dev
+    container_name: opskeeper-host-fixture
+    restart: unless-stopped
+    command: ["go", "run", "./cmd/host-fixture", "--address", ":8091", "--state-dir", "/var/lib/opskeeper-host-fixture"]
+    working_dir: /src
+    volumes:
+      - ./:/src
+      - host_fixture_state:/var/lib/opskeeper-host-fixture
+    environment:
+      HOST_FIXTURE_TOKEN: "${HOST_FIXTURE_TOKEN:?set HOST_FIXTURE_TOKEN to a 32+ character runtime random token}"
+    ports:
+      - "${HOST_FIXTURE_PORT:-8091}:8091"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8091/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    networks:
+      - opskeeper_net
+
+  # ---------------------------------------------------------------------------
+  # pool-fixture：Scenario B 受控应用连接池 owner；只回收自己持有的 PG 连接。
+  # ---------------------------------------------------------------------------
+  pool-fixture:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: opskeeper:dev
+    container_name: opskeeper-pool-fixture
+    restart: unless-stopped
+    command: ["go", "run", "./cmd/pool-fixture", "--address", ":8092", "--state-dir", "/var/lib/opskeeper-pool-fixture"]
+    working_dir: /src
+    volumes:
+      - ./:/src
+      - pool_fixture_state:/var/lib/opskeeper-pool-fixture
+    environment:
+      POOL_FIXTURE_TOKEN: "${POOL_FIXTURE_TOKEN:?set POOL_FIXTURE_TOKEN to a 32+ character runtime random token}"
+      POOL_FIXTURE_DB_DSN: "postgres://${POSTGRES_USER:-opskeeper}:${OPSKEEPER_DB_PASSWORD:-opskeeper}@postgres:5432/${OPSKEEPER_DB:-opskeeper}?sslmode=disable"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8092/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    networks:
+      - opskeeper_net
+
+  # ---------------------------------------------------------------------------
+  # frontier：edge/service 通信 broker；manager 启动时会建立 servicebound 连接
+  # ---------------------------------------------------------------------------
+  frontier:
+    image: singchia/frontier:v1.2.4
+    container_name: opskeeper-frontier
+    restart: unless-stopped
+    command: ["--config", "/usr/conf/frontier.yaml"]
+    volumes:
+      - ./deploy/install/frontier.yaml:/usr/conf/frontier.yaml:ro
+    networks:
+      - opskeeper_net
+
+  # ---------------------------------------------------------------------------
+  # opskeeper：cloud-side manager（cmd/opskeeper），demo 用 `go run` 跑源码
+  # ---------------------------------------------------------------------------
+  opskeeper:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: opskeeper:dev
+    container_name: opskeeper
+    restart: unless-stopped
+    command: ["go", "run", "./cmd/opskeeper"]
+    working_dir: /src
+    volumes:
+      # 源码直挂载 → `go run` 立即看到本地改动
+      - ./:/src
+      # HITL 监控脚本（被 hitl-monitor 服务复用，也供 opskeeper 内 cmd/agentteams-state 调用）
+      - ./scripts/opskeeper-hitl-monitor.sh:/usr/local/bin/opskeeper-hitl-monitor.sh:ro
+    environment:
+      # HTTP / metrics
+      OPSKEEPER_HTTP_ADDR: ":8080"
+      OPSKEEPER_METRICS_ADDR: ":9100"
+      # OTLP HTTP trace receiver (Tempo / LoongSuite-compatible collector)
+      OPSKEEPER_OTEL_ENDPOINT: "${OPSKEEPER_OTEL_ENDPOINT:-tempo:4318}"
+      # Use the stable container name; Docker DNS service aliases can lag
+      # while the manager container is recreated.
+      OPSKEEPER_FRONTIER_ADDR: "opskeeper-frontier:40011"
+      # 数据库切到 postgres + pgvector
+      OPSKEEPER_DB_DIALECT: postgres
+      OPSKEEPER_DB_DSN: "postgres://${POSTGRES_USER:-opskeeper}:${OPSKEEPER_DB_PASSWORD:-opskeeper}@postgres:5432/${OPSKEEPER_DB:-opskeeper}?sslmode=disable"
+      # Redis
+      OPSKEEPER_REDIS_ADDR: "redis:6379"
+      OPSKEEPER_REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+      # JWT
+      OPSKEEPER_JWT_SECRET: "${OPSKEEPER_JWT_SECRET:-change-me-to-a-long-random-string}"
+      OPSKEEPER_JWT_ACCESS_TTL: "${OPSKEEPER_JWT_ACCESS_TTL:-15m}"
+      OPSKEEPER_JWT_REFRESH_TTL: "${OPSKEEPER_JWT_REFRESH_TTL:-168h}"
+      # 默认管理员（首次启动播种）
+      OPSKEEPER_ADMIN_EMAIL: "${OPSKEEPER_ADMIN_EMAIL:-admin@opskeeper.local}"
+      OPSKEEPER_ADMIN_PASSWORD: "${OPSKEEPER_ADMIN_PASSWORD:-change-me-on-first-login}"
+      OPSKEEPER_ALERT_WEBHOOK_TOKEN: "${OPSKEEPER_ALERT_WEBHOOK_TOKEN:?set OPSKEEPER_ALERT_WEBHOOK_TOKEN to a 32+ character runtime random token}"
+      # AgentTeams 桥接
+      OPSKEEPER_AGENTTEAMS_BRIDGE_URL: "http://agentteams-controller:8090"
+      # T16 case-owned host 修复；kill_process fail-closed 到独立 fixture
+      OPSKEEPER_HOST_FIXTURE_URL: "http://host-fixture:8091"
+      OPSKEEPER_HOST_FIXTURE_TOKEN: "${HOST_FIXTURE_TOKEN:?set HOST_FIXTURE_TOKEN to a 32+ character runtime random token}"
+      OPSKEEPER_POOL_FIXTURE_URL: "http://pool-fixture:8092"
+      OPSKEEPER_POOL_FIXTURE_TOKEN: "${POOL_FIXTURE_TOKEN:?set POOL_FIXTURE_TOKEN to a 32+ character runtime random token}"
+      # Knowledge RAG：SOP docs + incident patterns
+      OPSKEEPER_QDRANT_URL: "http://qdrant:6333"
+      OPSKEEPER_EMBEDDING_API_KEY: "${OPSKEEPER_EMBEDDING_API_KEY:-}"
+      OPSKEEPER_EMBEDDING_BASE_URL: "${OPSKEEPER_EMBEDDING_BASE_URL:-}"
+      OPSKEEPER_EMBEDDING_MODEL: "${OPSKEEPER_EMBEDDING_MODEL:-}"
+      # HITL 升级通道（飞书 / Matrix webhook；Element Web 仅 demo 占位）
+      OPSKEEPER_HITL_ESCALATION_URL: "${OPSKEEPER_HITL_ESCALATION_URL:-http://element-web:80}"
+      OPSKEEPER_HITL_MONITOR_INTERVAL: "${OPSKEEPER_HITL_INTERVAL:-1m}"
+      OPSKEEPER_HITL_MONITOR_TIMEOUT: "${OPSKEEPER_HITL_TIMEOUT:-15m}"
+    ports:
+      - "${OPSKEEPER_HTTP_PORT:-8080}:8080"
+      - "${OPSKEEPER_METRICS_PORT:-9100}:9100"
+    depends_on:
+      frontier:
+        condition: service_started
+      host-fixture:
+        condition: service_healthy
+      pool-fixture:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    networks:
+      - opskeeper_net
+
+  # ---------------------------------------------------------------------------
+  # agentteams-controller：占位镜像（ghcr.io/agentteams/controller:dev）
+  # 等官方 publish 后 image: ghcr.io/agentteams/controller:${AGENTTEAMS_CONTROLLER_TAG:-dev}
+  # ---------------------------------------------------------------------------
+  agentteams-controller:
+    image: ${AGENTTEAMS_CONTROLLER_IMAGE:-ghcr.io/agentteams/controller:dev}
+    container_name: agentteams-controller
+    restart: unless-stopped
+    depends_on:
+      opskeeper:
+        condition: service_healthy
+    environment:
+      AGENTTEAMS_OPSKEEPER_URL: "http://opskeeper:8080"
+      AGENTTEAMS_HITL_ESCALATION_URL: "${OPSKEEPER_HITL_ESCALATION_URL:-http://element-web:80}"
+      AGENTTEAMS_OPSKEEPER_HITL_TIMEOUT: "${OPSKEEPER_HITL_TIMEOUT:-15m}"
+      AGENTTEAMS_MATRIX_APPSERVICE_AS_TOKEN: "${AGENTTEAMS_MATRIX_APPSERVICE_AS_TOKEN:?set AGENTTEAMS_MATRIX_APPSERVICE_AS_TOKEN to a 32+ character runtime random token}"
+      AGENTTEAMS_MATRIX_APPSERVICE_HS_TOKEN: "${AGENTTEAMS_MATRIX_APPSERVICE_HS_TOKEN:?set AGENTTEAMS_MATRIX_APPSERVICE_HS_TOKEN to a 32+ character runtime random token}"
+      AGENTTEAMS_REGISTRATION_TOKEN: "${AGENTTEAMS_REGISTRATION_TOKEN:?set AGENTTEAMS_REGISTRATION_TOKEN to a 32+ character runtime random token}"
+      AGENTTEAMS_MINIO_USER: "${AGENTTEAMS_MINIO_USER:-admin}"
+      AGENTTEAMS_MINIO_PASSWORD: "${AGENTTEAMS_MINIO_PASSWORD:?set AGENTTEAMS_MINIO_PASSWORD to a 16+ character runtime random password}"
+    ports:
+      - "${AGENTTEAMS_CONTROLLER_PORT:-8090}:8090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8090/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    networks:
+      - opskeeper_net
+
+  # ---------------------------------------------------------------------------
+  # element-web：admin 审批 UI（blast_radius 命中 @admin 时弹审批请求）
+  # ---------------------------------------------------------------------------
+  element-web:
+    image: vectorim/element-web:v1.11.64
+    container_name: element-web
+    restart: unless-stopped
+    volumes:
+      - ./deploy/agentteams-element-config.json:/app/config.json:ro
+      - ./deploy/agentteams-element-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "${ELEMENT_WEB_PORT:-8081}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:80/config.json >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    networks:
+      - opskeeper_net
+
+  # ---------------------------------------------------------------------------
+  # postgres：opskeeper + agentteams + pgvector（KB RAG 用）
+  # init SQL 由 ./deploy/postgres-init.sql 在首次启动时自动执行
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: opskeeper-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-opskeeper}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-opskeeper}
+      POSTGRES_DB: ${OPSKEEPER_DB:-opskeeper}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deploy/postgres-init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-opskeeper} -d ${OPSKEEPER_DB:-opskeeper}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks:
+      - opskeeper_net
+
+  # ---------------------------------------------------------------------------
+  # redis：缓存 + 分布式锁
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7
+    container_name: opskeeper-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    networks:
+      - opskeeper_net
+
+  # ---------------------------------------------------------------------------
+  # qdrant：KB RAG 向量索引；BM25 候选来自 opskeeper 业务库
+  # ---------------------------------------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:v1.14.1
+    container_name: opskeeper-qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    ports:
+      - "${QDRANT_HOST_PORT:-6333}:6333"
+    networks:
+      - opskeeper_net
+
+  # tempo：OTLP HTTP receiver + trace 查询 API。仅容器网络访问，
+  # 供 opskeeper 的 OTel GenAI spans 现场回放，不暴露主机端口。
+  tempo:
+    image: grafana/tempo:2.5.0
+    container_name: opskeeper-tempo
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./deploy/install/tempo-config.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    networks:
+      - opskeeper_net
+
+  # ---------------------------------------------------------------------------
+  # hitl-monitor：HITL 审批超时监控 + 升级通道
+  # 复用 ./scripts/opskeeper-hitl-monitor.sh，每 --interval 扫一次 pending，
+  # 超过 --timeout 的请求 POST 到 --escalation-url
+  # ---------------------------------------------------------------------------
+  hitl-monitor:
+    image: opskeeper:dev
+    container_name: opskeeper-hitl-monitor
+    restart: unless-stopped
+    working_dir: /src
+    command:
+      - /src/scripts/opskeeper-hitl-monitor.sh
+      - --interval
+      - "${OPSKEEPER_HITL_INTERVAL:-1m}"
+      - --timeout
+      - "${OPSKEEPER_HITL_TIMEOUT:-15m}"
+      - --escalation-url
+      - "${OPSKEEPER_HITL_ESCALATION_URL:-http://element-web:80}"
+      - --state
+      - /state/opskeeper-hitl-monitor/state.json
+      - --pidfile
+      - /state/opskeeper-hitl-monitor/pid
+    volumes:
+      - ./:/src
+      - hitl-monitor-state:/state
+    environment:
+      OPSKEEPER_AGENTTEAMS_STATE_URL: "http://opskeeper:8080"
+    depends_on:
+      opskeeper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /state/opskeeper-hitl-monitor/pid && kill -0 \"$(cat /state/opskeeper-hitl-monitor/pid)\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - opskeeper_net
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+  tempo_data:
+  host_fixture_state:
+  pool_fixture_state:
+  hitl-monitor-state:
+
+networks:
+  opskeeper_net:
+    driver: bridge

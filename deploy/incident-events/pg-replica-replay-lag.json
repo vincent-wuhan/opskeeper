@@ -1,0 +1,39 @@
+{
+  "id":"pg-replica-replay-lag",
+  "title":"Replica replay lag makes dependent reads stale",
+  "fault_family":"replication/replay_lag",
+  "source_basis":"Synthetic PostgreSQL streaming replication and business freshness telemetry; no production endpoint is exposed.",
+  "assumptions":[
+    "The replica is streaming but replay is slower than upstream WAL generation.",
+    "The network path is stable; recovery actions focus on replica replay and dependent traffic.",
+    "Closure requires replay lag convergence and a fresh business read from the replica."
+  ],
+  "created_at":"2026-08-29T15:00:00Z",
+  "input":{
+    "alert":{"incident_id":"INC-PG-REPL-004","tenant_id":"opskeeper-demo","severity":"high","resource":"pg-replica/orders-reporting","summary":"Replica replay lag is 96 seconds and dependent reads are 94 seconds stale.","fired_at":"2026-08-29T15:00:00Z","evidence_ref":"evidence/incidents/INC-PG-REPL-004/alert.json","trace_id":"trace-inc-pg-repl-004"},
+    "metric_window":[
+      {"observed_at":"2026-08-29T14:58:00Z","name":"pg_replica_replay_lag_seconds","value":31,"unit":"seconds","labels":{"replica":"orders-reporting"},"evidence_ref":"evidence/metrics/pg-repl/14-58.json"},
+      {"observed_at":"2026-08-29T14:59:00Z","name":"pg_replica_replay_lag_seconds","value":68,"unit":"seconds","labels":{"replica":"orders-reporting"},"evidence_ref":"evidence/metrics/pg-repl/14-59.json"},
+      {"observed_at":"2026-08-29T15:00:00Z","name":"pg_replica_replay_lag_seconds","value":96,"unit":"seconds","labels":{"replica":"orders-reporting"},"evidence_ref":"evidence/metrics/pg-repl/15-00.json"},
+      {"observed_at":"2026-08-29T15:00:00Z","name":"business_read_staleness_seconds","value":94,"unit":"seconds","labels":{"service":"reporting-api"},"evidence_ref":"evidence/metrics/pg-repl/15-00.json"},
+      {"observed_at":"2026-08-29T15:00:10Z","name":"pg_upstream_wal_bytes_rate","value":12800000,"unit":"bytes/second","labels":{"primary":"pg-primary/orders"},"evidence_ref":"evidence/metrics/pg-repl/15-00-10.json"}
+    ],
+    "session_snapshot":{"collected_at":"2026-08-29T15:00:10Z","summary":{"active":22,"idle_in_transaction":0,"waiting":0,"recovery_wal_replay":1,"max_connections":120},"records":[{"pid":86001,"role":"wal_replay","state":"active","wait_event_type":"","wait_event":"","application_name":"walreceiver","transaction_age":"00:00:00"}],"evidence_ref":"evidence/incidents/INC-PG-REPL-004/pg-stat-activity.json"},
+    "lock_snapshot":{"collected_at":"2026-08-29T15:00:10Z","summary":{"blocked_sessions":0,"granted_locks":94,"waiting_locks":0},"records":[],"evidence_ref":"evidence/incidents/INC-PG-REPL-004/pg-locks.json"},
+    "topology":{"fingerprint":"pg16-primary-single-replica-v4","components":[{"role":"primary","name":"pg-primary/orders","region":"cn-demo","readOnly":false},{"role":"replica","name":"pg-replica/orders-reporting","region":"cn-demo","parent":"pg-primary/orders","readOnly":true}]},
+    "versions":{"database":"PostgreSQL","engine":"Community","major":16,"minor":4,"patch":0,"agent":"opskeeper-0.9","application":"reporting-api-3.4.0"}
+  },
+  "recovery_gate":{"closure_policy":"Redirect dependent reads only after replay lag and business freshness probes pass.","required_observations":["replay lag < 5 seconds","business read staleness < 2 seconds","replica still streaming"],"thresholds":{"pg_replica_replay_lag_seconds":5,"business_read_staleness_seconds":2},"evidence_refs":["evidence/incidents/INC-PG-REPL-004/recovery-check.json"]},
+  "postmortem":{
+    "id":"017f2b01-030a-4000-8000-000000000001","tenant_id":"opskeeper-demo","incident_id":"INC-PG-REPL-004",
+    "database_type":"PostgreSQL","database_version":"16.4","topology_fingerprint":"pg16-primary-single-replica-v4","fault_fingerprint":"replica_replay_lag",
+    "symptom":{"summary":"Streaming replica replay falls behind upstream WAL generation.","metric_names":["pg_replica_replay_lag_seconds","business_read_staleness_seconds","pg_upstream_wal_bytes_rate"],"snapshot_refs":["evidence/incidents/INC-PG-REPL-004/pg-stat-activity.json"]},
+    "diagnosis":{"root_cause":"Reporting traffic on the replica slowed WAL replay while upstream write rate remained high.","previously_misdiagnosed":["network_partition"],"evidence_refs":["evidence/incidents/INC-PG-REPL-004/diagnosis.json"]},
+    "effective_actions":[{"fingerprint":"traffic:route_reporting_to_primary;replica:pause_reporting_connections","summary":"Let the replica replay backlog before restoring dependent reads.","evidence_ref":"evidence/incidents/INC-PG-REPL-004/action.json"}],
+    "ineffective_actions":[{"fingerprint":"replica:restart_wal_receiver","summary":"Restarting the receiver would discard replay progress without addressing load.","evidence_ref":"evidence/incidents/INC-PG-REPL-004/rejected-action.json"}],
+    "recovery_signals":[{"name":"replay lag and business staleness probes passed while replica stayed streaming","observed_at":"2026-08-29T15:06:00Z","evidence_ref":"evidence/incidents/INC-PG-REPL-004/recovery-check.json"}],
+    "applicable_boundary":{"database_types":["PostgreSQL"],"topology_fingerprints":["pg16-primary-single-replica-v4"],"version_ranges":["16.x"]},
+    "source_evidence":[{"kind":"timeline","ref":"evidence/incidents/INC-PG-REPL-004/timeline.jsonl"}],
+    "confirmed_by":"dba-oncall","confirmed_at":"2026-08-29T15:06:30Z"
+  }
+}

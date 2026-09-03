@@ -67,7 +67,7 @@ export function activate(api) {
     onClick: () => api.dashboard.navigate('plugin-route:opskeeper-teamharness/home'),
   });
 
-  api.log.info('OpsKeeper TeamHarness Dashboard plugin activated', { plugin: PLUGIN_ID });
+  api.log.info('Opskeeper TeamHarness Dashboard plugin activated', { plugin: PLUGIN_ID });
 
   return {
     PLUGIN_ID,

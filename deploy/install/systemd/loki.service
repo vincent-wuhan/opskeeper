@@ -1,0 +1,31 @@
+[Unit]
+Description=Loki (opskeeper log store)
+Documentation=https://grafana.com/docs/loki/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=opskeeper-loki
+Group=opskeeper
+ExecStart=/usr/local/bin/loki \
+  -config.file=/etc/opskeeper/loki-config.yaml
+KillMode=mixed
+TimeoutStopSec=30s
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=opskeeper-loki
+
+NoNewPrivileges=true
+ProtectSystem=true
+ProtectHome=true
+PrivateTmp=true
+StateDirectory=opskeeper-loki
+StateDirectoryMode=0755
+ReadWritePaths=/var/lib/opskeeper-loki
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

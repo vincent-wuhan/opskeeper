@@ -1,6 +1,6 @@
 {
   "id": "opskeeper-teamharness",
-  "displayName": "OpsKeeper TeamHarness",
+  "displayName": "Opskeeper TeamHarness",
   "deployMode": "plugin-probe",
   "detection": {
     "paths": ["~/.qwenpaw"],

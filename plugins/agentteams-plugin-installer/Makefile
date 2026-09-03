@@ -1,7 +1,6 @@
 # agentteams-plugin-installer build helpers
 PLUGIN_NAME := agentteams-plugin-installer
 DIST_DIR := dist
-RELEASE_ROOT := $(abspath $(CURDIR)/../..)
 
 .PHONY: build plugin-zip self-check verify clean
 
@@ -14,15 +13,17 @@ plugin-zip: build
 	zip -j $(DIST_DIR)/$(PLUGIN_NAME).zip \
 	    dashboard/public/plugin.json \
 	    dashboard/dist/main.js \
-	    $(RELEASE_ROOT)/LICENSE \
-	    $(RELEASE_ROOT)/NOTICE.md
+	    ../../LICENSE \
+	    ../../NOTICE.md
 	@echo "Built: $(DIST_DIR)/$(PLUGIN_NAME).zip"
 	@ls -la $(DIST_DIR)/
 
 self-check:
 	python3 scripts/self_check.py
 
-verify: build self-check
+verify: self-check
+	cd ../.. && \
+	  go test ./internal/manager/server/agentteams/ -count=1 -run TestPlugin -v
 
 clean:
 	rm -rf dashboard/dist dashboard/node_modules $(DIST_DIR)

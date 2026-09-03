@@ -5,7 +5,7 @@ description: SOP 二审 reviewer worker。对 mutating / destructive 提案做�
 
 # opskeeper SOP 二审 Worker
 
-本 Worker 由 opskeeper-teamharness 插件提供。SOUL 派生源：OpsKeeper reviewer role。
+本 Worker 由 opskeeper-teamharness 插件提供。SOUL 派生源：`opskeeper-v2/../../../../agents/reviewer.md`。
 
 ## Available Tools (allowTools)
 

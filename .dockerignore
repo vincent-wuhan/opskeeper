@@ -1,0 +1,23 @@
+.git
+.gitignore
+.dockerignore
+
+local/
+.cache/
+tmp/
+
+bin/
+dist/stage/
+dist/out/
+
+web/node_modules/
+web/dist/
+web/tsconfig.tsbuildinfo
+
+deploy/certs/
+deploy/install/certs/
+deliverables/
+
+# Deliverables are evidence/documentation, not runtime code.
+# Excluding them keeps the image strictly equal to runtime source,
+# which lets the frozen declaration hold even after evidence edits.

@@ -1,0 +1,55 @@
+{
+  "schema_version": "opskeeper-higress-route/v1",
+  "provider": {
+    "name": "openai-compat",
+    "type": "openai",
+    "protocol": "openai/v1",
+    "tokens": [
+      "${MINIMAX_API_KEY}"
+    ],
+    "rawConfigs": {
+      "apiTokens": [
+        "${MINIMAX_API_KEY}"
+      ],
+      "protocol": "openai",
+      "openaiCustomUrl": "https://api.minimaxi.com/v1",
+      "agentteamsMode": true,
+      "openaiCustomServicePort": 443,
+      "id": "openai-compat",
+      "type": "openai",
+      "openaiCustomServiceName": "openai-compat.dns"
+    }
+  },
+  "route": {
+    "name": "default-ai-route",
+    "domains": null,
+    "pathPredicate": {
+      "matchType": "PRE",
+      "matchValue": "/v1"
+    },
+    "upstreams": [
+      {
+        "provider": "openai-compat",
+        "weight": 100,
+        "modelMapping": {}
+      }
+    ],
+    "modelPredicates": [],
+    "authConfig": {
+      "enabled": true,
+      "allowedCredentialTypes": [
+        "key-auth"
+      ]
+    },
+    "proxyNextUpstream": {
+      "enabled": true,
+      "attempts": 3,
+      "timeout": 120000,
+      "conditions": [
+        "error",
+        "timeout",
+        "non_idempotent"
+      ]
+    }
+  }
+}

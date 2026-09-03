@@ -5,7 +5,7 @@ description: 主 ReAct 输出后置审计 worker。找无证据结论、遗漏�
 
 # opskeeper 后置审计 Worker
 
-本 Worker 由 opskeeper-teamharness 插件提供。SOUL 派生源：OpsKeeper operational critic role。
+本 Worker 由 opskeeper-teamharness 插件提供。SOUL 派生源：`opskeeper-v2/../../../../agents/critic.md`。
 
 ## Available Tools (allowTools)
 

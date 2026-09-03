@@ -1,0 +1,61 @@
+# opskeeper worker image — 用 FastAPI mock qwenpaw 的 plugin HTTP router,
+# 完整实现 opskeeper-teamharness 注册的 4 个端点:
+#   GET  /api/opskeeper-teamharness/health
+#   POST /api/opskeeper-teamharness/sync
+#   GET  /api/opskeeper-teamharness/install-plugin/health
+#   POST /api/opskeeper-teamharness/install-plugin
+#
+# 注意: 这是 **Docker 演示/测试专用** 镜像,不是真实 qwenpaw runtime。
+# 生产部署需替换为含 qwenpaw + opskeeper-teamharness plugin 的真实 worker 镜像。
+#
+# Build context: 仓库根目录(plugin 源码在 plugins/ 子目录下)
+
+FROM python:3.11
+# Note: 2026-08-25 — python:3.11-slim 在国内镜像源 sha256:be1575... 的镜像有损坏
+# /bin/sh 报 "exec format error"。回退到 python:3.11 (full, 1.6GB) 验证镜像本身没坏。
+# 后续恢复：python:3.11-slim 镜像源修好后回滚此行即可。
+
+ARG WORKER_NAME=worker-opskeeper-alerter
+ARG WORKER_PORT=8088
+
+ENV WORKER_NAME=${WORKER_NAME}
+ENV WORKER_PORT=${WORKER_PORT}
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# 系统依赖
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+        wget ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+# Python 依赖
+RUN pip install --no-cache-dir \
+        fastapi==0.115.* \
+        uvicorn==0.32.* \
+        python-multipart==0.0.* \
+        PyYAML==6.0.*
+
+# 把 plugin 源码打包进镜像(模拟 qwenpaw register_http_router 会读取的路径)
+COPY plugins/opskeeper-teamharness /opt/agentteams/plugins/opskeeper-teamharness
+
+# Worker 启动器 — 导入 opskeeper-teamharness plugin 的 build_install_plugin_router
+# 注册到 mock qwenpaw FastAPI app
+COPY deploy/worker-entrypoint.py /opt/agentteams/bin/worker-entrypoint.py
+RUN chmod +x /opt/agentteams/bin/worker-entrypoint.py
+
+# 工作目录
+WORKDIR /var/lib/qwenpaw
+
+# 健康检查
+HEALTHCHECK --interval=10s --timeout=3s --retries=5 --start-period=15s \
+    CMD wget -q --spider http://localhost:${WORKER_PORT}/health || exit 1
+
+EXPOSE ${WORKER_PORT}
+
+# 注入 fake qwenpaw — Docker 演示专用
+# (生产 worker image 应含真实 qwenpaw binary)
+COPY deploy/fake-qwenpaw.sh /usr/local/bin/qwenpaw
+RUN chmod +x /usr/local/bin/qwenpaw
+
+# 默认启动 mock qwenpaw
+ENTRYPOINT ["python", "/opt/agentteams/bin/worker-entrypoint.py"]

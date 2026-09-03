@@ -1,0 +1,274 @@
+# opskeeper Helm chart 默认 values
+# 与 ops-keeper helm/values.yaml 命名对齐，迁移用户零学习成本
+
+# 全局配置
+global:
+  imageRegistry: ghcr.io/opskeeper-removed
+  imagePullSecrets: []
+
+# Manager（opskeeper 主进程）
+manager:
+  enabled: true
+  # Breaking change (platform-base-ha): default 1 → 2 for HA.
+  # Single-replica deployments must explicitly set replicaCount: 1
+  # AND leader.enabled: false.
+  replicaCount: 2
+  image:
+    repository: opskeeper/manager
+    tag: ""  # 留空 = 使用 Chart appVersion
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 4Gi
+  service:
+    type: ClusterIP
+    port: 8080
+  ingress:
+    enabled: false
+    className: nginx
+    annotations: {}
+    hosts:
+      - host: opskeeper.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+  # Platform-base-ha: HA scheduling knobs.
+  # PodAntiAffinity spreads replicas across nodes; topologySpread
+  # balances across zones. PDB ensures at least 1 stays during
+  # voluntary disruptions. terminationGracePeriodSeconds must be ≥ 60
+  # to accommodate the graceful shutdown sequence (MarkDraining →
+  # HTTP drain 30s → ResignAll 25s → DB/Redis close 5s).
+  terminationGracePeriodSeconds: 60
+  podDisruptionBudget:
+    minAvailable: 1
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: manager
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/component: manager
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+  networkPolicy:
+    enabled: false  # default off; enable in restricted environments
+
+  # Default persistence disabled for HA (each replica is stateless;
+  # data lives in external DB). Single-replica embedded deployments
+  # re-enable this.
+  persistence:
+    enabled: false
+    size: 20Gi
+    storageClass: ""
+  # AgentTeams plugin registry（v1alpha1 plugin 控制面）
+  plugin:
+    # 是否启用 plugin registry + HTTP CRUD endpoints
+    enabled: true
+    # plugin 根目录；容器内固定 /var/lib/opskeeper/plugins，PVC 挂载保证 HA 多副本一致
+    dir: /var/lib/opskeeper/plugins
+    # plugin 单包大小上限（与 Go MaxPluginZipBytes 对齐）
+    # 重要契约：必须 ≤ worker 端 OPSKEEPER_WORKER_MAX_PLUGIN_BYTES（默认 32 MiB），
+    # 否则 manager 会接受 zip 但 worker 在 install 时返回 413。
+    # worker 端可通过 worker.env.OPSKEEPER_WORKER_MAX_PLUGIN_BYTES 覆盖。
+    maxZipBytes: "10Mi"
+    # plugin sync 模式:
+    #   stub                  — 仅写日志（默认 / 单机模式）
+    #   worker-http           — 真发 POST 到 worker（静态 endpoint 列表）
+    #   controller-discovery  — 通过 AgentTeams Controller 自动发现 worker（K8s/Docker 推荐）
+    syncMode: controller-discovery
+    # sync 端点列表文件路径（worker-http 模式使用；controller-discovery 模式可省略）
+    syncEndpointsFile: /etc/opskeeper/plugin-sync-endpoints.json
+    # controller-discovery 模式：Controller 地址（K8s: http://agentteams-controller.<ns>.svc:8080）
+    # controllerUrl: ""
+    # controller-discovery 模式：调 Controller 时的 Bearer token（可选，从 Secret 注入）
+    # controllerBearer: ""
+    # sync 调用 worker 时带的 Bearer token（Higress GatewayKey）
+    # syncBearer: <从 Secret 注入>
+
+  # Default persistence disabled for HA (each replica is stateless;
+  # data lives in external DB). Single-replica embedded deployments
+  # re-enable this.
+  persistence:
+    enabled: false
+    size: 20Gi
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+  config:
+    logLevel: info
+    logFormat: json
+    enableHarness: true    # 路径 A 新增
+    enableMiddleware: true  # 路径 A 新增
+    enableGitArtifact: true # 路径 A 新增
+
+# Platform-base-ha: external MySQL.
+# When host is set, the manager composes a DSN from these fields
+# (taking precedence over OPSKEEPER_DB_DSN). passwordSecret is a k8s
+# Secret key reference; if empty, password is read from the env var
+# OPSKEEPER_DB_PASSWORD directly.
+database:
+  embedded:
+    enabled: false  # true = chart deploys a MySQL StatefulSet
+  host: ""
+  port: 3306
+  user: opskeeper
+  passwordSecret: ""  # e.g. "opskeeper-db-password" (key: password)
+  db: opskeeper
+  sslmode: disable
+  pool:
+    maxOpen: 25
+    maxIdle: 5
+    connMaxLifetime: 30m
+
+# Platform-base-ha: external Redis.
+# Used by leader.Manager for distributed locks + per-role leader
+# election. When host is empty, the chart deploys a single Redis
+# instance (non-HA; suitable for dev/staging).
+redis:
+  embedded:
+    enabled: false  # true = chart deploys a Redis StatefulSet
+  addr: ""
+  passwordSecret: ""  # e.g. "opskeeper-redis-password" (key: password)
+  db: 0
+  pool:
+    maxActive: 50
+    maxIdle: 10
+    dialTimeout: 5s
+
+# Platform-base-ha: leader election.
+# Enabled=true (default) activates Redis-based per-role leader
+# election. Set to false for single-replica or embedded compose.
+leader:
+  enabled: true
+  ttl: 15s
+  renewInterval: 5s
+  startTimeout: 30s
+
+# Edge Agent（主机层采集 + 反向隧道）
+edgeAgent:
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Web UI（React SPA）
+web:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: opskeeper/web
+  service:
+    type: ClusterIP
+    port: 3000
+
+# ===== 可观测性栈（路径 A 阶段 3 任务 3.1）=====
+# 默认全部 disabled — 用户按需启用
+# 启用示例：helm install opskeeper ./deploy/helm --set qdrant.enabled=true,grafana.enabled=true
+
+# Qdrant — 向量数据库（opskeeper knowledge 基础）
+qdrant:
+  enabled: false
+  persistence:
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+# Prometheus — 指标采集
+prometheus:
+  enabled: false
+  server:
+    persistentVolume:
+      enabled: true
+      size: 10Gi
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 2Gi
+  # opskeeper manager 自动 scrape（通过 ServiceMonitor）
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+
+# Loki — 日志聚合
+loki:
+  enabled: false
+  persistence:
+    enabled: true
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# Tempo — Trace 聚合
+tempo:
+  enabled: false
+  persistence:
+    enabled: true
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# Grafana — 可视化
+grafana:
+  enabled: false
+  adminPassword: "opskeeper-admin"  # 生产环境务必改
+  persistence:
+    enabled: true
+    size: 5Gi
+  # 数据源自动配置（路径 A 集成）
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://prometheus-server.default.svc.cluster.local
+          access: proxy
+          isDefault: true
+        - name: Loki
+          type: loki
+          url: http://loki.default.svc.cluster.local
+          access: proxy
+        - name: Tempo
+          type: tempo
+          url: http://tempo.default.svc.cluster.local
+          access: proxy

@@ -74,7 +74,7 @@ bash adapters/qwenpaw/uninstall.sh
 
 | Env | 来源 | 用途 |
 |---|---|---|
-| `OPSKEEPER_BACKEND_URL` | OpsKeeper Helm values 或 Worker CR spec.env | stdio MCP proxy 目标 |
+| `OPSKEEPER_BACKEND_URL` | opskeeper-v2 Helm values 或 Worker CR spec.env | stdio MCP proxy 目标 |
 | `OPSKEEPER_GATEWAY_KEY` | agentteams-controller credentials.go | Bearer 认证 |
 | `OPSKEEPER_TENANT_ID` | multi-tenant 部署 | tenant 隔离 |
 | `OPSKEEPER_TIMEOUT` | 可选 | HTTP timeout，default 30s |

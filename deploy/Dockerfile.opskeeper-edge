@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1.7
+# opskeeper-edge agent image — runs on user hosts, dials out to cloud tunnel.
+# Build context MUST be the repo root (see Makefile target `docker-opskeeper-edge`).
+#
+# NOTE on ports:
+#   The edge agent does NOT accept inbound traffic in normal operation — it
+#   dials the cloud tunnel (TUNNEL_ADDR) as a client. The EXPOSE 9101 below is
+#   ONLY for the agent's own local /metrics endpoint, useful for local debug
+#   (e.g. `curl localhost:9101/metrics`). Production deployments can ignore it.
+
+ARG VERSION=dev
+
+# ---------- Stage 1: builder ----------
+FROM golang:1.25-alpine AS builder
+
+ARG VERSION
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux \
+    go build -trimpath \
+    -ldflags="-s -w -X main.version=${VERSION}" \
+    -o /out/opskeeper-edge ./cmd/opskeeper-edge
+
+# ---------- Stage 2: runtime (distroless, nonroot) ----------
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=builder /out/opskeeper-edge /opskeeper-edge
+
+# Local /metrics only — edge dials cloud, no inbound service ports.
+EXPOSE 9101
+
+USER nonroot
+ENTRYPOINT ["/opskeeper-edge"]

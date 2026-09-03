@@ -1,0 +1,13 @@
+{{- if and .Values.manager.plugin.enabled (eq .Values.manager.plugin.syncMode "worker-http") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "opskeeper.fullname" . }}-plugin-sync-endpoints
+  labels:
+    {{- include "opskeeper.labels" . | nindent 4 }}
+data:
+  # JSON 数组,每项: {"worker_name": "...", "base_url": "...", "plugin_path": "/api/<id>/sync"}
+  # 留空 = ManagerHTTPClient 启动时无 workers,SyncPlugin 返回 nil(no-op)
+  plugin-sync-endpoints.json: |
+    []
+{{- end }}

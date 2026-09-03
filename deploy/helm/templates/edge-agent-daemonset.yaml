@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "opskeeper.fullname" . }}-edge-agent
+  labels:
+    {{- include "opskeeper.labels" . | nindent 4 }}
+    app.kubernetes.io/component: edge-agent
+spec:
+  updateStrategy:
+    {{- toYaml .Values.edgeAgent.updateStrategy | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "opskeeper.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: edge-agent
+  template:
+    metadata:
+      labels:
+        {{- include "opskeeper.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: edge-agent
+    spec:
+      hostNetwork: true
+      serviceAccountName: {{ include "opskeeper.fullname" . }}-edge-agent
+      containers:
+        - name: edge-agent
+          image: {{ include "opskeeper.image" (dict "repo" .Values.edgeAgent.image.repository "tag" .Values.edgeAgent.image.tag) }}
+          imagePullPolicy: {{ .Values.edgeAgent.image.pullPolicy }}
+          ports:
+            - name: tunnel
+              containerPort: 7000
+              protocol: TCP
+          env:
+            - name: OPSKEEPER_MANAGER_URL
+              value: "http://{{ include "opskeeper.fullname" . }}-manager:{{ .Values.manager.service.port }}"
+          resources:
+            {{- toYaml .Values.edgeAgent.resources | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532  # 路径 A 集成约束：容器非 root 用户
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL

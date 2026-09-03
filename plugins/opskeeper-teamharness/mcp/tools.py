@@ -283,7 +283,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "incident.record",
-        "description": "记录当前角色的控制审计事件。事件类型由服务端按 Bearer 角色推导：alerter=alert.received，investigator=root_cause.confirmed，reviewer=recommendation.approved，repairer=action.executed，verifier=recovery_signal.observed，reporter=incident.closed。tenant/actor/trace 不可由请求伪造。",
+        "description": "记录当前角色的 OPSKEEPER-113 控制审计事件。事件类型由服务端按 Bearer 角色推导：alerter=alert.received，investigator=root_cause.confirmed，reviewer=recommendation.approved，repairer=action.executed，verifier=recovery_signal.observed，reporter=incident.closed。tenant/actor/trace 不可由请求伪造。",
         "inputSchema": {
             "type": "object",
             "properties": {

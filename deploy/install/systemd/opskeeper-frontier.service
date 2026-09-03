@@ -1,0 +1,50 @@
+[Unit]
+Description=opskeeper frontier (edge tunnel multiplexer)
+Documentation=https://github.com/singchia/frontier
+After=network-online.target
+Wants=network-online.target
+StartLimitInterval=60s
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=opskeeper
+Group=opskeeper
+EnvironmentFile=-/etc/opskeeper/opskeeper-frontier.env
+WorkingDirectory=/var/lib/opskeeper
+ExecStart=/usr/local/bin/opskeeper-frontier --config /etc/opskeeper/frontier.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=20s
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=opskeeper-frontier
+
+NoNewPrivileges=true
+ProtectSystem=true
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictNamespaces=false
+RemoveIPC=true
+StateDirectory=opskeeper
+LogsDirectory=opskeeper
+ReadWritePaths=/var/lib/opskeeper /var/log/opskeeper
+
+LimitNOFILE=65536
+LimitNPROC=32768
+MemoryMax=2G
+CPUQuota=200%
+
+Environment=GOMAXPROCS=auto
+Environment=GOGC=100
+
+[Install]
+WantedBy=multi-user.target

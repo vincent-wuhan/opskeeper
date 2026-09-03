@@ -135,7 +135,7 @@
 ### Compatibility
 - AgentTeams ≥ 2.0.1
 - QwenPaw ≥ 2.0.1，< 2.1.0
-- OpsKeeper backend `/v1/mcp` v1 协议 + `/v1/{state,hitl,skills}/*` REST
+- opskeeper-v2 backend `/v1/mcp` v1 协议 + `/v1/{state,hitl,skills}/*` REST
 - Python ≥ 3.9（urllib 标准库）
 
 ### Notes

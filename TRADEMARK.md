@@ -1,17 +1,21 @@
-# Trademark and brand usage
+# OpsKeeper trademark and brand usage
 
-OpsKeeper is used here as the product name for this plugin distribution.
-OpsKeeper is not affiliated with, sponsored by, or endorsed by OnGrid or any
-other similarly named operations-software project.
+OpsKeeper, the OpsKeeper logo, domain names, visual identity, documentation voice, and release channel are project brand assets. They are not licensed under Apache-2.0.
 
-OnGrid and other product names mentioned in this repository are trademarks of
-their respective owners. Use of those names is limited to truthful,
-non-confusing references and acknowledgments.
+Apache-2.0 grants rights to use, modify, and distribute source code under its terms. It does not grant permission to use OpsKeeper brand assets in a way that suggests official status, sponsorship, endorsement, or affiliation.
 
-The Apache License, Version 2.0 governs copyright rights in this repository.
-It does not grant permission to use product names, logos, domains, or other
-brand assets in a way that suggests official status, sponsorship, or
-endorsement.
+## Allowed use
 
-Forks and redistributions must make their independent status clear and must not
-present themselves as an official OpsKeeper release.
+You may use the OpsKeeper name truthfully to refer to this project, describe compatibility, write tutorials, report issues, or fork and build the software under the license.
+
+## Restricted use
+
+Do not present an unrelated fork, distribution, hosted service, support offering, or commercial product as official OpsKeeper. Do not use OpsKeeper branding, domains, social accounts, package names, or visual identity in a way that creates confusion about operation, maintenance, sponsorship, or endorsement.
+
+## Forks and distributions
+
+Forks and modified distributions must keep applicable license and notice requirements and clearly identify their independent status. Material modifications should use a distinct distribution or service name.
+
+## Non-endorsement
+
+References to AgentTeams, AgentTeams Dashboard, OnGrid, or any other project do not imply that those projects operate, maintain, sponsor, endorse, or own OpsKeeper.

@@ -1,0 +1,169 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "opskeeper.fullname" . }}-manager
+  labels:
+    {{- include "opskeeper.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+spec:
+  {{- if not .Values.manager.autoscaling.enabled }}
+  replicas: {{ .Values.manager.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "opskeeper.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: manager
+  template:
+    metadata:
+      labels:
+        {{- include "opskeeper.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: manager
+      annotations:
+        # 路径 A 集成期间强制 reload（spec 变更时）
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "opskeeper.fullname" . }}-manager
+      terminationGracePeriodSeconds: {{ .Values.manager.terminationGracePeriodSeconds }}
+      {{- with .Values.manager.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.manager.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: manager
+          image: {{ include "opskeeper.image" (dict "repo" .Values.manager.image.repository "tag" .Values.manager.image.tag) }}
+          imagePullPolicy: {{ .Values.manager.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          env:
+            - name: OPSKEEPER_LOG_LEVEL
+              value: {{ .Values.manager.config.logLevel | quote }}
+            - name: OPSKEEPER_LOG_FORMAT
+              value: {{ .Values.manager.config.logFormat | quote }}
+            - name: OPSKEEPER_ENABLE_HARNESS
+              value: {{ .Values.manager.config.enableHarness | quote }}
+            - name: OPSKEEPER_ENABLE_MIDDLEWARE
+              value: {{ .Values.manager.config.enableMiddleware | quote }}
+            - name: OPSKEEPER_ENABLE_GIT_ARTIFACT
+              value: {{ .Values.manager.config.enableGitArtifact | quote }}
+            # Platform-base-ha: leader election + external deps
+            - name: OPSKEEPER_LEADER_ENABLED
+              value: {{ .Values.leader.enabled | quote }}
+            - name: OPSKEEPER_LEADER_TTL
+              value: {{ .Values.leader.ttl | quote }}
+            - name: OPSKEEPER_LEADER_RENEW_INTERVAL
+              value: {{ .Values.leader.renewInterval | quote }}
+            - name: OPSKEEPER_LEADER_START_TIMEOUT
+              value: {{ .Values.leader.startTimeout | quote }}
+            {{- if .Values.database.host }}
+            - name: OPSKEEPER_DB_HOST
+              value: {{ .Values.database.host | quote }}
+            - name: OPSKEEPER_DB_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: OPSKEEPER_DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: OPSKEEPER_DB_NAME
+              value: {{ .Values.database.db | quote }}
+            - name: OPSKEEPER_DB_SSLMODE
+              value: {{ .Values.database.sslmode | quote }}
+            {{- end }}
+            {{- if .Values.database.passwordSecret }}
+            - name: OPSKEEPER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.database.passwordSecret }}
+                  key: password
+            {{- end }}
+            {{- if .Values.redis.addr }}
+            - name: OPSKEEPER_REDIS_ADDR
+              value: {{ .Values.redis.addr | quote }}
+            {{- end }}
+            - name: OPSKEEPER_REDIS_DB
+              value: {{ .Values.redis.db | quote }}
+            {{- if .Values.redis.passwordSecret }}
+            - name: OPSKEEPER_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.redis.passwordSecret }}
+                  key: password
+            {{- end }}
+
+            # AgentTeams plugin registry 配置
+            {{- if .Values.manager.plugin.enabled }}
+            - name: OPSKEEPER_PLUGINS_DIR
+              value: {{ .Values.manager.plugin.dir | quote }}
+            - name: OPSKEEPER_PLUGIN_SYNC_MODE
+              value: {{ .Values.manager.plugin.syncMode | quote }}
+            - name: OPSKEEPER_PLUGIN_SYNC_ENDPOINTS_FILE
+              value: {{ .Values.manager.plugin.syncEndpointsFile | quote }}
+            {{- if .Values.manager.plugin.maxZipBytes }}
+            - name: OPSKEEPER_PLUGIN_MAX_ZIP_BYTES
+              value: {{ .Values.manager.plugin.maxZipBytes | quote }}
+            {{- end }}
+            {{- if .Values.manager.plugin.controllerUrl }}
+            - name: AGENTTEAMS_CONTROLLER_URL
+              value: {{ .Values.manager.plugin.controllerUrl | quote }}
+            {{- end }}
+            {{- if .Values.manager.plugin.controllerBearer }}
+            - name: AGENTTEAMS_CONTROLLER_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.manager.plugin.controllerBearer }}
+                  key: token
+            {{- end }}
+            {{- if .Values.manager.plugin.syncBearer }}
+            - name: OPSKEEPER_PLUGIN_SYNC_BEARER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.manager.plugin.syncBearer }}
+                  key: token
+            {{- end }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.manager.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/opskeeper
+            {{- if and .Values.manager.plugin.enabled (eq .Values.manager.plugin.syncMode "worker-http") }}
+            - name: plugin-sync-endpoints
+              mountPath: /etc/opskeeper
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: data
+          {{- if .Values.manager.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "opskeeper.fullname" . }}-manager-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- if and .Values.manager.plugin.enabled (eq .Values.manager.plugin.syncMode "worker-http") }}
+        - name: plugin-sync-endpoints
+          configMap:
+            name: {{ include "opskeeper.fullname" . }}-plugin-sync-endpoints
+            optional: true
+        {{- end }}

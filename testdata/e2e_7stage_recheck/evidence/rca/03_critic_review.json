@@ -1,0 +1,29 @@
+{
+  "phase": "critic",
+  "incident_id": "INC-E2E-7STAGE-RECHECK-001",
+  "trace_id": "deadbeefcafef00dbaadf00ddeadbeef",
+  "span_id": "8a5e1cdc4aaf489c",
+  "checks": {
+    "confidence_threshold": {
+      "actual": 0.75,
+      "threshold": 0.6,
+      "pass": true
+    },
+    "evidence_non_empty": {
+      "actual": 2,
+      "threshold": 1,
+      "pass": true
+    },
+    "remediation_options_present": {
+      "actual": 2,
+      "threshold": 1,
+      "pass": true
+    },
+    "root_cause_has_kind": {
+      "actual": "unknown",
+      "pass": true
+    }
+  },
+  "issues": [],
+  "verdict": "approved"
+}

@@ -69,15 +69,15 @@ def _read_metadata(plugin_yaml: Path) -> tuple[str, str]:
 def _build_qwenpaw_manifest(name: str, version: str) -> bytes:
     manifest = {
         "id": PLUGIN_ID,
-        "name": "OpsKeeper TeamHarness",
+        "name": "Opskeeper TeamHarness",
         "version": version,
         "type": "general",
         "description": (
-            "OpsKeeper RCA/recovery plugin for AgentTeams QwenPaw workers. "
+            "Opskeeper RCA/recovery plugin for AgentTeams QwenPaw workers. "
             "Provides 7 Worker skills + Manager dispatch + stdio MCP proxy to "
             "opskeeper backend /v1/mcp."
         ),
-        "author": "OpsKeeper Plugin Contributors",
+        "author": "opskeeper-v2",
         "entry": {"backend": "plugin.py"},
         "dependencies": [],
         "min_version": "2.0.1",

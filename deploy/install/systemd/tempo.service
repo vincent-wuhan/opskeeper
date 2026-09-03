@@ -1,0 +1,31 @@
+[Unit]
+Description=Tempo (opskeeper trace store)
+Documentation=https://grafana.com/docs/tempo/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=opskeeper-tempo
+Group=opskeeper
+ExecStart=/usr/local/bin/tempo \
+  -config.file=/etc/opskeeper/tempo-config.yaml
+KillMode=mixed
+TimeoutStopSec=30s
+Restart=always
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=opskeeper-tempo
+
+NoNewPrivileges=true
+ProtectSystem=true
+ProtectHome=true
+PrivateTmp=true
+StateDirectory=opskeeper-tempo
+StateDirectoryMode=0755
+ReadWritePaths=/var/lib/opskeeper-tempo
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

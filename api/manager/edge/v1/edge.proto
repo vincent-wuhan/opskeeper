@@ -1,0 +1,113 @@
+syntax = "proto3";
+
+package opskeeper.manager.edge.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/singchia/opskeeper/api/gen/manager/edge/v1;edgev1";
+
+// EdgeService 管理一个 org 下的 edge 设备：注册 / 列表 / 详情 / 删除 / 轮换密钥。
+// org_id 从 URL path（/api/v1/orgs/:org_id/edges/...）与 JWT claims 取，
+// 不在请求体里由用户提供（ADR-003）。
+service EdgeService {
+    // CreateEdge 签发一对新的 AccessKey / SecretKey；SecretKey 仅此响应体中明文返回一次，
+    // 服务端只存 Argon2id 哈希（ADR-001 + ADR-003）。
+    rpc CreateEdge(CreateEdgeRequest) returns (CreateEdgeResponse);
+
+    // ListEdges 分页列出 org 下的 edge，可按在线状态过滤。
+    rpc ListEdges(ListEdgesRequest) returns (ListEdgesResponse);
+
+    // GetEdge 取单个 edge 详情。
+    rpc GetEdge(GetEdgeRequest) returns (GetEdgeResponse);
+
+    // DeleteEdge 永久删除 edge 记录（连带终止该 edge 的在线隧道连接）。
+    rpc DeleteEdge(DeleteEdgeRequest) returns (google.protobuf.Empty);
+
+    // RotateSecret 为现有 edge 重新生成 SecretKey；旧 secret 立刻失效。
+    rpc RotateSecret(RotateSecretRequest) returns (RotateSecretResponse);
+}
+
+// ---------- 领域类型 ----------
+
+// EdgeStatus edge 当前在线状态。
+enum EdgeStatus {
+    EDGE_STATUS_UNSPECIFIED = 0;
+    EDGE_STATUS_ONLINE = 1;
+    EDGE_STATUS_OFFLINE = 2;
+}
+
+// HostInfo edge 汇报的静态主机信息（随 register_edge 上来）。
+message HostInfo {
+    string hostname = 1 [json_name = "hostname"];
+    string os = 2 [json_name = "os"]; // linux / darwin / ...
+    string arch = 3 [json_name = "arch"]; // amd64 / arm64
+    string kernel_version = 4 [json_name = "kernel_version"];
+    uint32 cpu_count = 5 [json_name = "cpu_count"];
+    uint64 mem_total_bytes = 6 [json_name = "mem_total_bytes"];
+}
+
+// Edge 云端记录的 edge 设备。
+message Edge {
+    uint64 id = 1 [json_name = "id"];
+    uint64 org_id = 2 [json_name = "org_id"]; // 响应中只读回显
+    string name = 3 [json_name = "name"]; // 用户起的展示名
+    EdgeStatus status = 4 [json_name = "status"];
+    google.protobuf.Timestamp last_seen_at = 5 [json_name = "last_seen_at"];
+    HostInfo host_info = 6 [json_name = "host_info"];
+    google.protobuf.Timestamp created_at = 7 [json_name = "created_at"];
+    // AccessKey 可在列表 / 详情中回显（非敏感，握手公开用）。SecretKey 绝不回显。
+    string access_key = 8 [json_name = "access_key"];
+}
+
+// ---------- RPC 消息 ----------
+
+message CreateEdgeRequest {
+    string name = 1 [json_name = "name"];
+}
+
+message CreateEdgeResponse {
+    Edge edge = 1 [json_name = "edge"];
+    // 注意：仅此次响应明文返回，客户端必须自行保存；后端只留 Argon2id hash。
+    string access_key = 2 [json_name = "access_key"];
+    string secret_key = 3 [json_name = "secret_key"];
+}
+
+// ListEdgesRequest 过滤条件 + 分页。
+message ListEdgesRequest {
+    // status_filter: online / offline / all（空字符串 = all）。
+    string status_filter = 1 [json_name = "status_filter"];
+    int32 page = 2 [json_name = "page"];
+    int32 page_size = 3 [json_name = "page_size"];
+    // 可选按 name 模糊搜索。
+    string name = 4 [json_name = "name"];
+}
+
+message ListEdgesResponse {
+    repeated Edge edges = 1 [json_name = "edges"];
+    int32 total = 2 [json_name = "total"];
+    int32 page = 3 [json_name = "page"];
+    int32 page_size = 4 [json_name = "page_size"];
+}
+
+message GetEdgeRequest {
+    uint64 id = 1 [json_name = "id"];
+}
+
+message GetEdgeResponse {
+    Edge edge = 1 [json_name = "edge"];
+}
+
+message DeleteEdgeRequest {
+    uint64 id = 1 [json_name = "id"];
+}
+
+message RotateSecretRequest {
+    uint64 id = 1 [json_name = "id"];
+}
+
+message RotateSecretResponse {
+    // 新签发的 secret_key，仅此次响应明文返回。access_key 不变。
+    string secret_key = 1 [json_name = "secret_key"];
+    google.protobuf.Timestamp rotated_at = 2 [json_name = "rotated_at"];
+}

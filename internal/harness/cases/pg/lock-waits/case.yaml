@@ -1,0 +1,29 @@
+id: pg/lock-waits
+description: 模拟 PG 锁等待链（多个事务相互等待形成死锁链）
+severity: P2
+tags: [pg, lock, deadlock]
+prerequisites:
+  - pg.cluster reachable
+  - pg.bench dataset loaded
+inject:
+  - type: pg.inject_lock_chain
+    duration: 180s
+    params:
+      table: orders
+      sessions: 5
+      chain_depth: 4
+expect:
+  time_to_detect: 60
+  time_to_remediate: 120
+  root_cause_lines:
+    - pg.lock_waits
+    - pg.active_sessions
+  remediation_options:
+    - pg.kill_session
+rubric:
+  rca_accuracy: 0.85
+  time_to_remediate: 120
+  no_collateral_damage: true
+metadata:
+  owner: "@opskeeper-oncall"
+  created_at: "2026-07-13"

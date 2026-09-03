@@ -5,7 +5,7 @@ description: 修复执行 worker。执行已获审批的受控恢复动作，如
 
 # opskeeper 修复执行 Worker
 
-本 Worker 由 opskeeper-teamharness 插件提供。SOUL 派生源：OpsKeeper operations repairer role。
+本 Worker 由 opskeeper-teamharness 插件提供。SOUL 派生源：`opskeeper-v2/../../../../agents/specialist-ops.md`。
 
 ## Available Tools (allowTools)
 

@@ -1,0 +1,63 @@
+# golangci-lint 配置（v1.61+）
+# 运行：make lint
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+output:
+  sort-results: true
+
+linters:
+  disable-all: true
+  enable:
+    - gofmt
+    - goimports
+    - govet
+    - staticcheck
+    - errcheck
+    - revive
+    - gosec
+    - sqlclosecheck
+    - misspell
+    - ineffassign
+    - unused
+    - gocyclo
+
+linters-settings:
+  gocyclo:
+    min-complexity: 15
+  goimports:
+    local-prefixes: github.com/vincent-wuhan/opskeeper
+  revive:
+    rules:
+      - name: exported
+        disabled: false
+      - name: var-naming
+      - name: context-as-argument
+      - name: error-return
+      - name: error-naming
+      - name: if-return
+      - name: unused-parameter
+        disabled: true
+  gosec:
+    excludes:
+      - G104 # 已有 errcheck 覆盖
+  misspell:
+    locale: US
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-rules:
+    # 测试文件放宽 gocyclo / gosec / errcheck
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - gosec
+        - errcheck
+        - revive
+    # 允许 G101 在 test / example 中出现硬编码凭据
+    - path: _test\.go
+      text: "G101|G204|G306"

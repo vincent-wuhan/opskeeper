@@ -1,0 +1,25 @@
+{
+  "phase": "critic",
+  "verdict": "approved",
+  "checks": [
+    {
+      "name": "schema_version",
+      "ok": true
+    },
+    {
+      "name": "confidence_min",
+      "ok": true
+    },
+    {
+      "name": "evidence_count",
+      "ok": true
+    },
+    {
+      "name": "remediation_present",
+      "ok": true
+    }
+  ],
+  "concerns": [],
+  "checks_passed": 4,
+  "checks_total": 4
+}

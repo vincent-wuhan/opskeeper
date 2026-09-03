@@ -1,0 +1,41 @@
+{
+  "incident_id": "INC-MULTIAGENT-001",
+  "trace_id": "facadefacadefacadefacadefacade",
+  "stages": [
+    {
+      "role": "alerter",
+      "id": "AL-MULTIAGENT-001",
+      "trace_id": "facadefacadefacadefacadefacade"
+    },
+    {
+      "role": "investigator",
+      "stage": "loop.correlate",
+      "groups": 3
+    },
+    {
+      "role": "investigator",
+      "stage": "loop.investigate",
+      "kind": "pg_long_tx",
+      "confidence": 0.75
+    },
+    {
+      "role": "critic",
+      "verdict": "approved",
+      "checks_passed": 4
+    },
+    {
+      "role": "reviewer",
+      "approved_action": "pg.vacuum_analyze"
+    },
+    {
+      "role": "repairer",
+      "outcome": "success",
+      "action": "pg.vacuum_analyze"
+    },
+    {
+      "role": "verifier",
+      "passed": true,
+      "warning_level": "pass"
+    }
+  ]
+}

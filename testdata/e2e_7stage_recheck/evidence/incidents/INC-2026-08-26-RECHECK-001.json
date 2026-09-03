@@ -1,0 +1,20 @@
+{
+  "phase": "alerter",
+  "incident_id": "INC-E2E-7STAGE-RECHECK-001",
+  "alert": {
+    "alert_id": "AL-2026-08-26-RECHECK-001",
+    "severity": "critical",
+    "resource": "pg:primary",
+    "detected_at": "2026-08-26T14:00:00Z",
+    "summary": "Postgres connection pool exhausted (>95% used, 30+ long-running tx)",
+    "labels": {
+      "env": "prod",
+      "team": "checkout"
+    }
+  },
+  "trace_id": "deadbeefcafef00dbaadf00ddeadbeef",
+  "span_id": "3dbad86cd1545755",
+  "ts": "2026-08-26T14:00:01Z",
+  "decision": "dispatched_to_investigator",
+  "reason": "severity=critical & resource matches opskeeper inventory"
+}

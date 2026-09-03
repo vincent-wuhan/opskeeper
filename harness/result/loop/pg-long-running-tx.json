@@ -1,0 +1,106 @@
+{
+  "incident_id": "harness-pg-long-running-tx-1786433176",
+  "case_id": "pg/long-running-tx",
+  "mode": "loop",
+  "final_phase": "postmortem",
+  "passed": true,
+  "started_at": "2026-08-11T15:26:16.289592+08:00",
+  "finished_at": "2026-08-11T15:26:16.290465167+08:00",
+  "duration_ms": 0,
+  "phases": [
+    {
+      "phase": "detected",
+      "status": "success",
+      "started_at": "2026-08-11T15:26:16.289592+08:00",
+      "duration_ms": 34
+    },
+    {
+      "phase": "correlated",
+      "status": "success",
+      "started_at": "2026-08-11T15:26:16.323592+08:00",
+      "duration_ms": 40
+    },
+    {
+      "phase": "investigated",
+      "status": "success",
+      "started_at": "2026-08-11T15:26:16.363592+08:00",
+      "duration_ms": 46
+    },
+    {
+      "phase": "critiqued",
+      "status": "success",
+      "started_at": "2026-08-11T15:26:16.409592+08:00",
+      "duration_ms": 37
+    },
+    {
+      "phase": "approved",
+      "status": "success",
+      "started_at": "2026-08-11T15:26:16.446592+08:00",
+      "duration_ms": 34
+    },
+    {
+      "phase": "recovered",
+      "status": "success",
+      "started_at": "2026-08-11T15:26:16.480592+08:00",
+      "duration_ms": 37
+    },
+    {
+      "phase": "postmortem",
+      "status": "success",
+      "started_at": "2026-08-11T15:26:16.517592+08:00",
+      "duration_ms": 40
+    }
+  ],
+  "durations": {
+    "approved": 34,
+    "correlated": 40,
+    "critiqued": 37,
+    "detected": 34,
+    "investigated": 46,
+    "postmortem": 40,
+    "recovered": 37
+  },
+  "contract_summary": [
+    {
+      "phase": "investigated",
+      "type": "RootCauseJSON",
+      "schema_version": "v1"
+    },
+    {
+      "phase": "critiqued",
+      "type": "CritiqueScore",
+      "schema_version": "v1"
+    },
+    {
+      "phase": "approved",
+      "type": "ApprovalDecision",
+      "schema_version": "v1"
+    },
+    {
+      "phase": "recovered",
+      "type": "VerifiedDelta",
+      "schema_version": "v1"
+    },
+    {
+      "phase": "postmortem",
+      "type": "PostmortemDoc",
+      "schema_version": "v1"
+    }
+  ],
+  "judge_scores": {
+    "overall": 0,
+    "dimensions": null,
+    "judges_used": null,
+    "flagged": false
+  },
+  "rubric": {
+    "rca_accuracy": 1,
+    "rca_accuracy_reason": "synthesized from dry-run terminal phase",
+    "time_to_remediate": "0s",
+    "time_to_remediate_sec": 0,
+    "approval_rate": 1,
+    "recovery_pass_rate": 1,
+    "kb_hit_rate_reason": "loop mode: kb_hit_rate is chat-only",
+    "follow_up_depth_reason": "loop mode: follow_up_depth is chat-only"
+  }
+}

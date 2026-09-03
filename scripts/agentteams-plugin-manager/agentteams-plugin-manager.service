@@ -1,0 +1,34 @@
+[Unit]
+Description=AgentTeams Plugin Manager — independent microservice bridging Dashboard UI and QwenPaw worker plugin lifecycle
+Documentation=https://github.com/opskeeper-removed/opskeeper
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/agentteams-plugin-manager.env
+ExecStart=/usr/local/bin/agentteams-plugin-manager
+Restart=on-failure
+RestartSec=3
+StartLimitIntervalSec=60
+StartLimitBurst=5
+# Hardening
+NoNewPrivileges=false
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# Write paths must be writable — overrides the strict default
+ReadWritePaths=/var/lib/agentteams-plugin-manager /var/log/agentteams-plugin-manager
+# Slightly relaxed because we listen on a non-default high port
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+# Resource limits
+LimitNOFILE=65536
+
+# Logging — journal captures stderr; rotation handled by journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=agentteams-plugin-manager
+
+[Install]
+WantedBy=multi-user.target

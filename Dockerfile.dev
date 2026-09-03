@@ -1,0 +1,46 @@
+# opskeeper demo 镜像 —— 仅服务于仓库根 docker-compose.yml
+#
+# demo 阶段直接 `go run ./cmd/opskeeper` 跑源码，避免编译成二进制再启动
+# （热改即生效，方便现场演示）。生产镜像走 deploy/Dockerfile.opskeeper（多阶段、
+# distroless、cgo + onnxruntime）。
+#
+# Build context 必须为仓库根（与 docker-compose.yml 中的 `build: context: .` 配合）。
+
+FROM golang:1.25-bookworm
+
+ARG TARGETARCH
+ARG ONNXRUNTIME_VERSION=1.20.1
+
+RUN set -eux; \
+    case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+      amd64|x86_64) ONNX_ARCH=x64; ONNX_PACKAGE_ARCH=amd64 ;; \
+      arm64|aarch64) ONNX_ARCH=aarch64; ONNX_PACKAGE_ARCH=aarch64 ;; \
+      *) echo "unsupported architecture ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/onnxruntime.tgz \
+      "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRUNTIME_VERSION}/onnxruntime-linux-${ONNX_PACKAGE_ARCH}-${ONNXRUNTIME_VERSION}.tgz"; \
+    tar -xzf /tmp/onnxruntime.tgz -C /tmp; \
+    install -m 0755 "/tmp/onnxruntime-linux-${ONNX_ARCH}-${ONNXRUNTIME_VERSION}/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION}" /usr/local/lib/; \
+    ln -sf "/usr/local/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION}" /usr/local/lib/libonnxruntime.so; \
+    rm -rf /tmp/onnxruntime.tgz "/tmp/onnxruntime-linux-${ONNX_ARCH}-${ONNXRUNTIME_VERSION}"; \
+    ldconfig
+
+ENV CGO_ENABLED=1 \
+    GOFLAGS=-mod=readonly \
+    GOPROXY=https://goproxy.cn,direct \
+    ONNX_PATH=/usr/local/lib/libonnxruntime.so
+
+WORKDIR /src
+
+# 先拷 go.mod / go.sum 利用 docker 缓存层
+COPY go.mod go.sum ./
+RUN go mod download
+
+# 再拷全部源码
+COPY . .
+
+# opskeeper HTTP API + Prometheus /metrics；8091 供 host-fixture controller
+EXPOSE 8080 8091 9100
+
+# compose command 会覆盖：["go", "run", "./cmd/opskeeper"]
+CMD ["go", "run", "./cmd/opskeeper"]

@@ -1,0 +1,165 @@
+// These messages are transported over a geminio tunnel (not gRPC).
+// Encoded as JSON on the wire in MVP (see ADR-001); may switch to proto binary in Phase 2.
+//
+// No gRPC service is declared here — cloud and edge register handlers by method name
+// on geminio End objects; these messages are just the request / response body shapes.
+syntax = "proto3";
+
+package opskeeper.tunnel.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/singchia/opskeeper/api/gen/tunnel/v1;tunnelv1";
+
+// ============================================================
+// 共用类型（刻意不 import manager/edge 或 manager/metric —
+// 让 tunnel proto 自包含、版本演进独立）。
+// ============================================================
+
+// HostInfo edge 的静态主机信息；与 manager/edge/v1.HostInfo 同形 —— 故意复制，
+// 不跨包 import，保 tunnel proto 自包含。
+message HostInfo {
+    string hostname = 1 [json_name = "hostname"];
+    string os = 2 [json_name = "os"];
+    string arch = 3 [json_name = "arch"];
+    string kernel_version = 4 [json_name = "kernel_version"];
+    uint32 cpu_count = 5 [json_name = "cpu_count"];
+    uint64 mem_total_bytes = 6 [json_name = "mem_total_bytes"];
+}
+
+// HostMetricPoint edge → cloud 上报的主机指标点；与 manager/metric/v1 同形，刻意复制。
+message HostMetricPoint {
+    google.protobuf.Timestamp ts = 1 [json_name = "ts"];
+    float cpu_pct = 2 [json_name = "cpu_pct"];
+    float mem_pct = 3 [json_name = "mem_pct"];
+    float load1 = 4 [json_name = "load1"];
+    float load5 = 5 [json_name = "load5"];
+    float load15 = 6 [json_name = "load15"];
+    uint64 net_rx_bps = 7 [json_name = "net_rx_bps"];
+    uint64 net_tx_bps = 8 [json_name = "net_tx_bps"];
+    float disk_used_pct = 9 [json_name = "disk_used_pct"];
+}
+
+// ============================================================
+// edge → cloud：首次注册 / 重连
+// geminio method: "register_edge"
+// ============================================================
+
+message RegisterEdgeRequest {
+    string access_key = 1 [json_name = "access_key"];
+    string secret_key = 2 [json_name = "secret_key"];
+    HostInfo host_info = 3 [json_name = "host_info"];
+    // edge 端进程版本（便于云端做兼容性告警）。
+    string agent_version = 4 [json_name = "agent_version"];
+}
+
+message RegisterEdgeResponse {
+    uint64 edge_id = 1 [json_name = "edge_id"];
+    uint64 org_id = 2 [json_name = "org_id"];
+    google.protobuf.Timestamp server_time = 3 [json_name = "server_time"];
+}
+
+// ============================================================
+// edge → cloud：30s 心跳
+// geminio method: "heartbeat"
+// ============================================================
+
+message HeartbeatRequest {
+    google.protobuf.Timestamp ts = 1 [json_name = "ts"];
+    // 可选状态位（字符串 key → bool / 数值），留作边端自报异常（如 "collector_lag": true）。
+    map<string, string> status_flags = 2 [json_name = "status_flags"];
+}
+
+message HeartbeatResponse {}
+
+// ============================================================
+// edge → cloud：批量推主机指标（10s 周期）
+// geminio method: "push_host_metrics"
+// ============================================================
+
+message PushHostMetricsRequest {
+    repeated HostMetricPoint points = 1 [json_name = "points"];
+}
+
+message PushHostMetricsResponse {
+    // 服务端实际落库的条数（批内被去重 / 拒收的不计）。
+    uint32 accepted = 1 [json_name = "accepted"];
+}
+
+// ============================================================
+// cloud → edge：取实时主机负载
+// geminio method: "get_host_load"
+// ============================================================
+
+message GetHostLoadRequest {}
+
+message GetHostLoadResponse {
+    float cpu_pct = 1 [json_name = "cpu_pct"];
+    float mem_pct = 2 [json_name = "mem_pct"];
+    float load1 = 3 [json_name = "load1"];
+    float load5 = 4 [json_name = "load5"];
+    float load15 = 5 [json_name = "load15"];
+    google.protobuf.Timestamp sampled_at = 6 [json_name = "sampled_at"];
+}
+
+// ============================================================
+// cloud → edge：进程 top
+// geminio method: "get_process_list"
+// ============================================================
+
+// ProcessSortBy 进程排序键。
+enum ProcessSortBy {
+    PROCESS_SORT_BY_UNSPECIFIED = 0;
+    PROCESS_SORT_BY_CPU = 1;
+    PROCESS_SORT_BY_MEM = 2;
+}
+
+message ProcessInfo {
+    int32 pid = 1 [json_name = "pid"];
+    string name = 2 [json_name = "name"];
+    string cmdline = 3 [json_name = "cmdline"];
+    float cpu_pct = 4 [json_name = "cpu_pct"];
+    float mem_pct = 5 [json_name = "mem_pct"];
+    string user = 6 [json_name = "user"];
+}
+
+message GetProcessListRequest {
+    uint32 top_n = 1 [json_name = "top_n"];
+    ProcessSortBy sort_by = 2 [json_name = "sort_by"];
+}
+
+message GetProcessListResponse {
+    repeated ProcessInfo processes = 1 [json_name = "processes"];
+    google.protobuf.Timestamp sampled_at = 2 [json_name = "sampled_at"];
+}
+
+// ============================================================
+// cloud → edge：netstat 快照
+// geminio method: "get_netstat"
+// ============================================================
+
+// ListeningSocket 监听中的本地套接字。
+message ListeningSocket {
+    string protocol = 1 [json_name = "protocol"]; // tcp / tcp6 / udp / udp6
+    string local_addr = 2 [json_name = "local_addr"]; // ip:port
+    int32 pid = 3 [json_name = "pid"];
+    string process_name = 4 [json_name = "process_name"];
+}
+
+// EstablishedConnection 已建立的连接。
+message EstablishedConnection {
+    string protocol = 1 [json_name = "protocol"];
+    string local_addr = 2 [json_name = "local_addr"];
+    string remote_addr = 3 [json_name = "remote_addr"];
+    string state = 4 [json_name = "state"]; // ESTABLISHED / TIME_WAIT / ...
+    int32 pid = 5 [json_name = "pid"];
+    string process_name = 6 [json_name = "process_name"];
+}
+
+message GetNetstatRequest {}
+
+message GetNetstatResponse {
+    repeated ListeningSocket listening = 1 [json_name = "listening"];
+    repeated EstablishedConnection established = 2 [json_name = "established"];
+    google.protobuf.Timestamp sampled_at = 3 [json_name = "sampled_at"];
+}

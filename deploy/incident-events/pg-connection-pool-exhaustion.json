@@ -1,0 +1,72 @@
+{
+  "id": "pg-connection-pool-exhaustion",
+  "title": "Application pool waits exhaust PostgreSQL connection budget",
+  "fault_family": "capacity/connection_pool",
+  "source_basis": "Synthetic scenario constructed from common PostgreSQL pool saturation behavior; no customer telemetry is used.",
+  "assumptions": [
+    "The application pool limit is 90 and PostgreSQL max_connections is 120.",
+    "Connection state counts are sampled at one-minute intervals from pg_stat_activity.",
+    "Recovery requires a new pool request to succeed and wait latency to return below 100 milliseconds."
+  ],
+  "created_at": "2026-08-29T12:00:00Z",
+  "input": {
+    "alert": {
+      "incident_id": "INC-PG-POOL-001",
+      "tenant_id": "opskeeper-demo",
+      "severity": "critical",
+      "resource": "pg-primary/orders",
+      "summary": "Connection pool has 71 waiters and PostgreSQL active connections are 116/120.",
+      "fired_at": "2026-08-29T12:00:00Z",
+      "evidence_ref": "evidence/incidents/INC-PG-POOL-001/alert.json",
+      "trace_id": "trace-inc-pg-pool-001"
+    },
+    "metric_window": [
+      {"observed_at":"2026-08-29T11:58:00Z","name":"pg_connections_active","value":104,"unit":"connections","labels":{"database":"orders"},"evidence_ref":"evidence/metrics/pg-pool/11-58.json"},
+      {"observed_at":"2026-08-29T11:59:00Z","name":"app_pool_waiters","value":38,"unit":"requests","labels":{"pool":"orders-api"},"evidence_ref":"evidence/metrics/pg-pool/11-59.json"},
+      {"observed_at":"2026-08-29T12:00:00Z","name":"pg_connections_active","value":116,"unit":"connections","labels":{"database":"orders"},"evidence_ref":"evidence/metrics/pg-pool/12-00.json"},
+      {"observed_at":"2026-08-29T12:00:00Z","name":"app_pool_waiters","value":71,"unit":"requests","labels":{"pool":"orders-api"},"evidence_ref":"evidence/metrics/pg-pool/12-00.json"},
+      {"observed_at":"2026-08-29T12:01:00Z","name":"app_pool_wait_latency_p95","value":8400,"unit":"milliseconds","labels":{"pool":"orders-api"},"evidence_ref":"evidence/metrics/pg-pool/12-01.json"}
+    ],
+    "session_snapshot": {
+      "collected_at":"2026-08-29T12:00:20Z",
+      "summary":{"active":116,"idle_in_transaction":2,"waiting":31,"max_connections":120},
+      "records":[
+        {"pid":81201,"role":"client","state":"active","wait_event_type":"Client","wait_event":"ClientRead","application_name":"orders-api","transaction_age":"00:00:04"},
+        {"pid":81202,"role":"client","state":"idle in transaction","wait_event_type":"Client","wait_event":"ClientRead","application_name":"orders-worker","transaction_age":"00:01:12"}
+      ],
+      "evidence_ref":"evidence/incidents/INC-PG-POOL-001/pg-stat-activity.json"
+    },
+    "lock_snapshot": {
+      "collected_at":"2026-08-29T12:00:20Z",
+      "summary":{"blocked_sessions":0,"granted_locks":211,"waiting_locks":0},
+      "records":[],
+      "evidence_ref":"evidence/incidents/INC-PG-POOL-001/pg-locks.json"
+    },
+    "topology":{
+      "fingerprint":"pg16-primary-app-pool-v3",
+      "components":[
+        {"role":"primary","name":"pg-primary/orders","region":"cn-demo","readOnly":false},
+        {"role":"application_pool","name":"orders-api/pool","region":"cn-demo","parent":"pg-primary/orders","readOnly":false}
+      ]
+    },
+    "versions":{"database":"PostgreSQL","engine":"Community","major":16,"minor":4,"patch":0,"agent":"opskeeper-0.9","application":"orders-api-2.7.1"}
+  },
+  "recovery_gate":{
+    "closure_policy":"Close only after both pool capacity and post-action latency observations pass; command completion alone is not recovery.",
+    "required_observations":["new pool request succeeds","app_pool_waiters < 10","app_pool_wait_latency_p95 < 100ms"],
+    "thresholds":{"app_pool_waiters":10,"app_pool_wait_latency_p95_ms":100},
+    "evidence_refs":["evidence/incidents/INC-PG-POOL-001/recovery-check.json"]
+  },
+  "postmortem":{
+    "id":"017f2b01-000a-4000-8000-000000000001","tenant_id":"opskeeper-demo","incident_id":"INC-PG-POOL-001",
+    "database_type":"PostgreSQL","database_version":"16.4","topology_fingerprint":"pg16-primary-app-pool-v3","fault_fingerprint":"pool_capacity_exhausted",
+    "symptom":{"summary":"Pool waiters rise while active connections approach PostgreSQL max_connections.","metric_names":["pg_connections_active","app_pool_waiters","app_pool_wait_latency_p95"],"snapshot_refs":["evidence/incidents/INC-PG-POOL-001/pg-stat-activity.json"]},
+    "diagnosis":{"root_cause":"Application pool capacity exhausted with two idle-in-transaction sessions retaining connection budget.","previously_misdiagnosed":["database_deadlock"],"evidence_refs":["evidence/incidents/INC-PG-POOL-001/diagnosis.json"]},
+    "effective_actions":[{"fingerprint":"pool:resize:90:120;session:recycle_idle","summary":"Resize the application pool and recycle idle sessions.","evidence_ref":"evidence/incidents/INC-PG-POOL-001/action.json"}],
+    "ineffective_actions":[{"fingerprint":"db:restart_primary","summary":"Restart was rejected because it would interrupt healthy transactions.","evidence_ref":"evidence/incidents/INC-PG-POOL-001/rejected-action.json"}],
+    "recovery_signals":[{"name":"new pool request succeeded with wait latency below 100ms","observed_at":"2026-08-29T12:05:00Z","evidence_ref":"evidence/incidents/INC-PG-POOL-001/recovery-check.json"}],
+    "applicable_boundary":{"database_types":["PostgreSQL"],"topology_fingerprints":["pg16-primary-app-pool-v3"],"version_ranges":["16.x"]},
+    "source_evidence":[{"kind":"timeline","ref":"evidence/incidents/INC-PG-POOL-001/timeline.jsonl"}],
+    "confirmed_by":"dba-oncall","confirmed_at":"2026-08-29T12:05:30Z"
+  }
+}

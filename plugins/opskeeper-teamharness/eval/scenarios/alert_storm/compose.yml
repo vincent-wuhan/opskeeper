@@ -1,4 +1,4 @@
-# OpsKeeper TeamHarness eval scenario 01 — alert_storm
+# OpsKeeper evaluation scenario 01 — alert_storm
 #
 # 真实环境验证：高频告警 → alerter dedup → 派活决策正确性
 #

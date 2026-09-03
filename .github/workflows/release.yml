@@ -1,0 +1,232 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }} package
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            platform: linux/arm64
+            runner: ubuntu-24.04-arm
+
+    env:
+      FRONTIER_VERSION: v1.2.4
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set release paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "FRONTIER_SRC=${RUNNER_TEMP}/frontier" >> "$GITHUB_ENV"
+
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "release tag must match vMAJOR.MINOR.PATCH, got: $tag" >&2
+            exit 2
+          fi
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$version" != "$tag" ]]; then
+            echo "VERSION ($version) must match tag ($tag)" >&2
+            exit 2
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+          cache: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Install host tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xz-utils unzip
+
+      - name: Checkout frontier
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$FRONTIER_VERSION" https://github.com/singchia/frontier.git "$FRONTIER_SRC"
+
+      - name: Fetch bundled embedding model
+        shell: bash
+        run: |
+          set -euo pipefail
+          make fetch-embedding-model
+
+      - name: Build ${{ matrix.arch }} package
+        shell: bash
+        run: |
+          set -euo pipefail
+          make package TARGET_OS=linux TARGET_ARCH=${{ matrix.arch }} PLATFORM=${{ matrix.platform }}
+
+      - name: Verify package
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          arch="${{ matrix.arch }}"
+          test -s "dist/out/opskeeper-${tag}-linux-${arch}.tar.xz"
+          test -s "dist/out/opskeeper-${tag}-linux-${arch}.tar.xz.sha256"
+          (cd dist/out && sha256sum -c "opskeeper-${tag}-linux-${arch}.tar.xz.sha256")
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-${{ matrix.arch }}
+          path: |
+            dist/out/opskeeper-${{ steps.tag.outputs.tag }}-linux-${{ matrix.arch }}.tar.xz
+            dist/out/opskeeper-${{ steps.tag.outputs.tag }}-linux-${{ matrix.arch }}.tar.xz.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish release
+    runs-on: ubuntu-24.04
+    needs: build
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "release tag must match vMAJOR.MINOR.PATCH, got: $tag" >&2
+            exit 2
+          fi
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$version" != "$tag" ]]; then
+            echo "VERSION ($version) must match tag ($tag)" >&2
+            exit 2
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-assets-*
+          path: dist/out
+          merge-multiple: true
+
+      - name: Verify release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          for arch in amd64 arm64; do
+            test -s "dist/out/opskeeper-${tag}-linux-${arch}.tar.xz"
+            test -s "dist/out/opskeeper-${tag}-linux-${arch}.tar.xz.sha256"
+            (cd dist/out && sha256sum -c "opskeeper-${tag}-linux-${arch}.tar.xz.sha256")
+          done
+
+      - name: Write release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          published_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          cat > dist/out/latest.json <<EOF
+          {
+            "version": "${tag}",
+            "tag_name": "${tag}",
+            "release_url": "https://github.com/vincent-wuhan/opskeeper/releases/tag/${tag}",
+            "published_at": "${published_at}",
+            "download_base": "https://opskeeper.cloud/dl",
+            "assets": {
+              "linux-amd64": {
+                "package": "opskeeper-${tag}-linux-amd64.tar.xz",
+                "sha256": "opskeeper-${tag}-linux-amd64.tar.xz.sha256"
+              },
+              "linux-arm64": {
+                "package": "opskeeper-${tag}-linux-arm64.tar.xz",
+                "sha256": "opskeeper-${tag}-linux-arm64.tar.xz.sha256"
+              }
+            }
+          }
+          EOF
+          test -s dist/out/latest.json
+
+      - name: Write release install notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          cat > "$RUNNER_TEMP/release-notes.md" <<EOF
+          ## Install
+
+          Ubuntu 22.04+, Debian 12+, RHEL/Rocky 9 are supported.
+
+          ### AMD64
+          \`\`\`bash
+          wget https://github.com/vincent-wuhan/opskeeper/releases/download/${tag}/opskeeper-${tag}-linux-amd64.tar.xz
+          tar -xf opskeeper-${tag}-linux-amd64.tar.xz && cd opskeeper-${tag}-linux-amd64 && sudo ./install.sh
+          \`\`\`
+
+          ### ARM64
+          \`\`\`bash
+          wget https://github.com/vincent-wuhan/opskeeper/releases/download/${tag}/opskeeper-${tag}-linux-arm64.tar.xz
+          tar -xf opskeeper-${tag}-linux-arm64.tar.xz && cd opskeeper-${tag}-linux-arm64 && sudo ./install.sh
+          \`\`\`
+          EOF
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          release_notes="$(cat "$RUNNER_TEMP/release-notes.md")"
+          gh release create "$tag" \
+            "dist/out/opskeeper-${tag}-linux-amd64.tar.xz" \
+            "dist/out/opskeeper-${tag}-linux-amd64.tar.xz.sha256" \
+            "dist/out/opskeeper-${tag}-linux-arm64.tar.xz" \
+            "dist/out/opskeeper-${tag}-linux-arm64.tar.xz.sha256" \
+            "dist/out/latest.json" \
+            --verify-tag \
+            --title "Opskeeper ${tag}" \
+            --generate-notes \
+            --notes "$release_notes"

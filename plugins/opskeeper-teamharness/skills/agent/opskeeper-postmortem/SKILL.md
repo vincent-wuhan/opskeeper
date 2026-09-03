@@ -5,7 +5,7 @@ description: 事故复盘 worker。verifier 通过后接管，产出 postmortem.
 
 # opskeeper 事故复盘 Worker
 
-本 Worker 由 opskeeper-teamharness 插件提供。SOUL 派生源：OpsKeeper postmortem writer role。
+本 Worker 由 opskeeper-teamharness 插件提供。SOUL 派生源：`opskeeper-v2/../../../../agents/postmortem-writer.md`。
 
 ## Available Tools (allowTools)
 

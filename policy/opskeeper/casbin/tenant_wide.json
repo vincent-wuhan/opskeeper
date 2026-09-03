@@ -1,0 +1,6 @@
+{
+  "policies": [
+    {"role":"opskeeper-admin","resource":"tenant_wide","action":"approve","effect":"allow","requires":["opskeeper-admin","opskeeper-observer"]},
+    {"role":"opskeeper-observer","resource":"tenant_wide","action":"approve","effect":"allow","requires":["opskeeper-admin","opskeeper-observer"]}
+  ]
+}

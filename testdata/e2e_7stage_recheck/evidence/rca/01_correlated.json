@@ -1,0 +1,48 @@
+{
+  "correlated_groups": [
+    {
+      "alert_ids": [
+        "AL-2026-08-26-RECHECK-001"
+      ],
+      "confidence": 0.75,
+      "fingerprint": "49c0657e6312f8f4e80271f0abb89bfb",
+      "resource_type": "pg",
+      "root_hypothesis": "Postgres connection pool exhausted (>95% used, 30+ long-running tx)",
+      "target": "pg:primary",
+      "time_window": {
+        "end": "2026-08-26T14:00:00Z",
+        "start": "2026-08-26T14:00:00Z"
+      }
+    },
+    {
+      "alert_ids": [
+        "AL-2026-08-26-RECHECK-002"
+      ],
+      "confidence": 0.75,
+      "fingerprint": "1ae9d1db25740e4045bfb979f489d26a",
+      "resource_type": "pg",
+      "root_hypothesis": "Postgres connection pool utilization above threshold",
+      "target": "pg:primary",
+      "time_window": {
+        "end": "2026-08-26T14:00:30Z",
+        "start": "2026-08-26T14:00:30Z"
+      }
+    },
+    {
+      "alert_ids": [
+        "AL-2026-08-26-RECHECK-003"
+      ],
+      "confidence": 0.75,
+      "fingerprint": "7da9391a12ee530da73e027b50619d16",
+      "resource_type": "pg",
+      "root_hypothesis": "Postgres replication lag spike (>30s)",
+      "target": "pg:replica",
+      "time_window": {
+        "end": "2026-08-26T14:01:00Z",
+        "start": "2026-08-26T14:01:00Z"
+      }
+    }
+  ],
+  "dedup_reason": "same resource and normalized summary within 5m0s",
+  "severity": "critical"
+}

@@ -1,0 +1,67 @@
+{
+  "id":"pg-lock-wait-long-transaction",
+  "title":"Long transaction blocks DDL and creates a lock convoy",
+  "fault_family":"concurrency/lock_wait",
+  "source_basis":"Synthetic scenario modeled on PostgreSQL row and relation lock behavior; no named production incident is reproduced.",
+  "assumptions":[
+    "The blocking transaction holds an ACCESS EXCLUSIVE lock while preparing a large batch update.",
+    "The approved action targets only the confirmed blocking PID.",
+    "Closure requires both lock waits and oldest transaction age to recover."
+  ],
+  "created_at":"2026-08-29T13:00:00Z",
+  "input":{
+    "alert":{
+      "incident_id":"INC-PG-LOCK-002","tenant_id":"opskeeper-demo","severity":"critical","resource":"pg-primary/orders/order_items",
+      "summary":"18 sessions are blocked behind PID 83012 for up to 212 seconds.",
+      "fired_at":"2026-08-29T13:00:00Z","evidence_ref":"evidence/incidents/INC-PG-LOCK-002/alert.json","trace_id":"trace-inc-pg-lock-002"
+    },
+    "metric_window":[
+      {"observed_at":"2026-08-29T12:58:00Z","name":"pg_lock_waiting_sessions","value":4,"unit":"sessions","labels":{"database":"orders"},"evidence_ref":"evidence/metrics/pg-lock/12-58.json"},
+      {"observed_at":"2026-08-29T12:59:00Z","name":"pg_lock_waiting_sessions","value":11,"unit":"sessions","labels":{"database":"orders"},"evidence_ref":"evidence/metrics/pg-lock/12-59.json"},
+      {"observed_at":"2026-08-29T13:00:00Z","name":"pg_lock_waiting_sessions","value":18,"unit":"sessions","labels":{"database":"orders"},"evidence_ref":"evidence/metrics/pg-lock/13-00.json"},
+      {"observed_at":"2026-08-29T13:00:00Z","name":"pg_oldest_transaction_seconds","value":212,"unit":"seconds","labels":{"database":"orders"},"evidence_ref":"evidence/metrics/pg-lock/13-00.json"},
+      {"observed_at":"2026-08-29T13:00:10Z","name":"business_write_latency_p95","value":7800,"unit":"milliseconds","labels":{"service":"orders-api"},"evidence_ref":"evidence/metrics/pg-lock/13-00-10.json"}
+    ],
+    "session_snapshot":{
+      "collected_at":"2026-08-29T13:00:10Z",
+      "summary":{"active":32,"idle_in_transaction":1,"waiting":18,"max_connections":120},
+      "records":[
+        {"pid":83012,"role":"blocking","state":"idle in transaction","wait_event_type":"Client","wait_event":"ClientRead","application_name":"orders-batch","transaction_age":"00:03:32"},
+        {"pid":83044,"role":"blocked","state":"active","wait_event_type":"Lock","wait_event":"relation","application_name":"orders-migration","transaction_age":"00:00:00"}
+      ],
+      "evidence_ref":"evidence/incidents/INC-PG-LOCK-002/pg-stat-activity.json"
+    },
+    "lock_snapshot":{
+      "collected_at":"2026-08-29T13:00:10Z",
+      "summary":{"blocked_sessions":18,"waiting_locks":18,"oldest_wait_seconds":212},
+      "records":[
+        {"lock_type":"transactionid","database":"orders","relation":"order_items","mode":"ShareLock","granted":false,"blocked_pid":83044,"blocking_pid":83012,"wait_time":"00:03:32"},
+        {"lock_type":"relation","database":"orders","relation":"order_items","mode":"AccessExclusiveLock","granted":true,"blocked_pid":0,"blocking_pid":83012,"wait_time":"00:00:00"}
+      ],
+      "evidence_ref":"evidence/incidents/INC-PG-LOCK-002/pg-locks.json"
+    },
+    "topology":{"fingerprint":"pg16-primary-migrations-v5","components":[
+      {"role":"primary","name":"pg-primary/orders","region":"cn-demo","readOnly":false},
+      {"role":"application","name":"orders-migration","region":"cn-demo","parent":"pg-primary/orders","readOnly":false}
+    ]},
+    "versions":{"database":"PostgreSQL","engine":"Community","major":16,"minor":4,"patch":0,"agent":"opskeeper-0.9","application":"orders-migration-1.12.0"}
+  },
+  "recovery_gate":{
+    "closure_policy":"Terminate only the confirmed blocking transaction, then require fresh lock and business observations before closure.",
+    "required_observations":["pg_lock_waiting_sessions == 0","oldest transaction age < 30 seconds","business write latency recovers"],
+    "thresholds":{"pg_lock_waiting_sessions":0,"pg_oldest_transaction_seconds":30,"business_write_latency_p95_ms":500},
+    "evidence_refs":["evidence/incidents/INC-PG-LOCK-002/recovery-check.json"]
+  },
+  "postmortem":{
+    "id":"017f2b01-010a-4000-8000-000000000001","tenant_id":"opskeeper-demo","incident_id":"INC-PG-LOCK-002",
+    "database_type":"PostgreSQL","database_version":"16.4","topology_fingerprint":"pg16-primary-migrations-v5","fault_fingerprint":"lock_wait_long_transaction",
+    "symptom":{"summary":"Multiple sessions wait behind one long transaction holding relation locks.","metric_names":["pg_lock_waiting_sessions","pg_oldest_transaction_seconds","business_write_latency_p95"],"snapshot_refs":["evidence/incidents/INC-PG-LOCK-002/pg-locks.json"]},
+    "diagnosis":{"root_cause":"PID 83012 remained idle in transaction while holding an ACCESS EXCLUSIVE lock on order_items.","previously_misdiagnosed":["cpu_saturation"],"evidence_refs":["evidence/incidents/INC-PG-LOCK-002/diagnosis.json"]},
+    "effective_actions":[{"fingerprint":"pg:terminate_backend:83012","summary":"Terminate only the confirmed blocking transaction.","evidence_ref":"evidence/incidents/INC-PG-LOCK-002/action.json"}],
+    "ineffective_actions":[{"fingerprint":"db:restart_all_blocked","summary":"Restarting blocked sessions would not release the blocker safely.","evidence_ref":"evidence/incidents/INC-PG-LOCK-002/rejected-action.json"}],
+    "recovery_signals":[{"name":"lock waits reached zero and business write latency recovered","observed_at":"2026-08-29T13:04:00Z","evidence_ref":"evidence/incidents/INC-PG-LOCK-002/recovery-check.json"}],
+    "applicable_boundary":{"database_types":["PostgreSQL"],"topology_fingerprints":["pg16-primary-migrations-v5"],"version_ranges":["16.x"]},
+    "source_evidence":[{"kind":"timeline","ref":"evidence/incidents/INC-PG-LOCK-002/timeline.jsonl"}],
+    "confirmed_by":"dba-oncall","confirmed_at":"2026-08-29T13:04:30Z"
+  }
+}

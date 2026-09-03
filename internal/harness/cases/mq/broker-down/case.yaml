@@ -1,0 +1,26 @@
+id: mq/broker-down
+description: 模拟 Kafka broker 节点宕机
+severity: P1
+tags: [kafka, broker-down, ha]
+prerequisites:
+  - kafka.cluster reachable
+inject:
+  - type: kafka.kill_broker
+    duration: 300s
+    params:
+      broker_id: 2
+expect:
+  time_to_detect: 60
+  time_to_remediate: 180
+  root_cause_lines:
+    - kafka.broker_skew
+    - kafka.rebalance_history
+  remediation_options:
+    - kafka.restart_broker
+rubric:
+  rca_accuracy: 0.85
+  time_to_remediate: 180
+  no_collateral_damage: true
+metadata:
+  owner: "@opskeeper-oncall"
+  created_at: "2026-07-13"

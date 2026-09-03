@@ -1,0 +1,48 @@
+{
+  "correlated_groups": [
+    {
+      "alert_ids": [
+        "AL-MULTIAGENT-001"
+      ],
+      "confidence": 0.75,
+      "fingerprint": "220ae1f854c4a8915dddf986d4f4f9a8",
+      "resource_type": "pg",
+      "root_hypothesis": "Multi-agent test: pg connection pool exhausted (>95%, 30+ long tx)",
+      "target": "pg:primary",
+      "time_window": {
+        "end": "2026-08-27T00:00:00Z",
+        "start": "2026-08-27T00:00:00Z"
+      }
+    },
+    {
+      "alert_ids": [
+        "AL-MULTIAGENT-002"
+      ],
+      "confidence": 0.75,
+      "fingerprint": "cd4cb48e7b54d09c594d756d8165e83c",
+      "resource_type": "pg",
+      "root_hypothesis": "connection pool util above threshold",
+      "target": "pg:primary",
+      "time_window": {
+        "end": "2026-08-27T00:00:30Z",
+        "start": "2026-08-27T00:00:30Z"
+      }
+    },
+    {
+      "alert_ids": [
+        "AL-MULTIAGENT-003"
+      ],
+      "confidence": 0.75,
+      "fingerprint": "3176896a500094b2ee0541fbd2935b67",
+      "resource_type": "pg",
+      "root_hypothesis": "replication lag spike (>30s)",
+      "target": "pg:replica",
+      "time_window": {
+        "end": "2026-08-27T00:01:00Z",
+        "start": "2026-08-27T00:01:00Z"
+      }
+    }
+  ],
+  "dedup_reason": "same resource and normalized summary within 5m0s",
+  "severity": "critical"
+}

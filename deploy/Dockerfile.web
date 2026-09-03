@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1.7
+# opskeeper-web image — multi-stage. Stage 1 builds the SPA from web/, stage 2
+# bakes the built assets into nginx. nginx.conf and TLS certs are bind-mounted
+# at runtime by docker-compose, so operators can edit them without rebuilding.
+# Build context MUST be the repo root (Dockerfile lives in deploy/, but it
+# COPYs `web/` from the root).
+
+ARG VERSION=dev
+
+# ---------- Stage 1: build the SPA ----------
+FROM node:20-alpine AS builder
+
+ARG VERSION
+# Pinned via package.json#packageManager (pnpm@9.15.4). Corepack verifies the
+# shasum and refuses to run a different version — keeps builds reproducible
+# regardless of host tooling.
+# Default to the npmmirror.com CN mirror so `pnpm install` does not stall on
+# registry.npmjs.org from CN networks. Override with
+#   --build-arg NPM_REGISTRY=https://registry.npmjs.org/
+# to restore the upstream registry. Only `pnpm install` consumes this;
+# the subsequent `pnpm run build` is offline once node_modules is populated.
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+# Pinned via package.json#packageManager (pnpm@9.15.4). Corepack verifies the
+# shasum and refuses to run a different version — keeps builds reproducible
+# regardless of host tooling.
+# Install pnpm directly via npm from the CN mirror. corepack was the
+# alternative but it hard-codes registry.npmjs.org for its initial pnpm
+# tarball download, which gets ECONNRESET from CN networks regardless of
+# COREPACK_REGISTRY / .npmrc / npm_config_registry. Direct `npm install
+# -g` honors `--registry=` properly and is what we want here.
+RUN npm install -g pnpm@9.15.4 --registry=${NPM_REGISTRY}
+WORKDIR /app
+# npm/pnpm read /root/.npmrc for the install-time registry fallback.
+RUN printf 'registry=%s\n' "${NPM_REGISTRY}" > /root/.npmrc
+
+# Install deps using the project-pinned pnpm + the CN mirror. `--frozen-lockfile`
+# fails the build if pnpm-lock.yaml is out of sync with package.json so we
+# never silently drift. npm's `--mount=type=cache,target=/root/.npm` becomes
+# `/root/.local/share/pnpm/store` under pnpm, so swap the cache target.
+COPY web/package.json web/pnpm-lock.yaml* ./
+RUN pnpm install --frozen-lockfile --registry=${NPM_REGISTRY}
+
+COPY web/ ./
+RUN pnpm run build
+
+# ---------- Stage 2: nginx + static assets ----------
+FROM nginx:1.27-alpine
+
+# Built SPA assets shipped inside the image so it can serve standalone if
+# operators forget the bind-mount (ADR-008).
+COPY --from=builder /app/dist/ /usr/share/nginx/html/
+
+# Default fallback config — overridden by docker-compose bind-mount in
+# production. Lets the image run as a smoke test image without extra files.
+COPY deploy/nginx/nginx.conf /etc/nginx/nginx.conf
+
+EXPOSE 80 443

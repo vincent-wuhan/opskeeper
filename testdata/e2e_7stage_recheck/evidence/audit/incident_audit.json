@@ -1,0 +1,55 @@
+{
+  "incident_id": "INC-E2E-7STAGE-RECHECK-001",
+  "trace_id": "deadbeefcafef00dbaadf00ddeadbeef",
+  "phases": [
+    {
+      "phase": "alerter",
+      "span_id": "3dbad86cd1545755",
+      "ts": "14:00:01"
+    },
+    {
+      "phase": "investigator",
+      "span_id": "1dde7e56df377494",
+      "ts": "14:00:15",
+      "mcp": "loop.correlate+loop.investigate"
+    },
+    {
+      "phase": "critic",
+      "span_id": "8a5e1cdc4aaf489c",
+      "ts": "14:00:25"
+    },
+    {
+      "phase": "reviewer",
+      "span_id": "f345040a71ba5a39",
+      "ts": "14:00:30"
+    },
+    {
+      "phase": "repairer",
+      "span_id": "6bdf9f0ccd76db16",
+      "ts": "14:00:45"
+    },
+    {
+      "phase": "verifier",
+      "span_id": "171a9e8af36d3925",
+      "ts": "14:01:00",
+      "mcp": "recovery.verify"
+    },
+    {
+      "phase": "postmortem",
+      "span_id": "6760fea860b0037b",
+      "ts": "14:01:30"
+    }
+  ],
+  "mcp_trace_ids": {
+    "loop.correlate": "00-deadbeefcafef00dbaadf00ddeadbeef-1dde7e56df377494-01",
+    "loop.investigate": "00-deadbeefcafef00dbaadf00ddeadbeef-1dde7e56df377494-02",
+    "recovery.verify": "00-deadbeefcafef00dbaadf00ddeadbeef-171a9e8af36d3925-01"
+  },
+  "totals": {
+    "phases_completed": 7,
+    "tools_called": 3,
+    "evidence_items": 2,
+    "remediation_options": 2,
+    "verify_passed": true
+  }
+}

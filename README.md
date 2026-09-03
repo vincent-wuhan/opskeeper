@@ -1,95 +1,113 @@
-# OpsKeeper Plugins
+# OpsKeeper
 
-OpsKeeper 插件开源首发仓库，先发布 AgentTeams 集成所需的两个插件：
+OpsKeeper is an auditable operations platform for multi-agent incident response. It connects alert intake, evidence collection, root-cause analysis, human approval, narrowly authorized recovery, independent verification, and post-incident learning in one closed loop.
 
-- **AgentTeams Plugin Installer**：AgentTeams Dashboard 插件，提供插件上传、启用、停用、同步和推送 Worker 的控制台能力。
-- **OpsKeeper TeamHarness**：QwenPaw/AgentTeams Worker 插件，提供 7 个运维角色 Skill、Manager 协同提示词、stdio MCP 代理和 fail-closed 工具边界。
+## What OpsKeeper provides
 
-本仓库只包含插件层，不包含 OpsKeeper 后端、Dashboard 和私有部署材料。插件通过 HTTP API 与既有 OpsKeeper 后端协作，可独立构建、校验和安装。
+- **Agent coordination**: Manager-style routing and seven operational worker roles: alerter, investigator, critic, reviewer, repairer, verifier, and postmortem reporter.
+- **AgentTeams plugin integration**: `agentteams-plugin-installer` manages Dashboard plugin installation; `opskeeper-teamharness` connects Workers to OpsKeeper MCP tools.
+- **Safety boundary**: diagnosis is read-only by default. Mutating actions require a pending proposal, explicit human approval, exact target matching, command and payload hashes, and audit records.
+- **Incident control plane**: durable incident timelines, recovery signals, proposal state, audit events, and replayable metrics.
+- **Operations context**: PostgreSQL-backed incident memory, Qdrant vector retrieval, keyword recall, RRF ranking, and retained candidate-decision evidence.
+- **Observability**: OpenTelemetry trace context, Prometheus metrics, Loki logs, Tempo traces, and Grafana dashboards.
+- **Web console**: a React/Vite interface for incidents, workflows, approvals, audit, and runtime observation.
 
-## 构建要求
+## Repository layout
 
-- Node.js 20+
-- npm 10+
+| Path | Contents |
+|---|---|
+| `cmd/` | Go services and command-line tools |
+| `internal/` | control plane, manager, MCP, incident, audit, and evaluation logic |
+| `web/` | OpsKeeper web console |
+| `plugins/agentteams-plugin-installer/` | AgentTeams Dashboard installer plugin |
+| `plugins/opskeeper-teamharness/` | Worker/Manager integration plugin and MCP proxy |
+| `deploy/` | deployment assets, synthetic incident examples, and runbooks |
+| `docs/` | product, integration, deployment, and operations documentation |
+| `testdata/` | deterministic end-to-end fixtures |
+
+## Build and verify
+
+Requirements:
+
+- Go 1.25+
+- Node.js 20+, npm 10+, and pnpm 9+
 - Python 3.11+
-- Ruby 3.2+（标准库 `yaml`）
-- zip / tar / shasum
+- zip, tar, and standard POSIX shell tools
 
-测试依赖：
-
-```bash
-python3 -m pip install -r scripts/requirements-test.txt
-```
-
-## 一键构建
+Backend:
 
 ```bash
+go build ./...
+go test ./... -count=1
 make build
 ```
 
-生成产物：
-
-- `plugins/agentteams-plugin-installer/dist/agentteams-plugin-installer.zip`
-- `plugins/opskeeper-teamharness/dist/opskeeper-teamharness-qwenpaw-*.zip`
-- `plugins/opskeeper-teamharness/dist/opskeeper-teamharness-*-plugin-manager.tar.gz`
-- `plugins/opskeeper-teamharness/dist/SHA256SUMS.txt`（执行 `make validate-release` 后生成）
-
-## 验证
+Web console:
 
 ```bash
-make verify
+cd web
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm test
+pnpm run build
 ```
 
-验证包括：
-
-- Installer manifest、入口 JS 和 zip 结构；
-- TeamHarness `plugin.json` / `plugin.yaml` 版本一致性；
-- QwenPaw 必需入口、MCP 代理和审计代码；
-- zip-slip、生成目录、文件数和解压体积保护；
-- 插件 Python 测试与 Installer standalone 自检。
-
-## 安装顺序
-
-### 1. 安装 Plugin Installer
-
-1. 打开 AgentTeams Dashboard。
-2. 进入 `Settings → Plugins`。
-3. 上传 `agentteams-plugin-installer.zip`。
-4. 激活后进入侧边栏 `Plugin 管理`。
-
-### 2. 安装 TeamHarness
-
-在 `Plugin 管理` 中上传 `opskeeper-teamharness-qwenpaw-*.zip`，该包同时满足：
-
-- OpsKeeper Plugin Manager 对 `plugin.yaml` 的解析要求；
-- QwenPaw Worker 对顶层目录 `plugin.json` 的安装要求。
-
-安装时可启用 `auto_push`，Plugin Manager 会把原始 zip 推送到 Worker 的 `/api/opskeeper-teamharness/install-plugin` 端点并执行 `qwenpaw plugin install --force`。
-
-也可以在 Worker 侧直接安装：
+AgentTeams Plugin Installer:
 
 ```bash
-bash plugins/opskeeper-teamharness/adapters/qwenpaw/install.sh
+make build-plugins
+make test-plugins
+make verify-plugins
 ```
 
-## 运行时配置
-
-TeamHarness MCP 代理常用配置：
+OpsKeeper TeamHarness:
 
 ```bash
-export OPSKEEPER_BACKEND_URL="https://opskeeper.example.com"
-export OPSKEEPER_TENANT_ID="default"
-export OPSKEEPER_PERMISSION_MODE="readonly"
+bash plugins/opskeeper-teamharness/scripts/build-package.sh
+python3 -m unittest discover -s plugins/opskeeper-teamharness -p 'test_*.py'
 ```
 
-`OPSKEEPER_PERMISSION_MODE=readonly` 为默认安全边界；如需启用修复类工具，必须在受控环境中显式切换为 `standard` 并配合审批策略。
+Open-source admission audit:
 
-## 致谢
+```bash
+python3 scripts/audit_open_source.py
+```
 
-本仓库是 OpsKeeper Plugins 的独立开源发布，发布范围见 [RELEASE_VERSION.json](RELEASE_VERSION.json)。
+## Synthetic incident examples
 
-感谢 **GoAI AgentTeams** 与 **AgentTeams Dashboard** 在多 Agent 协同、插件扩展和可观测交互设计上的启发，也感谢 **OnGrid** 在早期运维场景与可审计执行思路上给予的帮助。OpsKeeper 是独立演进的产品；上述致谢不代表相关项目对 OpsKeeper 的运营、维护或背书。
+`deploy/incident-events/` contains reproducible PostgreSQL examples for connection-pool exhaustion, lock waits, disk I/O saturation, and replica replay lag. The data is synthetic and derived from common operations knowledge. It does not contain customer identifiers, production telemetry, credentials, private endpoints, or real incident evidence.
+
+The examples use the neutral tenant `opskeeper-demo` and deterministic IDs so operators can exercise timelines, metrics, approval state, and audit behavior without a production system.
+
+## Deploy and integrate
+
+- Plugin installation: [`docs/guides/agentteams-plugin-installation.md`](docs/guides/agentteams-plugin-installation.md)
+- Integration guide: [`docs/integration-guide.md`](docs/integration-guide.md)
+- Operations manual: [`docs/operations-manual.md`](docs/operations-manual.md)
+- Public roadmap: [`ROADMAP_PUBLIC.md`](ROADMAP_PUBLIC.md)
+
+The root `docker-compose.yml` is intended for a local demo and integration environment. Production deployments should start from `deploy/install/` or `deploy/helm/`, supply TLS and credentials through a secret manager, and review all exposed ports before startup.
+
+## Security model
+
+OpsKeeper assumes agents can make mistakes and treats executable actions as high risk:
+
+1. Diagnosis tools run read-only unless a policy explicitly grants more.
+2. A mutating action must match one approved incident, manifest, resource, command, and payload hash.
+3. Repairer and verifier responsibilities are separated.
+4. Approval, rejection, execution, failure, recovery signal, and postmortem events are retained.
+5. Unknown tools, shell/browser escape attempts, audit bypasses, and cross-resource targets fail closed.
+
+Report security issues through the contact information in [`SECURITY.md`](SECURITY.md); do not open a public issue for an unresolved vulnerability.
+
+## Release scope
+
+The second-stage public release includes the Go backend, web console, AgentTeams plugins, deployment assets, public documentation, synthetic fixtures, and tests. Private delivery evidence, runtime credentials, internal project records, production topology, and non-public incident data are excluded. The machine-readable scope is recorded in [`RELEASE_VERSION.json`](RELEASE_VERSION.json).
+
+## Acknowledgments
+
+Thanks to GoAI AgentTeams and AgentTeams Dashboard for inspiration around multi-agent coordination, plugin extensibility, and observable interactions. Attribution, non-derivation, and non-endorsement boundaries are recorded in [`docs/ACKNOWLEDGMENTS.md`](docs/ACKNOWLEDGMENTS.md).
 
 ## License
 
-本仓库按 Apache License 2.0 分发。商标和非背书声明见 [LICENSE](LICENSE)、[NOTICE.md](NOTICE.md)、[TRADEMARK.md](TRADEMARK.md) 和 [docs/ACKNOWLEDGMENTS.md](docs/ACKNOWLEDGMENTS.md)。
+OpsKeeper is distributed under Apache License 2.0. See [`LICENSE`](LICENSE) and [`NOTICE.md`](NOTICE.md). Brand assets are not licensed under Apache-2.0; see [`TRADEMARK.md`](TRADEMARK.md).

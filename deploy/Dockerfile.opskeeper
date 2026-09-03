@@ -1,0 +1,229 @@
+# syntax=docker/dockerfile:1.7
+# opskeeper cloud service image — multi-stage, distroless final.
+# Build context MUST be the repo root (see Makefile target `docker-opskeeper`).
+
+ARG VERSION=dev
+
+# ---------- Stage 1: builder ----------
+# We need CGO for the fastembed-go local embedder (yalue/onnxruntime_go
+# is a thin cgo wrapper over libonnxruntime). Base image is
+# debian:bookworm-slim (already on CN mirrors; the docker.io
+# golang:1.25-bookworm blob is currently EOF-failing on every mirror);
+# Go 1.25 itself is installed from the Aliyun CDN in the RUN below.
+# This keeps the cgo + glibc toolchain the old golang:1.25-bookworm image
+# provided. Runtime image is also debian:bookworm-slim so the
+# onnxruntime .so finds its dependencies (libstdc++, libgomp).
+FROM debian:bookworm-slim AS builder
+
+# Use HTTP (not HTTPS) so the first apt-get in a fresh debian:bookworm-slim
+# image succeeds without ca-certificates already installed. APT package
+# integrity is still guaranteed by Release.gpg + Packages.xz signatures;
+# TLS is not a security boundary for apt repos. Override with
+#   --build-arg APT_MIRROR=https://mirrors.aliyun.com/debian/ etc.
+# if ca-certificates is already in the base or you explicitly want TLS.
+ARG APT_MIRROR=http://mirrors.tuna.tsinghua.edu.cn/debian
+ARG VERSION
+ARG TARGETARCH
+WORKDIR /app
+
+# Replace the stock apt sources with the mirror. bookworm uses the
+# deb822 format at /etc/apt/sources.list.d/debian.sources by default,
+# so we disable that file and write a flat /etc/apt/sources.list
+# pointing at the mirror for all three suites (bookworm / -updates /
+# -security). Setting APT_MIRROR=off skips the swap and uses the
+# upstream debian.org.
+RUN set -eux; \
+    if [ "${APT_MIRROR}" != "off" ]; then \
+        rm -f /etc/apt/sources.list.d/debian.sources; \
+        printf 'deb %s bookworm main\n' "${APT_MIRROR}" \
+            > /etc/apt/sources.list; \
+        printf 'deb %s bookworm-updates main\n' "${APT_MIRROR}" \
+            >> /etc/apt/sources.list; \
+        printf 'deb %s-security bookworm-security main\n' "${APT_MIRROR}" \
+            >> /etc/apt/sources.list; \
+        echo "[builder] apt sources:"; cat /etc/apt/sources.list; \
+    fi
+
+# cgo build deps + curl + ca-certificates (needed to fetch the Go
+# tarball via HTTPS below).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential pkg-config ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Go from the Aliyun CDN. The official golang:1.25-bookworm image's
+# blob is EOF-failing on every CN mirror right now (CloudFront / R2 backend
+# flakiness), so we sidestep the registry entirely. Aliyun mirrors
+# https://go.dev/dl/ literally (same archives, same checksums), so this is
+# functionally equivalent to the docker.io image, just without the
+# registry-routing headache.
+ARG GO_VERSION=1.25.0
+ARG GO_MIRROR=https://mirrors.aliyun.com/golang
+RUN set -eux; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "${arch}" in \
+        amd64|x86_64) GO_ARCH=amd64 ;; \
+        arm64|aarch64) GO_ARCH=arm64 ;; \
+        *) echo "unsupported arch ${arch}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/go.tgz "${GO_MIRROR}/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz"; \
+    tar -C /usr/local -xzf /tmp/go.tgz; \
+    rm /tmp/go.tgz; \
+    /usr/local/go/bin/go version
+
+ENV PATH=/usr/local/go/bin:/go/bin:$PATH \
+    GOPATH=/go \
+    GOCACHE=/root/.cache/go-build \
+    GOMODCACHE=/go/pkg/mod \
+    # goproxy.cn is the canonical CN mirror for proxy.golang.org; the
+    # upstream is unreachable from CN networks as of 2026-08. `direct` keeps
+    # fall-through to proxy.golang.org for anything goproxy.cn misses
+    # (e.g. private modules it doesn't know about).
+    GOPROXY=https://goproxy.cn,direct
+
+# Cache go.mod / go.sum layer separately from source. The
+# `--mount=type=cache,target=/go/pkg/mod` keeps the module download
+# cache across image rebuilds — without it every package run repays
+# the ~150s mod-download cost. Requires syntax=docker/dockerfile:1.7
+# (declared at the top of this file).
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy the rest of the repo (build context = repo root).
+COPY . .
+
+# CGO_ENABLED=1 because of the local embedder (see top of stage 1).
+# Two cache mounts:
+#   /go/pkg/mod    — module download cache (same as above)
+#   /root/.cache/go-build — Go's per-package compile cache; the big
+#                          win — a no-op rebuild drops from ~2min to
+#                          ~5s when the cache hits.
+RUN CGO_ENABLED=1 GOOS=linux GOARCH="${TARGETARCH:-$(dpkg --print-architecture)}" \
+    go build -trimpath \
+    -ldflags="-s -w -X main.version=${VERSION}" \
+    -o /out/opskeeper ./cmd/opskeeper
+
+# ---------- Stage 2: runtime ----------
+# debian:bookworm-slim so the cgo binary's glibc + libstdc++ + libgomp
+# deps resolve at runtime (alpine's musl would need a separate
+# onnxruntime musl build that doesn't ship from upstream). git is still
+# needed for knowledge-base repo sync, openssh-client for SSH-style
+# repo URLs.
+FROM debian:bookworm-slim
+
+ARG APT_MIRROR=http://mirrors.tuna.tsinghua.edu.cn/debian
+
+# Mirror replacement for the runtime stage too (separate base image,
+# so the builder-stage swap above does not propagate). Same flat
+# sources.list shape as the builder stage.
+RUN set -eux; \
+    if [ "${APT_MIRROR}" != "off" ]; then \
+        rm -f /etc/apt/sources.list.d/debian.sources; \
+        printf 'deb %s bookworm main\n' "${APT_MIRROR}" \
+            > /etc/apt/sources.list; \
+        printf 'deb %s bookworm-updates main\n' "${APT_MIRROR}" \
+            >> /etc/apt/sources.list; \
+        printf 'deb %s-security bookworm-security main\n' "${APT_MIRROR}" \
+            >> /etc/apt/sources.list; \
+        echo "[runtime] apt sources:"; cat /etc/apt/sources.list; \
+    fi
+
+# Knowledge-base + onnxruntime runtime deps.
+#   - git / openssh-client / ca-certificates / tzdata: same role as
+#     before the bookworm switch.
+#   - libgomp1: openmp runtime libonnxruntime needs.
+#   - libstdc++6 / libc6: already present in bookworm-slim but kept
+#     explicit so a future minify pass doesn't surprise us.
+#   - curl: needed by the in-image entry-shim if we ever inline the
+#     model download; lightweight, keep it.
+#   - python3 / python3-pip: the cloud_bash sandbox runs as non-root with
+#     no package manager, so an agent can't install tooling at runtime; a
+#     huge swath of cloud CLIs (tccli, awscli, …) are Python. Ship a usable
+#     Python interpreter so cloud_bash can install + run them. The TOOLS
+#     themselves are NOT baked here — they install into a host-mounted
+#     persistent volume (/var/lib/opskeeper/tools, the cloud_bash PYTHONUSERBASE)
+#     so they survive container recreation, don't bloat the image, and can be
+#     added at runtime via the approval-gated cloud_bash (no image rebuild).
+# Retry up to 5× — deb.debian.org intermittently 502s, and a single transient
+# failure here otherwise kills the whole image build. Acquire::Retries also
+# retries individual package downloads within one apt run.
+RUN set -eux; \
+    echo 'Acquire::Retries "3";' > /etc/apt/apt.conf.d/80-retries; \
+    for i in 1 2 3 4 5; do \
+        apt-get update && apt-get install -y --no-install-recommends \
+            git openssh-client ca-certificates tzdata libgomp1 libstdc++6 curl \
+            python3 python3-pip && break; \
+        [ "$i" = 5 ] && exit 1; echo "apt attempt $i failed, retrying in 5s"; sleep 5; \
+    done; \
+    rm -rf /var/lib/apt/lists/*
+
+# ONNX Runtime shared library. Pin the version so a future apt-mirror
+# bump doesn't silently change ABI. v1.20.1 is the latest stable that
+# fastembed-go's yalue/onnxruntime_go@v1.7.0 was tested against.
+ARG ONNXRUNTIME_VERSION=1.20.1
+ARG TARGETARCH
+# Pre-staged onnxruntime tgz — see builder-cache/ for how to populate.
+# Naming follows $(dpkg --print-architecture) so we don't need TARGETARCH at build time.
+# The COPY happens before apt install so the cache file is in the layer.
+ARG ONNXRUNTIME_ARCH
+COPY builder-cache/onnxruntime-linux-${ONNXRUNTIME_ARCH:-amd64}-${ONNXRUNTIME_VERSION}.tgz /tmp/ort.tgz
+# Without this pre-stage, the runtime stage can't reach github.com /
+# nuget.org from CN networks (SSL_ERROR_SYSCALL on
+# release-assets.githubusercontent.com) and the build fails.
+RUN set -eux; \
+    apt-get update && apt-get install -y --no-install-recommends unzip; \
+    arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    case "${arch}" in \
+        amd64|x86_64) ORT_ARCH=x64 ;; \
+        arm64|aarch64) ORT_ARCH=aarch64 ;; \
+        *) echo "unsupported arch ${arch}" >&2; exit 1 ;; \
+    esac; \
+    tar -xzf /tmp/ort.tgz -C /tmp; \
+    install -m 0755 /tmp/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION} /usr/lib/; \
+    ln -sf /usr/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION} /usr/lib/libonnxruntime.so; \
+    rm -rf /tmp/ort.tgz /tmp/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}; \
+    apt-get purge -y --auto-remove unzip; \
+    rm -rf /var/lib/apt/lists/*; \
+    ldconfig
+ENV ONNX_PATH=/usr/lib/libonnxruntime.so
+
+COPY --from=builder /out/opskeeper /opskeeper
+
+# chatruntime.LoadAll reads from `./skills` and `./agents` relative to
+# the binary's working directory. Ship the in-tree persona / SKILL.md
+# bundles into the image so they're available at runtime; users can
+# still install more via the marketplace at /var/lib/opskeeper/marketplace
+# (separate root, separate loader).
+COPY --from=builder /app/skills /skills
+COPY --from=builder /app/agents /agents
+
+# ADR-024 edge upgrade bundles are bind-mounted from the host at
+# runtime (see deploy/docker-compose.yml). install.sh / upgrade.sh
+# stage `dist/.../edge-bundles/*.tar.gz` into /opt/opskeeper/edge-bundles
+# on the host, which we mount into this container read-only at
+# /usr/share/opskeeper/edge-bundles so the manager can read each bundle's
+# .sha256 companion when resolving an upgrade. Bundle bytes themselves
+# are served by nginx out of the existing /edge/ static location;
+# manager-side download is never on the hot path.
+RUN mkdir -p /usr/share/opskeeper/edge-bundles
+
+# Knowledge-base git clones land here. Bind-mount this in production
+# to keep them across container restarts.
+RUN mkdir -p /var/lib/opskeeper/repos
+WORKDIR /
+
+# 8080 = HTTP API, 9100 = Prometheus /metrics (see ADR-004 §2).
+EXPOSE 8080 9100
+
+# Non-root user. debian:bookworm-slim has groupadd/useradd; pin to the
+# same uid (65532) the old alpine layer used so file-perm semantics on
+# bind-mounted /var/lib/opskeeper survive the base switch.
+RUN groupadd --system --gid 65532 nonroot && \
+    useradd  --system --uid 65532 --gid 65532 --no-create-home --shell /usr/sbin/nologin nonroot && \
+    chown -R nonroot:nonroot /var/lib/opskeeper
+# HOME defaults to / for useradd --no-create-home; fastembed-go's
+# sugarme/tokenizer dep does $HOME/.cache/tokenizer mkdir and crashes
+# on / (not writable as nonroot). Point HOME at the manager state dir
+# so the tokenizer dir lands somewhere writable.
+ENV HOME=/var/lib/opskeeper
+USER nonroot
+ENTRYPOINT ["/opskeeper"]

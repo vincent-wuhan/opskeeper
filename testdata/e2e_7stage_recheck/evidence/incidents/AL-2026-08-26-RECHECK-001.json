@@ -1,0 +1,11 @@
+{
+  "alert_id": "AL-2026-08-26-RECHECK-001",
+  "severity": "critical",
+  "resource": "pg:primary",
+  "detected_at": "2026-08-26T14:00:00Z",
+  "summary": "Postgres connection pool exhausted (>95% used, 30+ long-running tx)",
+  "labels": {
+    "env": "prod",
+    "team": "checkout"
+  }
+}

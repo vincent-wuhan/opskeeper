@@ -5,7 +5,7 @@ description: 告警接入与聚合 worker。监听外部告警源，dedup 相关
 
 # opskeeper 告警接入 Worker
 
-本 Worker 由 opskeeper-teamharness 插件提供。SOUL 派生源：OpsKeeper SRE alerter role。
+本 Worker 由 opskeeper-teamharness 插件提供。SOUL 派生源：`opskeeper-v2/../../../../agents/specialist-sre.md`。
 
 ## Available Tools (allowTools)
 

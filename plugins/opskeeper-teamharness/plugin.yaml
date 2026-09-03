@@ -4,7 +4,7 @@ metadata:
   name: opskeeper-teamharness
   version: 1.0.21
   description: |
-    OpsKeeper TeamHarness plugin — provides 7 ops Worker skills
+    Opskeeper TeamHarness plugin — provides 7 ops Worker skills
     (alerter/investigator/critic/reviewer/repairer/verifier/postmortem)
     + Manager dispatch decision tree + stdio MCP proxy to opskeeper
     backend /v1/mcp.

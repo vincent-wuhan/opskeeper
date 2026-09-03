@@ -1,0 +1,20 @@
+{
+  "phase": "alerter",
+  "incident_id": "INC-MULTIAGENT-001",
+  "alert": {
+    "alert_id": "AL-MULTIAGENT-001",
+    "severity": "critical",
+    "resource": "pg:primary",
+    "detected_at": "2026-08-27T00:00:00Z",
+    "summary": "Multi-agent test: pg connection pool exhausted (>95%, 30+ long tx)",
+    "labels": {
+      "env": "prod",
+      "team": "checkout"
+    }
+  },
+  "trace_id": "facadefacadefacadefacadefacade",
+  "span_id": "alerter000000000",
+  "ts": "2026-08-27T00:00:01Z",
+  "decision": "dispatched_to_investigator",
+  "reason": "severity=critical & resource matches opskeeper inventory"
+}

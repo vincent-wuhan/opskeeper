@@ -1,0 +1,21 @@
+{
+  "schema_version": "v1",
+  "passed": true,
+  "metrics_compared": [
+    "cpu",
+    "disk_io",
+    "mem",
+    "request_rate"
+  ],
+  "delta": {
+    "cpu": 0,
+    "disk_io": 0,
+    "mem": 0,
+    "request_rate": 0
+  },
+  "rollback_recommended": false,
+  "sample_size": 1,
+  "tolerance": 0.1,
+  "retry_count": 0,
+  "warning_level": "pass"
+}

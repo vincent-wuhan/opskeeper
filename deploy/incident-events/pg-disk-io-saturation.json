@@ -1,0 +1,39 @@
+{
+  "id":"pg-disk-io-saturation",
+  "title":"Checkpoint and WAL writes saturate the PostgreSQL data volume",
+  "fault_family":"host/disk_io",
+  "source_basis":"Synthetic host and PostgreSQL checkpoint telemetry based on common Linux and PostgreSQL saturation patterns.",
+  "assumptions":[
+    "The data volume is a cloud SSD with a 4000 IOPS provisioned limit.",
+    "Checkpoint completion time and device await are sampled after each checkpoint.",
+    "No filesystem is offline and no destructive repair is permitted."
+  ],
+  "created_at":"2026-08-29T14:00:00Z",
+  "input":{
+    "alert":{"incident_id":"INC-PG-IO-003","tenant_id":"opskeeper-demo","severity":"critical","resource":"pg-primary/data-volume","summary":"Data disk utilisation is 99%, await is 84 ms, and checkpoint duration is 420 seconds.","fired_at":"2026-08-29T14:00:00Z","evidence_ref":"evidence/incidents/INC-PG-IO-003/alert.json","trace_id":"trace-inc-pg-io-003"},
+    "metric_window":[
+      {"observed_at":"2026-08-29T13:58:00Z","name":"node_disk_utilization","value":82,"unit":"percent","labels":{"device":"nvme1n1"},"evidence_ref":"evidence/metrics/pg-io/13-58.json"},
+      {"observed_at":"2026-08-29T13:59:00Z","name":"node_disk_io_time_ms","value":61,"unit":"milliseconds","labels":{"device":"nvme1n1"},"evidence_ref":"evidence/metrics/pg-io/13-59.json"},
+      {"observed_at":"2026-08-29T14:00:00Z","name":"node_disk_utilization","value":99,"unit":"percent","labels":{"device":"nvme1n1"},"evidence_ref":"evidence/metrics/pg-io/14-00.json"},
+      {"observed_at":"2026-08-29T14:00:00Z","name":"pg_checkpoint_duration_seconds","value":420,"unit":"seconds","labels":{"database":"orders"},"evidence_ref":"evidence/metrics/pg-io/14-00.json"},
+      {"observed_at":"2026-08-29T14:00:10Z","name":"pg_wal_bytes_total","value":4864000000,"unit":"bytes","labels":{"database":"orders"},"evidence_ref":"evidence/metrics/pg-io/14-00-10.json"}
+    ],
+    "session_snapshot":{"collected_at":"2026-08-29T14:00:10Z","summary":{"active":18,"waiting_on_io":9,"idle_in_transaction":0,"max_connections":120},"records":[{"pid":84120,"role":"client","state":"active","wait_event_type":"IO","wait_event":"DataFileWrite","application_name":"orders-reporting","transaction_age":"00:00:18"}],"evidence_ref":"evidence/incidents/INC-PG-IO-003/pg-stat-activity.json"},
+    "lock_snapshot":{"collected_at":"2026-08-29T14:00:10Z","summary":{"blocked_sessions":0,"granted_locks":188,"waiting_locks":0},"records":[],"evidence_ref":"evidence/incidents/INC-PG-IO-003/pg-locks.json"},
+    "topology":{"fingerprint":"pg16-primary-ssd-v2","components":[{"role":"primary","name":"pg-primary/orders","region":"cn-demo","readOnly":false},{"role":"volume","name":"pg-primary/data-volume","region":"cn-demo","parent":"pg-primary/orders","readOnly":false}]},
+    "versions":{"database":"PostgreSQL","engine":"Community","major":16,"minor":4,"patch":0,"agent":"opskeeper-0.9","application":"orders-api-2.7.1"}
+  },
+  "recovery_gate":{"closure_policy":"Close only when a post-change checkpoint and disk observations both recover.","required_observations":["device utilization < 80%","device await < 20ms","next checkpoint duration < 180s"],"thresholds":{"node_disk_utilization_percent":80,"node_disk_io_time_ms":20,"pg_checkpoint_duration_seconds":180},"evidence_refs":["evidence/incidents/INC-PG-IO-003/recovery-check.json"]},
+  "postmortem":{
+    "id":"017f2b01-020a-4000-8000-000000000001","tenant_id":"opskeeper-demo","incident_id":"INC-PG-IO-003",
+    "database_type":"PostgreSQL","database_version":"16.4","topology_fingerprint":"pg16-primary-ssd-v2","fault_fingerprint":"checkpoint_io_saturation",
+    "symptom":{"summary":"Checkpoint and WAL writes saturate the provisioned data volume.","metric_names":["node_disk_utilization","node_disk_io_time_ms","pg_checkpoint_duration_seconds"],"snapshot_refs":["evidence/incidents/INC-PG-IO-003/pg-stat-activity.json"]},
+    "diagnosis":{"root_cause":"A reporting batch amplified checkpoint write pressure beyond the SSD's provisioned IOPS.","previously_misdiagnosed":["network_latency"],"evidence_refs":["evidence/incidents/INC-PG-IO-003/diagnosis.json"]},
+    "effective_actions":[{"fingerprint":"pg:alter_system:checkpoint_completion_target:0.9;app:pause_reporting_batch","summary":"Spread checkpoints and pause the reporting batch.","evidence_ref":"evidence/incidents/INC-PG-IO-003/action.json"}],
+    "ineffective_actions":[{"fingerprint":"host:reboot","summary":"Reboot would not address sustained write amplification.","evidence_ref":"evidence/incidents/INC-PG-IO-003/rejected-action.json"}],
+    "recovery_signals":[{"name":"post-change checkpoint and disk latency returned to threshold","observed_at":"2026-08-29T14:08:00Z","evidence_ref":"evidence/incidents/INC-PG-IO-003/recovery-check.json"}],
+    "applicable_boundary":{"database_types":["PostgreSQL"],"topology_fingerprints":["pg16-primary-ssd-v2"],"version_ranges":["16.x"]},
+    "source_evidence":[{"kind":"timeline","ref":"evidence/incidents/INC-PG-IO-003/timeline.jsonl"}],
+    "confirmed_by":"dba-oncall","confirmed_at":"2026-08-29T14:08:30Z"
+  }
+}

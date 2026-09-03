@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "opskeeper.fullname" . }}-config
+  labels:
+    {{- include "opskeeper.labels" . | nindent 4 }}
+data:
+  # 路径 A 集成开关
+  opskeeper.yaml: |
+    server:
+      log_level: {{ .Values.manager.config.logLevel }}
+      log_format: {{ .Values.manager.config.logFormat }}
+    features:
+      harness: {{ .Values.manager.config.enableHarness }}
+      middleware: {{ .Values.manager.config.enableMiddleware }}
+      git_artifact: {{ .Values.manager.config.enableGitArtifact }}
+    {{- if .Values.qdrant.enabled }}
+    # Qdrant — 向量数据库（opskeeper knowledge 基础）
+    qdrant:
+      endpoint: http://{{ .Release.Name }}-qdrant:6333
+      grpc_endpoint: http://{{ .Release.Name }}-qdrant:6334
+      collection: opskeeper_knowledge
+    {{- end }}
+    {{- if .Values.prometheus.enabled }}
+    # Prometheus — 指标暴露端点
+    prometheus:
+      service_monitor: true
+      scrape_interval: 30s
+    {{- end }}
+    {{- if .Values.loki.enabled }}
+    # Loki — 日志聚合
+    loki:
+      endpoint: http://{{ .Release.Name }}-loki:3100
+    {{- end }}
+    {{- if .Values.tempo.enabled }}
+    # Tempo — Trace 聚合
+    tempo:
+      endpoint: http://{{ .Release.Name }}-tempo:3100
+    {{- end }}

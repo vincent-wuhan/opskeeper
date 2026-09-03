@@ -1,0 +1,90 @@
+{{- if .Values.manager.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "opskeeper.fullname" . }}-manager
+  labels:
+    {{- include "opskeeper.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "opskeeper.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: manager
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow health-check probes from kube-system
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow traffic from nginx ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow internal pod-to-pod communication (edge tunnel, metrics scrape)
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: opskeeper
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9100
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+    # External DB (MySQL)
+    {{- if .Values.database.host }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: {{ .Values.database.port }}
+    {{- end }}
+    # External Redis
+    {{- if .Values.redis.addr }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 6379
+    {{- end }}
+    # HTTPS egress (LLM APIs, upgrade checks, package downloads)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+{{- end }}

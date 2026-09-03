@@ -5,7 +5,7 @@ description: 恢复验证 worker。调 recovery.verify 对比修复后指标与�
 
 # opskeeper 恢复验证 Worker
 
-本 Worker 由 opskeeper-teamharness 插件提供。SOUL 派生源：OpsKeeper verifier role。
+本 Worker 由 opskeeper-teamharness 插件提供。SOUL 派生源：`opskeeper-v2/../../../../agents/verifier.md`。
 
 ## Available Tools (allowTools)
 

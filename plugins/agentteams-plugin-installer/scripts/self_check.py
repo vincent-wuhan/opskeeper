@@ -66,23 +66,19 @@ def main() -> int:
           "vite-plugin-host-react.mjs exists")
     check((DASHBOARD_DIR / "package.json").is_file(), "package.json exists")
 
-    standalone = os.environ.get("OPSKEEPER_STANDALONE") == "1"
-    backend_env = None if standalone else os.environ.get("OPSKEEPER_BACKEND_HANDLER_PATH")
-    if standalone:
-        print("  [i] backend handler check skipped in standalone release mode")
+    backend_env = os.environ.get("OPSKEEPER_BACKEND_HANDLER_PATH")
+    if backend_env:
+        backend = Path(backend_env)
     else:
-        if backend_env:
-            backend = Path(backend_env)
-        else:
-            backend = Path(__file__).resolve().parents[3] / "internal" / "manager" / "server" / "agentteams" / "plugin_http.go"
-        check(backend.is_file(), f"backend handler: {backend} (set OPSKEEPER_BACKEND_HANDLER_PATH to override)")
-        if backend.is_file():
-            text = backend.read_text()
-            for route in ("/v1/plugins", "/v1/plugins/{id}",
-                          "/v1/plugins/install", "/v1/plugins/{id}/enable",
-                          "/v1/plugins/{id}/disable", "/v1/plugins/{id}/sync",
-                          "/v1/plugins/{id}/push"):
-                check(route in text, f"backend exposes route {route}")
+        backend = Path(__file__).resolve().parents[3] / "internal" / "manager" / "server" / "agentteams" / "plugin_http.go"
+    check(backend.is_file(), f"backend handler: {backend} (set OPSKEEPER_BACKEND_HANDLER_PATH to override)")
+    if backend.is_file():
+        text = backend.read_text()
+        for route in ("/v1/plugins", "/v1/plugins/{id}",
+                      "/v1/plugins/install", "/v1/plugins/{id}/enable",
+                      "/v1/plugins/{id}/disable", "/v1/plugins/{id}/sync",
+                      "/v1/plugins/{id}/push"):
+            check(route in text, f"backend exposes route {route}")
 
     dist = DASHBOARD_DIR / "dist" / "main.js"
     if dist.is_file():
@@ -100,15 +96,12 @@ def main() -> int:
     size = buf.tell()
     check(size > 100, f"zip buffer non-trivial ({size} bytes)")
 
-    test_env = None if standalone else os.environ.get("OPSKEEPER_BACKEND_TEST_PATH")
-    if standalone:
-        print("  [i] backend test check skipped in standalone release mode")
+    test_env = os.environ.get("OPSKEEPER_BACKEND_TEST_PATH")
+    if test_env:
+        test_path = Path(test_env)
     else:
-        if test_env:
-            test_path = Path(test_env)
-        else:
-            test_path = Path(__file__).resolve().parents[3] / "internal" / "manager" / "server" / "agentteams" / "plugin_http_test.go"
-        check(test_path.is_file(), f"backend test exists: {test_path} (set OPSKEEPER_BACKEND_TEST_PATH to override)")
+        test_path = Path(__file__).resolve().parents[3] / "internal" / "manager" / "server" / "agentteams" / "plugin_http_test.go"
+    check(test_path.is_file(), f"backend test exists: {test_path} (set OPSKEEPER_BACKEND_TEST_PATH to override)")
 
     print("=" * 60)
     if errors:

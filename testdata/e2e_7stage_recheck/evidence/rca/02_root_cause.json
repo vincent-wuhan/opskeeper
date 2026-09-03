@@ -1,0 +1,48 @@
+{
+  "schema_version": "v1",
+  "root_cause_object": {
+    "kind": "unknown",
+    "summary": "Evidence-backed investigation found host issue on ",
+    "detail": {
+      "alert_id": "AL-2026-08-26-RECHECK-001",
+      "evidence_tool": "resource_alert",
+      "resource_type": "host",
+      "target": ""
+    }
+  },
+  "confidence": 0.75,
+  "evidence_chain": [
+    {
+      "type": "alert",
+      "ref": "resource_alert:resource_type=host alert_id=AL-2026-08-26-RECHECK-001 window=[2026-08-26T14:01:36Z,2026-08-26T14:06:36Z]",
+      "observed_at": "2026-08-26T14:06:36.834760912Z",
+      "snippet": "resource_type=host alert_id=AL-2026-08-26-RECHECK-001 window=[2026-08-26T14:01:36Z,2026-08-26T14:06:36Z]"
+    },
+    {
+      "type": "log",
+      "ref": "query_logql:{resource_type=\"host\"} |= \"AL-2026-08-26-RECHECK-001\"",
+      "observed_at": "2026-08-26T14:06:36.834760912Z",
+      "snippet": "{resource_type=\"host\"} |= \"AL-2026-08-26-RECHECK-001\""
+    }
+  ],
+  "time_window": {
+    "start": "2026-08-26T14:01:36.834760912Z",
+    "end": "2026-08-26T14:06:36.834760912Z"
+  },
+  "remediation_options": [
+    {
+      "action": "host.garbage_collect",
+      "target": "host:AL-2026-08-26-RECHECK-001",
+      "blast_radius": "single_device",
+      "rollback_plan": "Operator must review and reverse host.garbage_collect on host:AL-2026-08-26-RECHECK-001 before retrying.",
+      "confidence": 0.75
+    },
+    {
+      "action": "host.restart_service",
+      "target": "host:AL-2026-08-26-RECHECK-001",
+      "blast_radius": "cluster",
+      "rollback_plan": "Operator must review and reverse host.restart_service on host:AL-2026-08-26-RECHECK-001 before retrying.",
+      "confidence": 0.75
+    }
+  ]
+}

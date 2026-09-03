@@ -1,0 +1,21 @@
+{
+  "schema_version": "v1",
+  "passed": true,
+  "metrics_compared": [
+    "cpu",
+    "mem"
+  ],
+  "delta": {
+    "cpu": 0,
+    "mem": 0
+  },
+  "rollback_recommended": false,
+  "sample_size": 1,
+  "tolerance": 0.15,
+  "retry_count": 0,
+  "warning_level": "pass",
+  "phase": "verifier",
+  "trace_id": "deadbeefcafef00dbaadf00ddeadbeef",
+  "span_id": "171a9e8af36d3925",
+  "incident_id": "INC-E2E-7STAGE-RECHECK-001"
+}

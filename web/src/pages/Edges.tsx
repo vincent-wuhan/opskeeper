@@ -1,0 +1,1548 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Plus, RotateCw, Trash2, MoreVertical, Copy, Check, ExternalLink, TerminalSquare } from 'lucide-react';
+import { StatusPill } from '@/components/StatusPill';
+import { Modal } from '@/components/Modal';
+import { cn } from '@/lib/cn';
+import { openMetricDrilldown } from '@/lib/drilldown';
+import { relativeTime } from '@/lib/format';
+import { usePoll } from '@/lib/usePoll';
+import {
+  listEdges,
+  createEdge,
+  deleteEdge,
+  rotateSecret,
+  setEdgeRoles,
+  EDGE_ROLES,
+  EDGE_ROLE_LABELS,
+  EDGE_ROLE_LABELS_EN,
+  type Edge,
+  type EdgeRole,
+  type CreateEdgeResponse,
+  type RotateSecretResponse,
+  upgradeEdgeAgent,
+  upgradeEdgePackage,
+  batchUpgradeEdgePackage,
+  batchUpgradeEdgeAgent,
+  batchDeleteEdges,
+  type BatchResponse,
+} from '@/api/edges';
+import { deleteDevice, listDevices, type Device } from '@/api/devices';
+import { getManagerVersion } from '@/api/version';
+import { usePermissions } from '@/store/me';
+import { notifyDevicesChanged } from '@/lib/events';
+import { useI18n } from '@/i18n/locale';
+
+// Sidebar headers that map to ?roles= filters. Empty string = "全部"; the
+// sentinel "unknown" lights up the 未分类 sub-item. Pulled out so the page
+// title and the role editor share a single source of truth.
+// Each entry is a [zh, en] pair consumed via tr() below.
+const ROLE_FILTER_TITLES: Record<string, [string, string]> = {
+  '': ['全部设备', 'All devices'],
+  server: ['服务器', 'Servers'],
+  storage: ['存储', 'Storage'],
+  network: ['网络设备', 'Network devices'],
+  unknown: ['未分类设备', 'Uncategorized devices'],
+};
+
+type DeviceRow = Device & {
+  hostEdge?: Edge;
+};
+
+function selectHostEdgesByDevice(edges: Edge[]): Map<number, Edge> {
+  const out = new Map<number, Edge>();
+  for (const edge of edges) {
+    const deviceID = edge.device_id;
+    if (!deviceID) continue;
+    const current = out.get(deviceID);
+    if (!current || isBetterHostEdge(edge, current)) {
+      out.set(deviceID, edge);
+    }
+  }
+  return out;
+}
+
+function isBetterHostEdge(candidate: Edge, current: Edge): boolean {
+  if (candidate.status !== current.status) {
+    return candidate.status === 'online';
+  }
+  return edgeSeenAt(candidate) > edgeSeenAt(current);
+}
+
+function edgeSeenAt(edge: Edge): number {
+  if (!edge.last_seen_at) return 0;
+  const ts = Date.parse(edge.last_seen_at);
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function asEdgeRoles(roles: string[] | undefined): EdgeRole[] {
+  if (!roles) return [];
+  return roles.filter((r): r is EdgeRole => EDGE_ROLES.includes(r as EdgeRole));
+}
+
+export default function EdgesPage() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { tr } = useI18n();
+  const { canMutate } = usePermissions();
+  // Sidebar sub-items navigate by appending ?roles=server|storage|network|unknown.
+  // No param = "全部". We forward the param to the backend so filtering uses the
+  // sargable IN-list path (see internal/manager/biz/edge.ListFilter).
+  const rolesFilter = useMemo(() => {
+    const v = new URLSearchParams(location.search).get('roles')?.trim() ?? '';
+    return v;
+  }, [location.search]);
+  const headerTitle = (() => {
+    const pair = ROLE_FILTER_TITLES[rolesFilter];
+    return pair ? tr(pair[0], pair[1]) : tr('设备', 'Devices');
+  })();
+
+  const [devices, setDevices] = useState<DeviceRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  // managerVersion drives the Agent column's drift chip — fetched once
+  // on mount; failures degrade silently to "no chip" rather than red
+  // because version mismatch isn't operationally critical.
+  const [managerVersion, setManagerVersion] = useState<string>('');
+  useEffect(() => {
+    void getManagerVersion()
+      .then((r) => setManagerVersion(r.manager_version || ''))
+      .catch(() => setManagerVersion(''));
+  }, []);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [secretReveal, setSecretReveal] = useState<{
+    title: string;
+    accessKey: string;
+    secretKey: string;
+  } | null>(null);
+  const [rolesEditTarget, setRolesEditTarget] = useState<DeviceRow | null>(null);
+  const [upgradeTarget, setUpgradeTarget] = useState<Edge | null>(null);
+  // per-row "整包升级" busy state + last-result toast. We don't
+  // open a modal — the action is single-click and the result lands in
+  // the existing toast pipeline.
+  const [pkgUpgradingId, setPkgUpgradingId] = useState<number | null>(null);
+  const [toast, setToast] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  // Batch selection: set of device ids ticked via the per-row checkboxes.
+  // The toolbar above the table appears whenever this is non-empty.
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  // When set, the batch custom-upgrade (URL+sha) modal is open for the
+  // currently-selected ids.
+  const [batchUpgradeOpen, setBatchUpgradeOpen] = useState(false);
+  // True while any batch RPC is in flight (disables the toolbar buttons).
+  const [batchBusy, setBatchBusy] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [deviceResp, edgeResp] = await Promise.all([
+        listDevices(rolesFilter ? { roles: rolesFilter } : undefined),
+        listEdges(),
+      ]);
+      const edgeByDeviceID = selectHostEdgesByDevice(edgeResp.items ?? []);
+      const items = (deviceResp.items ?? []).map((d) => ({
+        ...d,
+        hostEdge: edgeByDeviceID.get(d.id),
+      }));
+      setDevices(items);
+      // Drop any selected ids that no longer appear (deleted / filtered out)
+      // so the toolbar count never lies.
+      setSelected((prev) => {
+        if (prev.size === 0) return prev;
+        const live = new Set(items.map((d) => d.id));
+        const next = new Set([...prev].filter((id) => live.has(id)));
+        return next.size === prev.size ? prev : next;
+      });
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message || tr('加载失败', 'Load failed'));
+    } finally {
+      setLoading(false);
+    }
+  }, [rolesFilter, tr]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+  usePoll(refresh, 10_000);
+
+  async function onCreate(name: string) {
+    const created: CreateEdgeResponse = await createEdge({ name });
+    setSecretReveal({
+      title: tr('已创建设备', 'Device created'),
+      accessKey: created.access_key_id,
+      secretKey: created.secret_key,
+    });
+    void refresh();
+  }
+
+  async function onRotate(id: number, name: string, accessKey: string) {
+    if (!confirm(tr(`确定要轮换 ${name} 的密钥？旧密钥将立即失效。`, `Rotate ${name}'s secret? The old key takes effect immediately becomes invalid.`))) return;
+    try {
+      const r: RotateSecretResponse = await rotateSecret(id);
+      setSecretReveal({
+        title: tr(`已轮换 ${name} 的密钥`, `Rotated ${name}'s secret`),
+        accessKey,
+        secretKey: r.secret_key,
+      });
+    } catch (err) {
+      alert((err as Error).message || tr('轮换失败', 'Rotate failed'));
+    }
+  }
+
+  async function onDelete(id: number, name: string) {
+    if (!confirm(tr(`确定要删除 ${name} 的 Edge？设备记录会保留。`, `Delete ${name}'s edge? The device record will remain.`))) return;
+    try {
+      await deleteEdge(id);
+      void refresh();
+    } catch (err) {
+      alert((err as Error).message || tr('删除失败', 'Delete failed'));
+    }
+  }
+
+  async function onDeleteDevice(device: DeviceRow) {
+    const name = device.name || device.hostname || `#${device.id}`;
+    if (device.online) {
+      alert(tr(
+        '在线设备不可删除，请先让它离线。',
+        'Online devices cannot be deleted. Bring it offline first.',
+      ));
+      return;
+    }
+    if (!confirm(tr(
+      `删除离线设备 ${name}？会同时清理关联 Edge 和密钥。`,
+      `Delete offline device ${name}? Linked Edges and credentials will also be cleaned.`,
+    ))) return;
+    try {
+      await deleteDevice(device.id);
+      void refresh();
+    } catch (err) {
+      alert((err as Error).message || tr('删除设备失败', 'Delete device failed'));
+    }
+  }
+
+  // one-button upgrade. Confirms with the operator (the edge
+  // briefly restarts), POSTs to the resolver-backed endpoint, surfaces
+  // a toast. The actual swap happens on systemctl restart inside the
+  // edge; we trust the auto-rollback gate on the far side.
+  async function onPackageUpgrade(e: Edge) {
+    if (!confirm(tr(
+      `升级 ${e.name} 整包？Edge 会短暂重启；失败会自动回滚到当前版本。`,
+      `Upgrade ${e.name} package? Edge will briefly restart; failed upgrades auto-rollback to current version.`,
+    ))) return;
+    setPkgUpgradingId(e.id);
+    setToast(null);
+    try {
+      const resp = await upgradeEdgePackage(e.id);
+      const ok = resp.applied;
+      setToast({
+        kind: ok ? 'ok' : 'err',
+        text: ok
+          ? tr(
+              `${e.name} → ${resp.version} 已 stage ${resp.manifest_files} 个文件，重启 swap 中`,
+              `${e.name} → ${resp.version} staged ${resp.manifest_files} files; restarting to apply`,
+            )
+          : tr(
+              `${e.name} stage 成功但 apply 失败：${resp.apply_error ?? '未知'}`,
+              `${e.name} staged OK but apply failed: ${resp.apply_error ?? 'unknown'}`,
+            ),
+      });
+      void refresh();
+    } catch (err) {
+      setToast({
+        kind: 'err',
+        text: (err as Error).message || tr('升级失败', 'Upgrade failed'),
+      });
+    } finally {
+      setPkgUpgradingId(null);
+    }
+  }
+
+  const selectedHostEdgeIds = useMemo(
+    () => devices
+      .filter((d) => selected.has(d.id) && d.hostEdge)
+      .map((d) => d.hostEdge!.id),
+    [devices, selected],
+  );
+  const allVisibleSelected = devices.length > 0 && devices.every((d) => selected.has(d.id));
+
+  const toggleOne = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const toggleAllVisible = () => {
+    setSelected((prev) => {
+      if (devices.every((d) => prev.has(d.id))) {
+        // all selected → clear the visible ones
+        const next = new Set(prev);
+        devices.forEach((d) => next.delete(d.id));
+        return next;
+      }
+      const next = new Set(prev);
+      devices.forEach((d) => next.add(d.id));
+      return next;
+    });
+  };
+  const clearSelection = () => setSelected(new Set());
+
+  // summarizeBatch turns a per-id envelope into a single toast. All-ok →
+  // green; any failure → amber-red with the failed ids so the operator
+  // knows exactly which edges to retry.
+  function summarizeBatch(verb: string, resp: BatchResponse) {
+    if (resp.failed === 0) {
+      setToast({
+        kind: 'ok',
+        text: tr(`${verb}：${resp.succeeded} 台成功`, `${verb}: ${resp.succeeded} succeeded`),
+      });
+      return;
+    }
+    const failedIds = resp.results.filter((r) => !r.ok).map((r) => r.id).join(', ');
+    setToast({
+      kind: 'err',
+      text: tr(
+        `${verb}：${resp.succeeded} 成功 / ${resp.failed} 失败（失败 ID：${failedIds}）`,
+        `${verb}: ${resp.succeeded} ok / ${resp.failed} failed (failed IDs: ${failedIds})`,
+      ),
+    });
+  }
+
+  async function onBatchPackageUpgrade() {
+    const ids = selectedHostEdgeIds;
+    if (ids.length === 0) return;
+    if (!confirm(tr(
+      `升级选中的 ${ids.length} 个 Edge 整包？各 Edge 会短暂重启；失败会自动回滚。`,
+      `Upgrade package on ${ids.length} selected edge(s)? Each edge briefly restarts; failures auto-rollback.`,
+    ))) return;
+    setBatchBusy(true);
+    setToast(null);
+    try {
+      const resp = await batchUpgradeEdgePackage(ids);
+      summarizeBatch(tr('整包升级', 'Package upgrade'), resp);
+      clearSelection();
+      void refresh();
+    } catch (err) {
+      setToast({ kind: 'err', text: (err as Error).message || tr('升级失败', 'Upgrade failed') });
+    } finally {
+      setBatchBusy(false);
+    }
+  }
+
+  async function onBatchDelete() {
+    const ids = selectedHostEdgeIds;
+    if (ids.length === 0) return;
+    if (!confirm(tr(
+      `确定要删除选中的 ${ids.length} 个 Edge？设备记录会保留。`,
+      `Delete ${ids.length} selected edge(s)? Device records will remain.`,
+    ))) return;
+    setBatchBusy(true);
+    setToast(null);
+    try {
+      const resp = await batchDeleteEdges(ids);
+      summarizeBatch(tr('删除', 'Delete'), resp);
+      clearSelection();
+      void refresh();
+    } catch (err) {
+      setToast({ kind: 'err', text: (err as Error).message || tr('删除失败', 'Delete failed') });
+    } finally {
+      setBatchBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <main className="anim-fade flex flex-1 flex-col overflow-hidden">
+        <header className="app-header flex items-center justify-between border-b border-zinc-800/60 px-6 py-4">
+          <div>
+            <h1 className="text-base font-semibold text-zinc-100">{headerTitle}</h1>
+            <p className="mt-0.5 text-xs text-zinc-500">
+              {tr(`${devices.length} 台设备 · 每 10 秒自动刷新`, `${devices.length} device(s) · auto-refresh every 10s`)}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/edges/shell-sessions"
+              className="inline-flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+              title={tr('WebSSH 会话审计 / 活跃会话', 'WebSSH session audit / active sessions')}
+            >
+              <TerminalSquare size={12} /> {tr('WebSSH 会话', 'WebSSH sessions')}
+            </Link>
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              aria-label={tr('新建设备', 'New device')}
+              className="inline-flex items-center gap-1.5 rounded-md bg-accent px-2.5 py-1.5 text-xs font-medium text-accent-fg hover:bg-accent/90"
+            >
+              <Plus size={12} /> {tr('新建', 'New')}
+            </button>
+          </div>
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-6 py-6">
+          {error && (
+            <div
+              role="alert"
+              className="mb-3 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300"
+            >
+              {error}
+            </div>
+          )}
+
+          {selected.size > 0 && (
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-xs">
+              <span className="font-medium text-zinc-100">
+                {tr(`已选择 ${selected.size} 台`, `${selected.size} selected`)}
+              </span>
+              <span className="flex-1" />
+              <button
+                type="button"
+                disabled={batchBusy || selectedHostEdgeIds.length === 0}
+                onClick={() => void onBatchPackageUpgrade()}
+                className="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
+              >
+                <ExternalLink size={12} /> {tr('升级整包', 'Upgrade package')}
+              </button>
+              <button
+                type="button"
+                disabled={batchBusy || selectedHostEdgeIds.length === 0}
+                onClick={() => setBatchUpgradeOpen(true)}
+                className="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
+              >
+                <ExternalLink size={12} /> {tr('自定义升级', 'Custom upgrade')}
+              </button>
+              <button
+                type="button"
+                disabled={batchBusy || selectedHostEdgeIds.length === 0}
+                onClick={() => void onBatchDelete()}
+                className="inline-flex items-center gap-1 rounded-md border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-red-300 hover:bg-red-500/20 disabled:opacity-50"
+              >
+                <Trash2 size={12} /> {tr('删除 Edge', 'Delete edge')}
+              </button>
+              <button
+                type="button"
+                onClick={clearSelection}
+                className="rounded-md px-2 py-1.5 text-zinc-400 hover:text-zinc-200"
+              >
+                {tr('清除', 'Clear')}
+              </button>
+            </div>
+          )}
+
+          <div className="overflow-hidden rounded-xl border border-zinc-800/60 bg-zinc-900/40">
+            <table className="w-full text-sm">
+              <thead className="border-b border-zinc-800/60 bg-zinc-950/40 text-[11px] uppercase tracking-wider text-zinc-500">
+                <tr>
+                  <th className="w-10 px-4 py-2.5 text-left">
+                    <input
+                      type="checkbox"
+                      aria-label={tr('全选', 'Select all')}
+                      className="h-3.5 w-3.5 accent-accent"
+                      checked={allVisibleSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = selected.size > 0 && !allVisibleSelected;
+                      }}
+                      onChange={toggleAllVisible}
+                    />
+                  </th>
+                  <th className="px-4 py-2.5 text-left">ID</th>
+                  <th className="px-4 py-2.5 text-left">{tr('名称', 'Name')}</th>
+                  <th className="px-4 py-2.5 text-left">{tr('主机名', 'Hostname')}</th>
+                  <th className="px-4 py-2.5 text-left">IP</th>
+                  <th className="px-4 py-2.5 text-left">{tr('角色', 'Roles')}</th>
+                  <th className="px-4 py-2.5 text-left">{tr('状态', 'Status')}</th>
+                  <th className="px-4 py-2.5 text-left">{tr('最后心跳', 'Last heartbeat')}</th>
+                  <th className="px-4 py-2.5 text-left">Access Key</th>
+                  <th className="px-4 py-2.5 text-left">Edge</th>
+                  <th className="px-4 py-2.5 text-right">{tr('操作', 'Actions')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800/40">
+                {loading && devices.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="px-4 py-10 text-center text-zinc-500">
+                      {tr('加载中…', 'Loading…')}
+                    </td>
+                  </tr>
+                ) : devices.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="px-4 py-10 text-center text-zinc-500">
+                      {rolesFilter
+                        ? tr(
+                            `没有 ${ROLE_FILTER_TITLES[rolesFilter]?.[0] ?? rolesFilter} 设备。点设备名打开详情后可在右上角分配角色。`,
+                            `No ${ROLE_FILTER_TITLES[rolesFilter]?.[1] ?? rolesFilter} devices. Open a device detail page to assign roles.`,
+                          )
+                        : tr(
+                            '暂无设备。点击右上角"新建"创建一个。',
+                            'No devices yet. Click "New" in the top right to create one.',
+                          )}
+                    </td>
+                  </tr>
+                ) : (
+                  devices.map((d) => {
+                    const edge = d.hostEdge;
+                    const displayName = d.name || d.hostname || edge?.name || '';
+                    return (
+                    <tr
+                      key={d.id}
+                      className="cursor-pointer transition-colors hover:bg-zinc-900/40"
+                      onClick={() => navigate(`/devices/${encodeURIComponent(d.id)}`)}
+                    >
+                      {/* Identity columns are pinned `whitespace-nowrap`
+                          — when the table is squeezed (sidebar + many
+                          columns) we'd rather let the action column
+                          wrap than have a name break across lines.
+                          Heartbeat / access-key / agent are short and
+                          formatted to a known width. */}
+                      <td
+                        className="w-10 px-4 py-2.5"
+                        onClick={(ev) => ev.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={tr(`选择 ${displayName}`, `Select ${displayName}`)}
+                          className="h-3.5 w-3.5 accent-accent"
+                          checked={selected.has(d.id)}
+                          onChange={() => toggleOne(d.id)}
+                        />
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-zinc-400">
+                        {d.id}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-zinc-100">
+                        {displayName || (
+                          <span className="italic text-zinc-500">{tr('（待主机上线）', '(waiting for host)')}</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-zinc-400">
+                        {d.hostname || extractHostname(edge?.host_info) || '—'}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-zinc-400">
+                        {d.ip_address || extractIP(edge?.host_info) || '—'}
+                      </td>
+                      <td
+                        className="cursor-pointer whitespace-nowrap px-4 py-2.5"
+                        title={tr('点击分配角色', 'Click to assign roles')}
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          setRolesEditTarget(d);
+                        }}
+                      >
+                        <RoleChips roles={asEdgeRoles(d.roles)} />
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5">
+                        <StatusPill status={d.online ? 'online' : 'offline'} />
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-zinc-400">
+                        {d.last_seen_at ? relativeTime(d.last_seen_at) : '—'}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-zinc-400">
+                        {edge ? (
+                          <span className="rounded bg-zinc-800/60 px-1.5 py-0.5">
+                            {edge.access_key_id.slice(0, 8)}…
+                          </span>
+                        ) : '—'}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-zinc-400">
+                        <AgentVersionCell agentVersion={edge?.agent_version} managerVersion={managerVersion} />
+                      </td>
+                      <td
+                        className="whitespace-nowrap px-4 py-2.5 text-right"
+                        onClick={(ev) => ev.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => void openServerChart(d)}
+                          title={tr(`在 Grafana 查看 ${displayName} 图表`, `View ${displayName} chart in Grafana`)}
+                          aria-label={tr(`在 Grafana 查看 ${displayName} 图表`, `View ${displayName} chart in Grafana`)}
+                          className="mr-1 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+                        >
+                          <ExternalLink size={14} />
+                          <span>{tr('查看图表', 'View chart')}</span>
+                        </button>
+                        <ShellButton device={d} canMutate={canMutate} />
+                        <RowMenu
+                          onAssignRoles={() => setRolesEditTarget(d)}
+                          onViewTopology={() => navigate(`/devices/${encodeURIComponent(String(d.id))}?tab=topology`)}
+                          onDeleteDevice={() => void onDeleteDevice(d)}
+                          deviceOnline={d.online === true}
+                          onRotate={edge ? () => onRotate(edge.id, displayName, edge.access_key_id) : undefined}
+                          onDelete={edge ? () => onDelete(edge.id, displayName) : undefined}
+                          onUpgrade={edge ? () => setUpgradeTarget(edge) : undefined}
+                          onUpgradePackage={edge ? () => void onPackageUpgrade(edge) : undefined}
+                          upgradePackageBusy={edge ? pkgUpgradingId === edge.id : false}
+                        />
+                      </td>
+                    </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+
+      <CreateEdgeModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onSubmit={async (name) => {
+          await onCreate(name);
+          setCreateOpen(false);
+        }}
+      />
+
+      <SecretRevealModal
+        data={secretReveal}
+        onClose={() => setSecretReveal(null)}
+      />
+
+      {rolesEditTarget && (
+        <RolesEditorModal
+          device={rolesEditTarget}
+          onClose={() => setRolesEditTarget(null)}
+          onSaved={() => {
+            setRolesEditTarget(null);
+            void refresh();
+          }}
+        />
+      )}
+      {upgradeTarget && (
+        <UpgradeModal
+          edge={upgradeTarget}
+          managerVersion={managerVersion}
+          onClose={() => setUpgradeTarget(null)}
+          onTriggered={() => {
+            setUpgradeTarget(null);
+            // Don't immediately refresh — the edge needs ~30s to come
+            // back online with the new version. Operator can refresh
+            // manually; auto-refresh polling will pick it up too.
+          }}
+        />
+      )}
+      {batchUpgradeOpen && (
+        <BatchUpgradeModal
+          count={selectedHostEdgeIds.length}
+          onClose={() => setBatchUpgradeOpen(false)}
+          onSubmit={async (url, sha256) => {
+            setBatchBusy(true);
+            setToast(null);
+            try {
+              const resp = await batchUpgradeEdgeAgent(selectedHostEdgeIds, url, sha256);
+              summarizeBatch(tr('自定义升级', 'Custom upgrade'), resp);
+              setBatchUpgradeOpen(false);
+              clearSelection();
+              // Edges need ~30s to come back on the new version; polling
+              // picks them up. No immediate refresh.
+            } finally {
+              setBatchBusy(false);
+            }
+          }}
+        />
+      )}
+      {toast && (
+        <div
+          role="status"
+          onClick={() => setToast(null)}
+          className={cn(
+            'fixed bottom-6 right-6 z-50 max-w-md cursor-pointer rounded-lg px-4 py-2.5 text-sm shadow-2xl ring-1 ring-inset',
+            toast.kind === 'ok'
+              ? 'bg-emerald-500/15 text-emerald-200 ring-emerald-500/40'
+              : 'bg-red-500/15 text-red-200 ring-red-500/40',
+          )}
+        >
+          {toast.text}
+        </div>
+      )}
+    </>
+  );
+
+  async function openServerChart(device: DeviceRow) {
+    const name = device.name || device.hostname || `#${device.id}`;
+    await openMetricDrilldown({
+      expr: `100 * (1 - avg by (device_id) (rate(node_cpu_seconds_total{device_id="${device.id}",mode="idle"}[5m])))`,
+      rangeInput: '1h',
+      stepInput: '30s',
+      title: `${name} CPU`,
+      deviceId: device.id,
+    });
+  }
+}
+
+// AgentVersionCell shows the edge's reported agent_version + a drift
+// pill comparing it to the manager. Three states:
+//   - no agent_version reported → 灰 "—" (pre-fix binary)
+//   - matches manager (or unknown manager) → 灰 "vX.Y.Z" no pill
+//   - differs from manager → amber "vX.Y.Z · 落后"
+// We don't try semver-compare ("0.7.40" vs "0.7.43"); a string mismatch
+// is enough signal that an operator should look. Strict comparison also
+// avoids false greens during pre-release tagging weirdness.
+function AgentVersionCell({
+  agentVersion,
+  managerVersion,
+}: {
+  agentVersion?: string;
+  managerVersion: string;
+}) {
+  const { tr } = useI18n();
+  if (!agentVersion) {
+    return <span className="text-zinc-600">—</span>;
+  }
+  const drifted = managerVersion && agentVersion !== managerVersion;
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="rounded bg-zinc-800/60 px-1.5 py-0.5">{agentVersion}</span>
+      {drifted && (
+        <span
+          className="rounded border border-amber-700/50 bg-amber-900/20 px-1.5 py-0.5 text-[10px] text-amber-300"
+          title={tr(`manager 版本 ${managerVersion} — 该 edge 与 manager 不同步`, `manager version ${managerVersion} — this edge is out of sync with the manager`)}
+        >
+          {tr('落后', 'outdated')}
+        </span>
+      )}
+    </span>
+  );
+}
+
+// UpgradeModal — operator confirms the upgrade target URL + sha256 and
+// the manager dispatches an agent_upgrade RPC to the edge. The actual
+// swap happens on the edge's next process restart (systemd
+// ExecStartPre swap script). Form is intentionally explicit (URL +
+// sha256 typed in by hand) for v1 — a future revision should let
+// the operator pick from a manager-side artifact registry instead.
+function UpgradeModal({
+  edge,
+  managerVersion,
+  onClose,
+  onTriggered,
+}: {
+  edge: Edge;
+  managerVersion: string;
+  onClose(): void;
+  onTriggered(): void;
+}) {
+  const { tr } = useI18n();
+  const [url, setUrl] = useState(() => {
+    // Pre-fill with the same-origin manager's edge artifact path. Operators
+    // typically host edge binaries on `/edge/opskeeper-edge-linux-amd64`
+    // alongside the install script (deploy/install/edge/ layout).
+    const origin = window.location.origin.replace(/\/+$/, '');
+    return `${origin}/edge/opskeeper-edge-linux-amd64`;
+  });
+  const [sha256, setSha256] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const submit = async () => {
+    if (!url.trim() || sha256.trim().length !== 64) {
+      setErr(tr('需要 URL + 64 位小写 sha256', 'URL + 64-char lowercase sha256 required'));
+      return;
+    }
+    setSubmitting(true);
+    setErr(null);
+    try {
+      await upgradeEdgeAgent(edge.id, url.trim(), sha256.trim().toLowerCase());
+      onTriggered();
+    } catch (e) {
+      setErr((e as Error)?.message ?? tr('触发失败', 'Trigger failed'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  return (
+    <Modal open title={tr(`升级 ${edge.name} (#${edge.id})`, `Upgrade ${edge.name} (#${edge.id})`)} onClose={onClose}>
+      <div className="space-y-3 text-xs text-zinc-300">
+        <div>
+          <div className="text-zinc-500">{tr('当前版本', 'Current version')}</div>
+          <div className="font-mono">
+            {edge.agent_version ? edge.agent_version : tr('— 未上报', '— not reported')}
+            {managerVersion && (
+              <span className="ml-2 text-zinc-500">/ manager {managerVersion}</span>
+            )}
+          </div>
+        </div>
+        <label className="block">
+          <span className="mb-1 block text-zinc-500">{tr('下载 URL', 'Download URL')}</span>
+          <input
+            type="text"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 font-mono text-[11px] text-zinc-100 focus:border-zinc-600 focus:outline-none"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-zinc-500">{tr('SHA256（64 位小写 hex）', 'SHA256 (64-char lowercase hex)')}</span>
+          <input
+            type="text"
+            value={sha256}
+            onChange={(e) => setSha256(e.target.value)}
+            placeholder="e.g. 3a7f...  by `sha256sum opskeeper-edge-linux-amd64`"
+            className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 font-mono text-[11px] text-zinc-100 focus:border-zinc-600 focus:outline-none"
+          />
+        </label>
+        <p className="text-[11px] text-zinc-500">
+          {tr(
+            'edge 会下载、校验 sha256，原子 stage 后干净退出；systemd ExecStartPre 在重启时把新二进制 mv 到 ',
+            'edge downloads, verifies sha256, stages atomically and exits cleanly; on restart systemd ExecStartPre mv\'s the new binary to ',
+          )}<code className="font-mono">/usr/local/bin/opskeeper-edge</code>{tr('。失败时旧版本保持不变。', '. On failure the old version is left in place.')}
+        </p>
+        {err && (
+          <div className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-red-300">
+            {err}
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-zinc-700 px-3 py-1.5 text-zinc-300 hover:bg-zinc-800"
+          >
+            {tr('取消', 'Cancel')}
+          </button>
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={submit}
+            className="rounded-md bg-accent px-3 py-1.5 text-accent-fg hover:bg-accent/90 disabled:opacity-50"
+          >
+            {submitting ? tr('触发中…', 'Triggering…') : tr('触发升级', 'Trigger upgrade')}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// BatchUpgradeModal — the multi-device equivalent of UpgradeModal. The
+// same URL + sha256 is dispatched to every selected edge. Same explicit
+// URL+sha form (v1); a future revision can pick from an artifact
+// registry instead.
+function BatchUpgradeModal({
+  count,
+  onClose,
+  onSubmit,
+}: {
+  count: number;
+  onClose(): void;
+  onSubmit(url: string, sha256: string): Promise<void>;
+}) {
+  const { tr } = useI18n();
+  const [url, setUrl] = useState(() => {
+    const origin = window.location.origin.replace(/\/+$/, '');
+    return `${origin}/edge/opskeeper-edge-linux-amd64`;
+  });
+  const [sha256, setSha256] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const submit = async () => {
+    if (!url.trim() || sha256.trim().length !== 64) {
+      setErr(tr('需要 URL + 64 位小写 sha256', 'URL + 64-char lowercase sha256 required'));
+      return;
+    }
+    setSubmitting(true);
+    setErr(null);
+    try {
+      await onSubmit(url.trim(), sha256.trim().toLowerCase());
+    } catch (e) {
+      setErr((e as Error)?.message ?? tr('触发失败', 'Trigger failed'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  return (
+    <Modal open title={tr(`批量自定义升级 · ${count} 台`, `Batch custom upgrade · ${count} device(s)`)} onClose={onClose}>
+      <div className="space-y-3 text-xs text-zinc-300">
+        <p className="text-[11px] text-amber-300/90">
+          {tr(
+            `同一个二进制将下发到选中的 ${count} 台设备。请确认它们架构一致（默认 linux-amd64）。`,
+            `The same binary is dispatched to all ${count} selected devices. Make sure they share an architecture (default linux-amd64).`,
+          )}
+        </p>
+        <label className="block">
+          <span className="mb-1 block text-zinc-500">{tr('下载 URL', 'Download URL')}</span>
+          <input
+            type="text"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 font-mono text-[11px] text-zinc-100 focus:border-zinc-600 focus:outline-none"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-zinc-500">{tr('SHA256（64 位小写 hex）', 'SHA256 (64-char lowercase hex)')}</span>
+          <input
+            type="text"
+            value={sha256}
+            onChange={(e) => setSha256(e.target.value)}
+            placeholder="e.g. 3a7f...  by `sha256sum opskeeper-edge-linux-amd64`"
+            className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 font-mono text-[11px] text-zinc-100 focus:border-zinc-600 focus:outline-none"
+          />
+        </label>
+        {err && (
+          <div className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-red-300">
+            {err}
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-zinc-700 px-3 py-1.5 text-zinc-300 hover:bg-zinc-800"
+          >
+            {tr('取消', 'Cancel')}
+          </button>
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={submit}
+            className="rounded-md bg-accent px-3 py-1.5 text-accent-fg hover:bg-accent/90 disabled:opacity-50"
+          >
+            {submitting ? tr('触发中…', 'Triggering…') : tr('触发升级', 'Trigger upgrade')}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// RoleChips renders the roles bit set as small color-coded chips. Empty
+// list shows a "未分类" placeholder. The wrapping <td> is what's clickable;
+// these chips are non-interactive on their own.
+function RoleChips({ roles }: { roles: EdgeRole[] }) {
+  const { tr } = useI18n();
+  // The wrapping <td> is what's clickable — these chips are visual
+  // indicators only. The dashed "+" chip exists to ADVERTISE the
+  // affordance: without it operators saw a row of solid chips and
+  // didn't realise they could click to manage roles (user feedback
+  // 2026-05-20).
+  if (roles.length === 0) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded border border-dashed border-zinc-600 px-1.5 py-0.5 text-[11px] text-zinc-400 hover:border-accent hover:text-accent">
+        <Plus size={11} />
+        {tr('分配角色', 'Assign roles')}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {roles.map((r) => (
+        <span
+          key={r}
+          className={cn(
+            'inline-flex items-center rounded border px-1.5 py-0.5 text-[11px]',
+            ROLE_CHIP_CLASS[r],
+          )}
+        >
+          {tr(EDGE_ROLE_LABELS[r], EDGE_ROLE_LABELS_EN[r])}
+        </span>
+      ))}
+      <span
+        className="inline-flex items-center rounded border border-dashed border-zinc-700 px-1 py-0.5 text-[11px] text-zinc-500 hover:border-accent hover:text-accent"
+        aria-label={tr('编辑角色', 'Edit roles')}
+      >
+        <Plus size={10} />
+      </span>
+    </span>
+  );
+}
+
+// Per-role chip styling. Kept terse (border + faint bg) to avoid stealing
+// attention from the row's primary signal (status + last heartbeat).
+const ROLE_CHIP_CLASS: Record<EdgeRole, string> = {
+  server:   'border-sky-500/30    bg-sky-500/10    text-sky-300',
+  storage:  'border-violet-500/30 bg-violet-500/10 text-violet-300',
+  network:  'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+  database: 'border-amber-500/30  bg-amber-500/10  text-amber-300',
+};
+
+// RolesEditorModal lets an admin toggle the three role bits for one edge.
+// Keep "全选" / "全清" out of MVP — three checkboxes is already trivial UX.
+// Saving sends the full roles array (PATCH .../roles {roles:[...]}); empty
+// array means "未分类". Backend rejects unknown names so the UI doesn't
+// have to client-side validate.
+function RolesEditorModal({
+  device,
+  onClose,
+  onSaved,
+}: {
+  device: DeviceRow;
+  onClose(): void;
+  onSaved(): void;
+}) {
+  const { tr } = useI18n();
+  const [selected, setSelected] = useState<Set<EdgeRole>>(new Set(asEdgeRoles(device.roles)));
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const toggle = (r: EdgeRole) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(r)) next.delete(r);
+      else next.add(r);
+      return next;
+    });
+  };
+
+  const submit = async () => {
+    setSubmitting(true);
+    setErr(null);
+    try {
+      // Iterate EDGE_ROLES so the wire array stays in canonical order;
+      // backend doesn't care about order but tests are easier this way.
+      const out = EDGE_ROLES.filter((r) => selected.has(r));
+      await setEdgeRoles(device.id, out);
+      // Notify ambient surfaces (Sidebar's role sub-items, etc.) that the
+      // fleet's role set may have changed. Sidebar refetches and the new
+      // chip appears without a page reload.
+      notifyDevicesChanged();
+      onSaved();
+    } catch (e) {
+      setErr((e as Error).message || tr('保存失败', 'Save failed'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={tr(`分配角色 · ${device.name || device.hostname || `#${device.id}`}`, `Assign roles · ${device.name || device.hostname || `#${device.id}`}`)}
+      size="sm"
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+          >
+            {tr('取消', 'Cancel')}
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={submitting}
+            className="rounded-md bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-900 hover:bg-white disabled:opacity-50"
+          >
+            {submitting ? tr('保存中…', 'Saving…') : tr('保存', 'Save')}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-2">
+        <p className="text-xs text-zinc-500">
+          {tr(
+            '一台设备可同时承担多个角色（例：超融合一体机 = 服务器 + 存储）。不勾选 = 未分类。',
+            'A device can hold multiple roles (e.g. a hyper-converged box = server + storage). Leave empty for uncategorized.',
+          )}
+        </p>
+        <div className="space-y-1">
+          {EDGE_ROLES.map((r) => (
+            <label
+              key={r}
+              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800/60"
+            >
+              <input
+                type="checkbox"
+                checked={selected.has(r)}
+                onChange={() => toggle(r)}
+                className="h-3.5 w-3.5 accent-zinc-300"
+              />
+              <span
+                className={cn(
+                  'inline-flex items-center rounded border px-1.5 py-0.5 text-[11px]',
+                  ROLE_CHIP_CLASS[r],
+                )}
+              >
+                {tr(EDGE_ROLE_LABELS[r], EDGE_ROLE_LABELS_EN[r])}
+              </span>
+            </label>
+          ))}
+        </div>
+        {err && <div className="text-xs text-red-400">{err}</div>}
+      </div>
+    </Modal>
+  );
+}
+
+function extractHostname(hostInfo: Edge['host_info']): string | null {
+  if (!hostInfo) return null;
+  if (typeof hostInfo === 'string') {
+    const parsed = safeParseHostInfo(hostInfo);
+    if (!parsed) {
+      const raw = hostInfo.trim();
+      return raw && !raw.startsWith('{') ? raw : null;
+    }
+    return pickHostname(parsed);
+  }
+  if (typeof hostInfo === 'object') {
+    return pickHostname(hostInfo);
+  }
+  return null;
+}
+
+function safeParseHostInfo(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function pickHostname(value: Record<string, unknown>): string | null {
+  const candidates = [
+    value.hostname,
+    value.hostName,
+    value.nodename,
+    value.nodeName,
+    value.host,
+    value.instance,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string') continue;
+    const normalized = candidate.trim();
+    if (!normalized) continue;
+    return normalized.includes(':') ? normalized.split(':')[0] || normalized : normalized;
+  }
+  return null;
+}
+
+function extractIP(hostInfo: Edge['host_info']): string | null {
+  if (!hostInfo) return null;
+  if (typeof hostInfo === 'string') {
+    const parsed = safeParseHostInfo(hostInfo);
+    if (!parsed) return null;
+    return extractIPFromObj(parsed);
+  }
+  if (typeof hostInfo === 'object') {
+    return extractIPFromObj(hostInfo);
+  }
+  return null;
+}
+
+function extractIPFromObj(obj: Record<string, unknown>): string | null {
+  const v = obj.ip_address;
+  if (typeof v === 'string' && v.trim()) return v.trim();
+  return null;
+}
+
+// ShellButton opens the WebSSH page for one device in a NEW tab. The
+// route key is device_id, not edge.id — Prom labels and the backend
+// WS handler both use device_id. Disabled when the edge is offline
+// or hasn't been linked to a Device row yet (device_id null).
+//
+// Why new tab: a shell session is its own thing — closing the host
+// page (Edges) would normally tear it down via beforeunload. Letting
+// it live in its own tab matches user mental model ("multiple shells
+// open at once") and lets them keep using the rest of the SPA without
+// disconnecting.
+function ShellButton({ device, canMutate }: { device: DeviceRow; canMutate: boolean }) {
+  const { tr } = useI18n();
+  const displayName = device.name || device.hostname || `#${device.id}`;
+  const disabled = !canMutate || !device.online;
+  const reason = !canMutate
+    ? tr('只读账号不能进入终端', 'Viewer accounts cannot open the terminal')
+    : !device.online
+      ? tr('设备未上线', 'Device offline')
+      : '';
+  const href = `/devices/${encodeURIComponent(String(device.id))}/shell`;
+  if (disabled) {
+    return (
+      <span
+        title={reason}
+        aria-label={`${displayName} ${reason}`}
+        className="mr-1 inline-flex cursor-not-allowed items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-600"
+      >
+        <TerminalSquare size={14} />
+        <span>{tr('终端', 'Terminal')}</span>
+      </span>
+    );
+  }
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={tr(`打开 ${displayName} 终端 (WebSSH) — 在新标签页`, `Open ${displayName} terminal (WebSSH) — new tab`)}
+      aria-label={tr(`打开 ${displayName} 终端，新标签页`, `Open ${displayName} terminal in a new tab`)}
+      className="mr-1 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
+    >
+      <TerminalSquare size={14} />
+      <span>{tr('终端', 'Terminal')}</span>
+    </a>
+  );
+}
+
+function RowMenu({
+  onAssignRoles,
+  onViewTopology,
+  onDeleteDevice,
+  deviceOnline,
+  onRotate,
+  onDelete,
+  onUpgrade,
+  onUpgradePackage,
+  upgradePackageBusy,
+}: {
+  onAssignRoles(): void;
+  onViewTopology(): void;
+  onDeleteDevice(): void;
+  deviceOnline: boolean;
+  onRotate?: () => void;
+  onDelete?: () => void;
+  onUpgrade?: () => void;
+  onUpgradePackage?: () => void;
+  upgradePackageBusy: boolean;
+}) {
+  const { tr } = useI18n();
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [position, setPosition] = useState<{ top: number; right: number } | null>(null);
+
+  const syncPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    setPosition({
+      top: rect.bottom + 6,
+      right: window.innerWidth - rect.right,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    syncPosition();
+    const onViewportChange = () => syncPosition();
+    window.addEventListener('resize', onViewportChange);
+    window.addEventListener('scroll', onViewportChange, true);
+    return () => {
+      window.removeEventListener('resize', onViewportChange);
+      window.removeEventListener('scroll', onViewportChange, true);
+    };
+  }, [open, syncPosition]);
+
+  const menu = useMemo(() => {
+    if (!open || !position) return null;
+    return createPortal(
+      <>
+        <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
+        <div
+          role="menu"
+          className="fixed z-50 w-52 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 py-1 shadow-xl"
+          style={{ top: position.top, right: position.right }}
+        >
+          <div className="px-3 pb-1 pt-1.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+            {tr('设备操作', 'Device actions')}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onAssignRoles();
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-200 hover:bg-zinc-800"
+          >
+            <Plus size={13} /> {tr('分配角色', 'Assign roles')}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onViewTopology();
+            }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-200 hover:bg-zinc-800"
+          >
+            <ExternalLink size={13} /> {tr('查看拓扑', 'View topology')}
+          </button>
+          <button
+            type="button"
+            disabled={deviceOnline}
+            title={tr(
+              deviceOnline
+                ? '在线设备不可删除，请先让它离线。'
+                : '离线可删除，并清理关联 Edge 和密钥。',
+              deviceOnline
+                ? 'Online devices cannot be deleted. Bring it offline first.'
+                : 'Offline devices can be deleted; linked Edges and credentials are cleaned too.',
+            )}
+            onClick={() => {
+              if (deviceOnline) return;
+              setOpen(false);
+              onDeleteDevice();
+            }}
+            className={cn(
+              'flex w-full items-center gap-2 px-3 py-2 text-left text-xs',
+              deviceOnline
+                ? 'cursor-not-allowed text-zinc-600'
+                : 'text-red-300 hover:bg-red-500/10',
+            )}
+          >
+            <Trash2 size={13} /> {tr('删除设备', 'Delete device')}
+          </button>
+          <div className="px-3 pb-2 text-[11px] leading-4 text-zinc-500">
+            {tr(
+              deviceOnline
+                ? '在线设备不可删除。'
+                : '离线可删除，并清理 Edge 和密钥。',
+              deviceOnline
+                ? 'Online devices cannot be deleted.'
+                : 'Offline devices can be deleted; Edges and credentials are cleaned too.',
+            )}
+          </div>
+
+          {onRotate && onDelete && onUpgrade && onUpgradePackage && (
+            <>
+              <div className="my-1 border-t border-zinc-800" />
+              <div className="px-3 pb-1 pt-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                {tr('Edge 操作', 'Edge actions')}
+              </div>
+              <button
+                type="button"
+                disabled={upgradePackageBusy}
+                onClick={() => {
+                  setOpen(false);
+                  onUpgradePackage();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
+              >
+                <ExternalLink size={13} /> {upgradePackageBusy ? tr('升级中…', 'Upgrading…') : tr('升级整包（Edge + 插件）', 'Upgrade package (edge + plugins)')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onUpgrade();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-200 hover:bg-zinc-800"
+              >
+                <ExternalLink size={13} /> {tr('自定义升级 (URL + sha)', 'Custom upgrade (URL + sha)')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onRotate();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-zinc-200 hover:bg-zinc-800"
+              >
+                <RotateCw size={13} /> {tr('轮换 Edge 密钥', 'Rotate edge secret')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  onDelete();
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-red-300 hover:bg-red-500/10"
+              >
+                <Trash2 size={13} /> {tr('删除 Edge', 'Delete edge')}
+              </button>
+            </>
+          )}
+        </div>
+      </>,
+      document.body,
+    );
+  }, [deviceOnline, onAssignRoles, onDelete, onDeleteDevice, onRotate, onUpgrade, onUpgradePackage, onViewTopology, open, position, tr, upgradePackageBusy]);
+
+  return (
+    <div className="relative inline-block">
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label={tr("更多操作", "More actions")}
+        className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100"
+      >
+        <MoreVertical size={15} />
+      </button>
+      {menu}
+    </div>
+  );
+}
+
+function CreateEdgeModal({
+  open,
+  onClose,
+  onSubmit,
+}: {
+  open: boolean;
+  onClose(): void;
+  onSubmit(name: string): Promise<void>;
+}) {
+  const { tr } = useI18n();
+  const [name, setName] = useState('');
+  const [pending, setPending] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setName('');
+      setErr(null);
+      setPending(false);
+    }
+  }, [open]);
+
+  async function go() {
+    if (pending) return;
+    setPending(true);
+    setErr(null);
+    try {
+      // Empty name is allowed; backend will mint a 10-char id as the
+      // default label.
+      await onSubmit(name.trim());
+    } catch (e) {
+      setErr((e as Error).message || tr('创建失败', 'Create failed'));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={tr('新建设备', 'New device')}
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+          >
+            {tr('取消', 'Cancel')}
+          </button>
+          <button
+            type="button"
+            onClick={() => void go()}
+            disabled={pending}
+            className="rounded-md bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-900 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {pending ? tr('创建中…', 'Creating…') : tr('创建', 'Create')}
+          </button>
+        </>
+      }
+    >
+      <label htmlFor="edge-name" className="mb-1 block text-[11px] text-zinc-500">
+        {tr('名称', 'Name')}
+      </label>
+      <input
+        id="edge-name"
+        autoFocus
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder={tr("留空，主机上线后自动填主机名", "Leave blank; auto-fill on first heartbeat")}
+        className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-100 focus:border-zinc-600 focus:outline-none"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') void go();
+        }}
+      />
+      <p className="mt-2 text-[11px] text-zinc-500">
+        {tr(
+          '名称可留空。设备上线后会自动以上报的主机名填入。创建后将一次性显示 secret_key，关闭弹窗后无法再次查看。',
+          'Name may be left blank — it auto-fills with the reported hostname on first heartbeat. secret_key is shown once after creation and cannot be retrieved again.',
+        )}
+      </p>
+      {err && (
+        <div
+          role="alert"
+          className="mt-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300"
+        >
+          {err}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function SecretRevealModal({
+  data,
+  onClose,
+}: {
+  data: { title: string; accessKey: string; secretKey: string } | null;
+  onClose(): void;
+}) {
+  const { tr } = useI18n();
+  if (!data) return null;
+  return (
+    <Modal
+      open={true}
+      onClose={onClose}
+      title={data.title}
+      size="md"
+      footer={
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-900 hover:bg-white"
+        >
+          {tr('我已保存', "I've saved it")}
+        </button>
+      }
+    >
+      <p className="mb-3 text-xs text-amber-300/90">
+        {tr('以下安装命令包含 secret_key，仅显示一次。请立即复制保存到目标主机。', 'The install command below carries the secret_key and is shown only once. Copy it to the target host now.')}
+      </p>
+      <InstallCommandRow accessKey={data.accessKey} secretKey={data.secretKey} />
+    </Modal>
+  );
+}
+
+function InstallCommandRow({ accessKey, secretKey }: { accessKey: string; secretKey: string }) {
+  const { tr } = useI18n();
+  const [copied, setCopied] = useState(false);
+  const host = typeof window !== 'undefined' ? window.location.host : 'opskeeper.example.com';
+  const hostnameOnly = host.split(':')[0] || host;
+  const tunnelAddr = `${hostnameOnly}:40012`;
+  const cmd =
+    `curl -k -sSL https://${host}/install.sh | bash -s -- ` +
+    `--access-key=${accessKey} ` +
+    `--secret-key=${secretKey} ` +
+    `--server-edge-addr=${tunnelAddr} ` +
+    `--server-http-addr=${host}`;
+  const display =
+    `curl -k -sSL https://${host}/install.sh | bash -s -- \\\n` +
+    `  --access-key=${accessKey} \\\n` +
+    `  --secret-key=${secretKey} \\\n` +
+    `  --server-edge-addr=${tunnelAddr} \\\n` +
+    `  --server-http-addr=${host}`;
+  return (
+    <div className="mt-4">
+      <div className="mb-1 flex items-center justify-between">
+        <div className="text-[11px] uppercase tracking-wider text-zinc-500">
+          {tr('在目标主机上一键安装', 'One-line install on the target host')}
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            navigator.clipboard
+              .writeText(cmd)
+              .then(() => {
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              })
+              .catch(() => {
+                /* noop */
+              });
+          }}
+          aria-label={tr("复制安装命令", "Copy install command")}
+          className={cn(
+            'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs',
+            copied
+              ? 'bg-emerald-500/15 text-emerald-300'
+              : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700',
+          )}
+        >
+          {copied ? <Check size={12} /> : <Copy size={12} />}
+          {copied ? tr('已复制', 'Copied') : tr('复制单行', 'Copy one-liner')}
+        </button>
+      </div>
+      <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2 font-mono text-[11px] leading-relaxed text-zinc-200">
+        {display}
+      </pre>
+      <p className="mt-1.5 text-[11px] text-zinc-500">
+        {tr('自签证书：浏览器警告 + curl ', 'Self-signed cert: browser warning + curl ')}<code className="rounded bg-zinc-800 px-1">-k</code>{tr(' 已忽略校验。目标主机需 root（脚本会自动 sudo 重试）；支持 linux amd64 / arm64。', ' skips verification. The target host needs root (the script auto-retries with sudo); linux amd64 / arm64 are supported.')}
+      </p>
+    </div>
+  );
+}

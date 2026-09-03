@@ -1,0 +1,144 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "uid": "opskeeper-agentteams-loop",
+  "title": "AgentTeams × Closed-Loop Overview (OPSKEEPER-24)",
+  "tags": ["opskeeper", "agentteams", "loop", "OPSKEEPER-24"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": { "list": [] },
+  "description": "Companion dashboard to Opskeeper Manager Internals: surfaces the agentteams / closed-loop observability introduced in OPSKEEPER-24 (commits 627e754, 7520b85, 1aead7d). Pair with manager-internals.json for full coverage.",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "MCP tools/call rate (ok)",
+      "datasource": { "type": "prometheus", "uid": "opskeeper-prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "sum(rate(agentteams_mcp_call_total{result=\"ok\"}[5m]))", "legendFormat": "ok/s", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "type": "stat",
+      "title": "MCP tools/call error rate",
+      "datasource": { "type": "prometheus", "uid": "opskeeper-prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [
+        { "expr": "sum(rate(agentteams_mcp_call_total{result=~\"error|denied|auth_failed\"}[5m])) / clamp_min(sum(rate(agentteams_mcp_call_total[5m])), 0.001)", "legendFormat": "err/s", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 } }
+    },
+    {
+      "type": "stat",
+      "title": "Severity-escalated phases (last 1h)",
+      "datasource": { "type": "prometheus", "uid": "opskeeper-prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "sum(increase(loop_phase_total{result=\"severity_escalated\"}[1h]))", "legendFormat": "escalations", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "red", "value": 3 }
+            ]
+          },
+          "color": { "mode": "thresholds" }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "DB ApprovalDecision lookup miss rate",
+      "datasource": { "type": "prometheus", "uid": "opskeeper-prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [
+        { "expr": "sum(rate(loop_db_approved_decision_lookup_total{result=\"tenant_mismatch\"}[5m])) / clamp_min(sum(rate(loop_db_approved_decision_lookup_total{result=~\"hit|tenant_mismatch|not_found\"}[5m])), 0.001)", "legendFormat": "miss/s", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "min": 0 } }
+    },
+
+    {
+      "type": "timeseries",
+      "title": "MCP tools/call rate by tool × result",
+      "datasource": { "type": "prometheus", "uid": "opskeeper-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        { "expr": "sum by (tool, result) (rate(agentteams_mcp_call_total[5m]))", "legendFormat": "{{tool}} · {{result}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "MCP latency p95 by tool",
+      "datasource": { "type": "prometheus", "uid": "opskeeper-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (le, tool) (rate(agentteams_mcp_call_duration_seconds_bucket[5m])))", "legendFormat": "{{tool}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Closed-loop phase outcomes (rate)",
+      "datasource": { "type": "prometheus", "uid": "opskeeper-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "sum by (phase, result) (rate(loop_phase_total[5m]))", "legendFormat": "{{phase}} · {{result}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Closed-loop phase p95 duration",
+      "datasource": { "type": "prometheus", "uid": "opskeeper-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (le, phase) (rate(loop_phase_duration_seconds_bucket[5m])))", "legendFormat": "{{phase}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Plugin sync outcomes (by mode × result)",
+      "datasource": { "type": "prometheus", "uid": "opskeeper-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        { "expr": "sum by (mode, operation, result) (rate(agentteams_plugin_sync_total[5m]))", "legendFormat": "{{mode}}/{{operation}} · {{result}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Higress consumer resolve outcomes",
+      "datasource": { "type": "prometheus", "uid": "opskeeper-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        { "expr": "sum by (result) (rate(agentteams_higress_resolve_total[5m]))", "legendFormat": "{{result}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+
+    {
+      "type": "timeseries",
+      "title": "DB ApprovedDecision loader outcomes",
+      "datasource": { "type": "prometheus", "uid": "opskeeper-prometheus" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 28 },
+      "targets": [
+        { "expr": "sum by (result) (rate(loop_db_approved_decision_lookup_total[5m]))", "legendFormat": "{{result}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    }
+  ]
+}

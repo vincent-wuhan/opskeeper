@@ -1,0 +1,79 @@
+apiVersion: v2
+name: opskeeper
+description: |
+  OpsKeeper Helm chart. The chart name `opskeeper` is retained as a
+  compatibility identifier for existing deployments.
+
+  OpsKeeper 集成中间件 Adapter + Harness 评测
+  + git-artifact 反查 + 5 平台 IM + 可观测性栈。
+
+  Chart 镜像 ops-keeper helm/ 的 value 命名与依赖约定，迁移用户
+  零学习成本。
+
+  可观测性栈：Qdrant（向量库）+ Prometheus（指标）+ Loki（日志）
+  + Tempo（Trace）+ Grafana（可视化）— 通过 chart 依赖按需启用。
+
+type: application
+
+# Chart 版本
+version: 1.0.0
+
+# 应用版本
+appVersion: "v1.0.0"
+home: https://github.com/vincent-wuhan/opskeeper
+sources:
+  - https://github.com/vincent-wuhan/opskeeper
+keywords:
+  - aiops
+  - ops-ai-agent
+  - middleware
+  - harness
+  - incident-response
+
+maintainers:
+  - name: OpsKeeper maintainers
+    url: https://github.com/vincent-wuhan/opskeeper
+
+annotations:
+  category: AIOps
+  licenses: AGPL-3.0
+
+# 路径 A 阶段 3 任务 3.1：可观测性栈作为可选 chart 依赖
+# 启用方式：--set qdrant.enabled=true 等
+# 完整安装：helm dep update && helm install opskeeper ./deploy/helm
+dependencies:
+  - name: qdrant
+    version: "~1.5.0"
+    repository: "https://qdrant.github.io/qdrant-helm"
+    condition: qdrant.enabled
+    tags:
+      - knowledge
+      - observability
+  - name: prometheus
+    version: "~25.0.0"
+    repository: "https://prometheus-community.github.io/helm-charts"
+    condition: prometheus.enabled
+    tags:
+      - observability
+      - metrics
+  - name: loki
+    version: "~5.0.0"
+    repository: "https://grafana.github.io/helm-charts"
+    condition: loki.enabled
+    tags:
+      - observability
+      - logs
+  - name: tempo
+    version: "~1.5.0"
+    repository: "https://grafana.github.io/helm-charts"
+    condition: tempo.enabled
+    tags:
+      - observability
+      - traces
+  - name: grafana
+    version: "~7.0.0"
+    repository: "https://grafana.github.io/helm-charts"
+    condition: grafana.enabled
+    tags:
+      - observability
+      - visualization

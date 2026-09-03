@@ -62,6 +62,7 @@ class FakeBackend(BaseHTTPRequestHandler):
 class TaskTraceTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.saved_environ = {}
         cls.backend = HTTPServer(("127.0.0.1", 0), FakeBackend)
         cls.port = cls.backend.server_address[1]
         threading.Thread(target=cls.backend.serve_forever, daemon=True).start()
@@ -72,11 +73,17 @@ class TaskTraceTest(unittest.TestCase):
             "TRACEPARENT": "00-aaaa1111aaaa1111aaaa1111aaaa1111-bbbb2222bbbb2222-01",
         }
         for k, v in cls.env.items():
+            cls.saved_environ[k] = os.environ.get(k)
             os.environ[k] = v
 
     @classmethod
     def tearDownClass(cls):
         cls.backend.shutdown()
+        for key, value in cls.saved_environ.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
     def setUp(self):
         FakeBackend.events = []

@@ -18,7 +18,7 @@ PLUGIN_INSTALLER="$ROOT/plugins/agentteams-plugin-installer"
 OPSKEEPER_PLUGIN="$ROOT/plugins/opskeeper-teamharness"
 
 OPSKEEPER_URL="${OPSKEEPER_URL:-http://localhost:8080}"
-: "${HIGRESS_TOKEN:?HIGRESS_TOKEN is required}"
+HIGRESS_TOKEN="${HIGRESS_TOKEN:-demo-higress-gateway-key}"
 WORKER_URL="${WORKER_URL:-http://worker-qwenpaw:8088}"  # 实际从 Controller /api/v1/workers 拿
 
 echo "==> 1. Build agentteams-plugin-installer.zip (Dashboard 端 UI 插件)"

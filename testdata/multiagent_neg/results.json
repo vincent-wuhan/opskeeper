@@ -1,0 +1,116 @@
+[
+  {
+    "name": "T1: alerter → recovery.execute (mutating)",
+    "http": 403,
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32010,\"message\":\"mcp authorization denied: mcp agentteams mutating tool denied\"}}\n"
+  },
+  {
+    "name": "T2: critic → recovery.execute (mutating)",
+    "http": 403,
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32010,\"message\":\"mcp authorization denied: mcp agentteams mutating tool denied\"}}\n"
+  },
+  {
+    "name": "T3: verifier → recovery.execute (mutating)",
+    "http": 403,
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32010,\"message\":\"mcp authorization denied: mcp agentteams mutating tool denied\"}}\n"
+  },
+  {
+    "name": "T4: critic → loop.investigate (read)",
+    "http": 403,
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32010,\"message\":\"mcp authorization denied: mcp agentteams role not allowed\"}}\n"
+  },
+  {
+    "name": "T5: alerter → loop.correlate (tampered body)",
+    "http": 401,
+    "body": "{\"error\":\"unauthorized\",\"message\":\"X-Opskeeper-Signature mismatch\"}\n"
+  },
+  {
+    "name": "T6: investigator → loop.correlate (no signature)",
+    "http": 401,
+    "body": "{\"error\":\"unauthorized\",\"message\":\"X-Opskeeper-Signature header required\"}\n"
+  },
+  {
+    "name": "T7: investigator → loop.correlate (ts -3600)",
+    "http": 401,
+    "body": "{\"error\":\"unauthorized\",\"message\":\"X-Opskeeper-Timestamp out of replay window\"}\n"
+  },
+  {
+    "name": "T8: alerter key + investigator identity",
+    "http": 403,
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32010,\"message\":\"mcp authorization denied: mcp agentteams worker identity mismatch\"}}\n"
+  },
+  {
+    "name": "T9: unknown apiKey",
+    "http": 403,
+    "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32010,\"message\":\"mcp authorization denied: mcp agentteams invalid identity\"}}\n"
+  },
+  {
+    "name": "T10: malformed role suffix",
+    "http": 403,
+    "body": "{\"error\":\"identity_inconsistent\",\"message\":\"consumer name and apiKey role suffix mismatch\"}\n"
+  },
+  {
+    "name": "T11: investigator → loop.investigate (tenant=tenant-b)",
+    "http": 200,
+    "body": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "_meta": {
+          "audit_log_id": "247",
+          "opskeeper_mcp_evidence": {
+            "arguments_sha256": "d7b02638a2d2a9da770445abce9731adbe62e69c274f0208d39b89606544bf6f",
+            "audit_log_id": "247",
+            "jsonrpc_success": true,
+            "response_sha256": "b110b4bee0c903339261fade14f4c37acea266b2e5e7d5e8bdcbfee5d5c886a3",
+            "result_projection": {
+              "confidence": 0.75,
+              "root_cause_object": {
+                "detail": {
+                  "alert_id": "AL-MULTIAGENT-NEG-A",
+                  "evidence_tool": "resource_alert",
+                  "resource_type": "host",
+                  "target": "INC-MULTIAGENT-NEG"
+                },
+                "kind": "unknown",
+                "summary": "Evidence-backed investigation found host issue on INC-MULTIAGENT-NEG"
+              },
+              "schema_version": "v1"
+            },
+            "tool": "loop.investigate"
+          }
+        },
+        "content": [
+          {
+            "text": "{\"schema_version\":\"v1\",\"root_cause_object\":{\"kind\":\"unknown\",\"summary\":\"Evidence-backed investigation found host issue on INC-MULTIAGENT-NEG\",\"detail\":{\"alert_id\":\"AL-MULTIAGENT-NEG-A\",\"evidence_tool\":\"resource_alert\",\"resource_type\":\"host\",\"target\":\"INC-MULTIAGENT-NEG\"}},\"confidence\":0.75,\"evidence_chain\":[{\"type\":\"alert\",\"ref\":\"resource_alert:resource_type=host alert_id=AL-MULTIAGENT-NEG-A window=[2026-08-27T03:22:33Z,2026-08-27T03:27:33Z]\",\"observed_at\":\"2026-08-27T03:27:33.117510056Z\",\"snippet\":\"resource_type=host alert_id=AL-MULTIAGENT-NEG-A window=[2026-08-27T03:22:33Z,2026-08-27T03:27:33Z]\"},{\"type\":\"log\",\"ref\":\"query_logql:{resource_type=\\\"host\\\"} |= \\\"AL-MULTIAGENT-NEG-A\\\"\",\"observed_at\":\"2026-08-27T03:27:33.117510056Z\",\"snippet\":\"{resource_type=\\\"host\\\"} |= \\\"AL-MULTIAGENT-NEG-A\\\"\"}],\"time_window\":{\"start\":\"2026-08-27T03:22:33.117510056Z\",\"end\":\"2026-08-27T03:27:33.117510056Z\"},\"remediation_options\":[{\"action\":\"host.garbage_collect\",\"target\":\"host:AL-MULTIAGENT-NEG-A\",\"blast_radius\":\"single_device\",\"rollback_plan\":\"Operator must review and reverse host.garbage_collect on host:AL-MULTIAGENT-NEG-A before retrying.\",\"confidence\":0.75},{\"action\":\"host.restart_service\",\"target\":\"host:AL-MULTIAGENT-NEG-A\",\"blast_radius\":\"cluster\",\"rollback_plan\":\"Operator must review and reverse host.restart_service on host:AL-MULTIAGENT-NEG-A before retrying.\",\"confidence\":0.75}]}",
+            "type": "text"
+          }
+        ],
+        "structuredContent": {
+          "audit_log_id": "247",
+          "opskeeper_mcp_evidence": {
+            "arguments_sha256": "d7b02638a2d2a9da770445abce9731adbe62e69c274f0208d39b89606544bf6f",
+            "audit_log_id": "247",
+            "jsonrpc_success": true,
+            "response_sha256": "b110b4bee0c903339261fade14f4c37acea266b2e5e7d5e8bdcbfee5d5c886a3",
+            "result_projection": {
+              "confidence": 0.75,
+              "root_cause_object": {
+                "detail": {
+                  "alert_id": "AL-MULTIAGENT-NEG-A",
+                  "evidence_tool": "resource_alert",
+                  "resource_type": "host",
+                  "target": "INC-MULTIAGENT-NEG"
+                },
+                "kind": "unknown",
+                "summary": "Evidence-backed investigation found host issue on INC-MULTIAGENT-NEG"
+              },
+              "schema_version": "v1"
+            },
+            "tool": "loop.investigate"
+          }
+        }
+      }
+    }
+  }
+]

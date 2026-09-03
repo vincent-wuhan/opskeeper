@@ -1,0 +1,172 @@
+# opskeeper + qwenpaw worker + opskeeper-teamharness plugin — Docker 演示栈
+#
+# 目的: 单台 Linux/Mac 机器上一键拉起 opskeeper 控制平面 + 2 个 qwenpaw worker,
+#       跑通 Dashboard upload → push → qwenpaw plugin install 完整链路。
+#
+# 与 deploy/docker-compose.yml 的关系:
+#   - 不冲突 — 网络名 agentteams_net,独立 volume,独立端口
+#   - 共享 opskeeper 镜像(从 docker-compose.yml 的 opskeeper 服务复用)
+#   - worker 用 opskeeper-teamharness 镜像(详见下方 Dockerfile.opskeeper-worker)
+#
+# 启动:
+#   docker compose -f deploy/docker-compose.agentteams.yml up -d
+#
+# 验证:
+#   curl http://localhost:8080/healthz                                    # opskeeper
+#   curl http://localhost:8080/v1/plugins                                  # 列表(空)
+#   curl http://localhost:8080/v1/plugins/opskeeper-teamharness            # 详情
+#   docker compose -f deploy/docker-compose.agentteams.yml logs worker-opskeeper-alerter
+#   docker exec opskeeper-manager curl http://worker-opskeeper-alerter:8088/health
+#
+# 数据持久化:
+#   opskeeper_plugins  → /var/lib/opskeeper/plugins  (registry + .payload.zip)
+#   opskeeper_logs     → /var/log/opskeeper
+#   worker_logs        → /var/log/qwenpaw
+
+name: opskeeper-agentteams
+
+networks:
+  agentteams_net:
+    driver: bridge
+
+volumes:
+  opskeeper_plugins:
+    name: opskeeper_plugins
+  opskeeper_logs:
+    name: opskeeper_logs
+  worker_logs:
+    name: agentteams_worker_logs
+
+services:
+  # ----------------------------------------------------------------------
+  # opskeeper Manager (opskeeper 二进制)
+  # ----------------------------------------------------------------------
+  opskeeper-manager:
+    image: opskeeper:dev
+    container_name: opskeeper-manager
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.opskeeper
+      args:
+        VERSION: dev
+    restart: unless-stopped
+    depends_on:
+      worker-alerter:
+        condition: service_started
+      worker-investigator:
+        condition: service_started
+    environment:
+      # Manager HTTP API (与 plugin push 链路相关)
+      OPSKEEPER_HTTP_ADDR: ":8080"
+      # plugin sync — Docker 静态 worker endpoints
+      OPSKEEPER_PLUGIN_SYNC_MODE: worker-http
+      OPSKEEPER_PLUGIN_SYNC_ENDPOINTS_FILE: /etc/opskeeper/plugin-sync-endpoints.json
+      OPSKEEPER_PLUGIN_SYNC_BEARER: ${OPSKEEPER_PLUGIN_SYNC_BEARER:-}
+      # plugin registry 本地存储
+      OPSKEEPER_PLUGINS_DIR: /var/lib/opskeeper/plugins
+      # Higress GatewayKey (生产替换)
+      HIGRESS_ADMIN_PASSWORD: ${HIGRESS_ADMIN_PASSWORD:-change-me}
+      # log
+      OPSKEEPER_LOG_LEVEL: info
+    volumes:
+      - opskeeper_plugins:/var/lib/opskeeper/plugins
+      - opskeeper_logs:/var/log/opskeeper
+      - ./examples/plugin-sync-endpoints.json:/etc/opskeeper/plugin-sync-endpoints.json:ro
+    ports:
+      # Manager HTTP API(经 Higress)
+      - "8080:8080"
+      # metrics
+      - "9100:9100"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    networks:
+      - agentteams_net
+
+  # ----------------------------------------------------------------------
+  # qwenpaw Worker #1 — opskeeper-alerter
+  # ----------------------------------------------------------------------
+  worker-alerter:
+    image: opskeeper-worker:dev
+    container_name: worker-opskeeper-alerter
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.opskeeper-worker
+      args:
+        WORKER_NAME: worker-opskeeper-alerter
+        WORKER_PORT: "8088"
+    restart: unless-stopped
+    environment:
+      WORKER_NAME: worker-opskeeper-alerter
+      WORKER_PORT: "8088"
+      OPSKEEPER_BACKEND_URL: http://opskeeper-manager:8080
+      OPSKEEPER_BEARER_TOKEN: ${OPSKEEPER_PLUGIN_SYNC_BEARER:-}
+      # Plugin install endpoint 上 Higress gateway key
+      HIGRESS_PLUGIN_BEARER: ${OPSKEEPER_PLUGIN_SYNC_BEARER:-}
+    volumes:
+      - worker_logs:/var/log/qwenpaw
+      - ./examples/plugin-payloads:/var/lib/qwenpaw/payloads:ro
+    ports:
+      # 暴露到 host 仅供调试(生产应只暴露给 opskeeper-manager)
+      - "8088:8088"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8088/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    networks:
+      - agentteams_net
+
+  # ----------------------------------------------------------------------
+  # qwenpaw Worker #2 — opskeeper-investigator
+  # ----------------------------------------------------------------------
+  worker-investigator:
+    image: opskeeper-worker:dev
+    container_name: worker-opskeeper-investigator
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.opskeeper-worker
+      args:
+        WORKER_NAME: worker-opskeeper-investigator
+        WORKER_PORT: "8088"
+    restart: unless-stopped
+    environment:
+      WORKER_NAME: worker-opskeeper-investigator
+      WORKER_PORT: "8088"
+      OPSKEEPER_BACKEND_URL: http://opskeeper-manager:8080
+      OPSKEEPER_BEARER_TOKEN: ${OPSKEEPER_PLUGIN_SYNC_BEARER:-}
+      HIGRESS_PLUGIN_BEARER: ${OPSKEEPER_PLUGIN_SYNC_BEARER:-}
+    volumes:
+      - worker_logs:/var/log/qwenpaw
+      - ./examples/plugin-payloads:/var/lib/qwenpaw/payloads:ro
+    ports:
+      - "8089:8088"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8088/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    networks:
+      - agentteams_net
+
+  # ----------------------------------------------------------------------
+  # 可选:AgentTeams Controller(controller-discovery mode 需要)
+  # 注释启用即可:
+  # ----------------------------------------------------------------------
+  # agentteams-controller:
+  #   image: agentscope/agentteams-controller:latest
+  #   container_name: agentteams-controller
+  #   environment:
+  #     CONTROLLER_PORT: "8080"
+  #   ports:
+  #     - "8090:8080"
+  #   networks:
+  #     - agentteams_net
+  # 启用后,在 opskeeper-manager service 把:
+  #   OPSKEEPER_PLUGIN_SYNC_MODE: controller-discovery
+  #   AGENTTEAMS_CONTROLLER_URL: http://agentteams-controller:8080

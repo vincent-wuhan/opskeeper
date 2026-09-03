@@ -3,7 +3,6 @@
 set -euo pipefail
 PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST="$PLUGIN_DIR/dist"
-RELEASE_ROOT="$(cd "$PLUGIN_DIR/../.." && pwd)"
 
 echo "==> 1. Install dashboard deps"
 (cd "$PLUGIN_DIR/dashboard" && npm install --silent)
@@ -16,8 +15,8 @@ mkdir -p "$DIST"
 zip -j "$DIST/agentteams-plugin-installer.zip" \
   "$PLUGIN_DIR/dashboard/public/plugin.json" \
   "$PLUGIN_DIR/dashboard/dist/main.js" \
-  "$RELEASE_ROOT/LICENSE" \
-  "$RELEASE_ROOT/NOTICE.md"
+  "$PLUGIN_DIR/../../LICENSE" \
+  "$PLUGIN_DIR/../../NOTICE.md"
 
 echo
 echo "==> Done. Upload this zip via Dashboard → Settings → 插件:"

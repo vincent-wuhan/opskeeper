@@ -1,9 +1,31 @@
 {
-  "schema": "opskeeper-plugin-release/v1",
-  "release_name": "opskeeper-plugins",
+  "schema": "opskeeper-full-release/v1",
+  "release_name": "opskeeper",
   "release_date": "2026-09-03",
+  "version": "2026.09.03",
+  "release_tag": "backend-v2026.09.03",
+  "repository": "https://github.com/vincent-wuhan/opskeeper",
+  "license": "Apache-2.0",
   "scope": [
+    "cmd",
+    "internal",
+    "api",
+    "db",
+    "web",
     "plugins/agentteams-plugin-installer",
-    "plugins/opskeeper-teamharness"
+    "plugins/opskeeper-teamharness",
+    "deploy",
+    "docs",
+    "scripts",
+    "tests",
+    "testdata"
+  ],
+  "excluded": [
+    "deliverables",
+    "private runtime credentials",
+    "private deployment topology",
+    "private incident records",
+    "private delivery evidence",
+    "private project-management records"
   ]
 }

@@ -1,4 +1,4 @@
-# OpsKeeper TeamHarness eval scenario 02 — rca_loop
+# OpsKeeper evaluation scenario 02 — rca_loop
 #
 # 真实环境验证：根因错 → critic 否决 → 重派回路
 # 跑法：docker compose -f eval/scenarios/rca_loop/compose.yml up --abort-on-container-exit

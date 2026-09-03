@@ -1,0 +1,108 @@
+# go-arch-lint 配置 — 强制 HLD §3 BC 边界（ADR-003 + ADR-005 私有 MVP 枢轴）
+# 运行：make arch-lint
+#
+# 顶层规则：
+#   - iam / manager / edgeagent 三大 BC 两两禁止互 import
+#   - internal/pkg/** 不得 import 任何 BC
+#   - 同一 BC 内部 service 层禁止越过 biz 直接 import 同 BC 的 data 层
+#     （go-arch-lint v3 支持以独立组件 + deps 表达，见下方 iam_service / manager_service 等）
+#
+# ADR-005 枢轴备注：iam 下只剩 user 子域（org/membership 已删）；data 目录
+# 由 mysql/ 重命名为 sqlite/。组件 glob 使用 `**`，无需逐级更新。
+
+version: 3
+workdir: .
+
+components:
+  iam_service:     { in: internal/iam/service/** }
+  iam_biz:         { in: internal/iam/biz/** }
+  iam_data:        { in: internal/iam/data/** }
+  iam_model:       { in: internal/iam/model/** }
+  iam_server:      { in: internal/iam/server/** }
+
+  manager_service: { in: internal/manager/service/** }
+  manager_biz:     { in: internal/manager/biz/** }
+  manager_data:    { in: internal/manager/data/** }
+  manager_model:   { in: internal/manager/model/** }
+  manager_server:  { in: internal/manager/server/** }
+
+  edgeagent_service: { in: internal/edgeagent/service/** }
+  edgeagent_biz:     { in: internal/edgeagent/biz/** }
+  edgeagent_data:    { in: internal/edgeagent/data/** }
+  edgeagent_model:   { in: internal/edgeagent/model/** }
+
+  shared_pkg: { in: internal/pkg/** }
+  api:        { in: api/** }
+  cmd:        { in: cmd/** }
+
+# 允许依赖的正向清单（未列出 = 禁止）
+deps:
+  # ---------------- iam BC ----------------
+  iam_server:
+    mayDependOn: [iam_service, iam_biz, iam_model, shared_pkg, api]
+  iam_service:
+    # 关键：service 不得直接依赖 iam_data（必须走 biz）
+    mayDependOn: [iam_biz, iam_model, shared_pkg, api]
+  iam_biz:
+    mayDependOn: [iam_model, shared_pkg]
+  iam_data:
+    mayDependOn: [iam_biz, iam_model, shared_pkg]
+  iam_model:
+    mayDependOn: [shared_pkg]
+
+  # ---------------- manager BC ----------------
+  manager_server:
+    mayDependOn: [manager_service, manager_biz, manager_model, shared_pkg, api]
+  manager_service:
+    mayDependOn: [manager_biz, manager_model, shared_pkg, api]
+  manager_biz:
+    mayDependOn: [manager_model, shared_pkg]
+  manager_data:
+    mayDependOn: [manager_biz, manager_model, shared_pkg]
+  manager_model:
+    mayDependOn: [shared_pkg]
+
+  # ---------------- edgeagent BC ----------------
+  edgeagent_service:
+    mayDependOn: [edgeagent_biz, edgeagent_model, shared_pkg, api]
+  edgeagent_biz:
+    mayDependOn: [edgeagent_model, shared_pkg]
+  edgeagent_data:
+    mayDependOn: [edgeagent_biz, edgeagent_model, shared_pkg]
+  edgeagent_model:
+    mayDependOn: [shared_pkg]
+
+  # ---------------- 共享 ----------------
+  shared_pkg:
+    # 不得依赖任何 BC（业务无关）
+    mayDependOn: []
+  api:
+    mayDependOn: []
+
+  # ---------------- 装配层 ----------------
+  # cmd/opskeeper 装配 iam + manager，cmd/opskeeper-edge 装配 edgeagent；
+  # go-arch-lint v3 无"按子目录分 cmd"的原生表达，这里合并授权，
+  # 由人工 review 与 CODEOWNERS 把住"cmd/opskeeper-edge 不 import iam/manager"。
+  cmd:
+    mayDependOn:
+      - iam_server
+      - iam_service
+      - iam_biz
+      - iam_data
+      - iam_model
+      - manager_server
+      - manager_service
+      - manager_biz
+      - manager_data
+      - manager_model
+      - edgeagent_service
+      - edgeagent_biz
+      - edgeagent_data
+      - edgeagent_model
+      - shared_pkg
+      - api
+
+# 注：go-arch-lint 的 schema 字段（version / components / deps）按 v3
+# 主流文档书写；若 CI 报 schema 错，按实际版本微调字段名即可。
+commonComponents: []
+excludeFiles: []

@@ -1,6 +1,6 @@
 # AgentTeams Plugin Installer (Dashboard Plugin)
 
-OpsKeeper 控制台扩展，让 OpsKeeper 真正成为 **AgentTeams plugin 的运维控制台**。
+opskeeper 控制台扩展，让 opskeeper 真正成为 **AgentTeams plugin 的运维控制台**。
 
 ## 架构
 

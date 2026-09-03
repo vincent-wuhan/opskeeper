@@ -1,0 +1,18 @@
+{{- if and .Values.manager.persistence.enabled (not .Values.manager.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "opskeeper.fullname" . }}-manager-data
+  labels:
+    {{- include "opskeeper.labels" . | nindent 4 }}
+    app.kubernetes.io/component: manager
+spec:
+  accessModes:
+    {{- toYaml .Values.manager.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.manager.persistence.size | quote }}
+  {{- if .Values.manager.persistence.storageClass }}
+  storageClassName: {{ .Values.manager.persistence.storageClass }}
+  {{- end }}
+{{- end }}

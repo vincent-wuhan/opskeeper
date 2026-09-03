@@ -1,0 +1,139 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://opskeeper.io/schemas/harness/case.schema.json",
+  "title": "Harness Golden Incident Case",
+  "description": "Harness 黄金事故库 case 文件结构定义（路径 A 阶段 1 任务 1.4）",
+  "type": "object",
+  "required": ["id", "description", "severity", "prerequisites", "inject", "expect", "rubric"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]+/[a-z][a-z0-9-]+$",
+      "description": "case 唯一 ID，格式 <resource-type>/<symptom>，如 pg/long-running-tx"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 10,
+      "description": "case 描述"
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["P0", "P1", "P2", "P3"],
+      "description": "严重等级"
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "case 标签（用于过滤）"
+    },
+    "prerequisites": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "pg.cluster reachable",
+          "pg.bench dataset loaded",
+          "redis.cluster reachable",
+          "redis.bench dataset loaded",
+          "rabbitmq.cluster reachable",
+          "kafka.cluster reachable",
+          "k8s.cluster reachable",
+          "k8s.test_namespace exists",
+          "host.test_user_ssh_accessible",
+          "opskeeper.adapter registered"
+        ]
+      },
+      "description": "执行 case 的前置条件"
+    },
+    "inject": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/injectStep" },
+      "description": "故障注入步骤"
+    },
+    "expect": {
+      "type": "object",
+      "required": ["time_to_detect", "root_cause_lines", "remediation_options"],
+      "additionalProperties": false,
+      "properties": {
+        "time_to_detect": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "预期检测时长（秒）"
+        },
+        "time_to_remediate": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "预期修复时长（秒）"
+        },
+        "root_cause_lines": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_*]+\\.[a-z][a-z0-9_]+$"
+          },
+          "description": "预期 Agent 调用的工具方法列表，如 pg.long_running_txns"
+        },
+        "remediation_options": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_*]+\\.[a-z][a-z0-9_]+$"
+          },
+          "description": "预期 Agent 给出的修复建议工具列表"
+        }
+      }
+    },
+    "rubric": {
+      "type": "object",
+      "required": ["rca_accuracy", "time_to_remediate", "no_collateral_damage"],
+      "additionalProperties": false,
+      "properties": {
+        "rca_accuracy": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "RCA 准确度阈值（0-1）"
+        },
+        "time_to_remediate": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "修复时长阈值（秒）"
+        },
+        "no_collateral_damage": {
+          "type": "boolean",
+          "description": "是否禁止副作用"
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "case 元数据（owner / created_at / last_run）",
+      "additionalProperties": true
+    }
+  },
+  "definitions": {
+    "injectStep": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "注入器类型"
+        },
+        "duration": {
+          "type": "string",
+          "pattern": "^[0-9]+(s|m|h)$",
+          "description": "持续时长（如 300s / 5m / 1h）"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "注入器参数"
+        }
+      }
+    }
+  }
+}

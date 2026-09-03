@@ -1,23 +1,72 @@
 name: CI
 
+# Compile + unit-test gate. Exists because regressions like a model field
+# rename that left a fakeRepo test using the old API (PR #123 broke
+# `go test ./internal/manager/biz/edge/...` and sat unnoticed for weeks)
+# must fail a PR, not a release build. e2e tests are `//go:build e2e`
+# tagged and intentionally excluded here — they need docker + a live test
+# environment; this gate is the fast unit/compile layer.
+
 on:
   push:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  verify:
-    runs-on: ubuntu-latest
+  build-test:
+    name: build + vet + test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate AgentTeams protocol contracts
+        run: ruby scripts/validate-agentteams-protocols.rb
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: "22"
-      - uses: actions/setup-python@v5
+          node-version: '20'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - uses: ruby/setup-ruby@v1
+          python-version: '3.11'
+
+      - name: Install Python test dependencies
+        run: python3 -m pip install -r scripts/requirements-test.txt
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          ruby-version: "3.3"
-      - run: python3 -m pip install -r scripts/requirements-test.txt
-      - run: make verify
+          go-version: '1.25.x'
+          cache: true
+
+      - name: go build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+      - name: Verify web console
+        run: |
+          corepack enable
+          cd web
+          pnpm install --frozen-lockfile
+          pnpm typecheck
+          pnpm test
+
+      - name: Verify plugins and open-source gate
+        run: make verify-plugins PYTHON=python3

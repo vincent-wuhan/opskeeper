@@ -1,0 +1,95 @@
+id: redis/slow-cmd
+description: 模拟 Redis 慢命令阻塞（KEYS * / 大集合操作）
+severity: P2
+tags: [redis, slow-cmd, latency]
+prerequisites:
+  - redis.cluster reachable
+inject:
+  - type: redis.inject_slow_commands
+    duration: 300s
+    params:
+      command: KEYS
+      target_key_count: 1000000
+      concurrent: 5
+expect:
+  time_to_detect: 90
+  time_to_remediate: 180
+  root_cause_lines:
+    - redis.slow_log
+    - redis.client_list
+    - redis.blocked_clients
+  remediation_options:
+    - redis.kill_client
+rubric:
+  rca_accuracy: 0.85
+  time_to_remediate: 180
+  no_collateral_damage: true
+metadata:
+  owner: "@opskeeper-oncall"
+  created_at: "2026-07-13"
+
+# ─── opskeeper-teamharness AgentTeams 集成扩展（2026-08-25）────────────────────
+# 镜像 internal/harness/cases/pg/long-running-tx/case.yaml 的扩展模式。
+# 参考：
+#   - openspec/changes/agentteams-opskeeper-integration/proposal.md D6
+#   - docs/superpowers/decisions/2026-08-25-opskeeper-as-agentteams-plugin.md
+#   - plugins/opskeeper-teamharness/skills/team/opskeeper-coordination/SKILL.md
+#
+# 端到端验证：6 Worker (alerter → investigator → critic → reviewer → repairer → verifier)
+# 按 SKILL 决策表派活，state.json 推进 6 阶段。
+#
+# ⚠️ 注意：本 case 调用的是 plugin 端友好命名空间（type.method），由 plugin
+# stdio MCP server (mcp/names.py NAME_REMAP) 改写到 backend 实际工具名。
+#   - metric.query       → query_promql
+#   - host.get_load      → get_host_load
+#   - host.get_processes → get_host_processes
+#   - recovery.verify    → recovery.verify（透传）
+#   - state.put          → 走 /v1/state/{task_id} REST
+agentteams:
+  plugin: opskeeper-teamharness 1.0.0
+  runtime: qwenpaw 2.0.1+
+  expected_spawn:
+    - worker: opskeeper-alerter
+      tools: [metric.query, incident.list]
+      max_turns: 5
+      trigger: "redis.slow_log.latency > 100ms OR redis.blocked_clients > N"
+    - worker: opskeeper-investigator
+      tools: [loop.investigate, loop.correlate, metric.query, host.get_load, host.get_processes]
+      max_turns: 40
+      trigger: "alerter.completed AND rca 未启动"
+    - worker: opskeeper-critic
+      tools: [incident.get, metric.query, knowledge.query]
+      max_turns: 8
+      trigger: "investigator.confidence < 0.6"
+    - worker: opskeeper-reviewer
+      tools: [incident.get, metric.query]
+      max_turns: 5
+      trigger: "repair_plan.proposed AND destructive=true"
+    - worker: opskeeper-repairer
+      tools: [host.get_load, host.get_processes, host.restart_service]
+      max_turns: 15
+      trigger: "reviewer.approve OR blast_radius=host"
+    - worker: opskeeper-verifier
+      tools: [recovery.verify, metric.query]
+      max_turns: 3
+      trigger: "repairer.completed"
+  expected_state_progression:
+    - detected
+    - rca
+    - critic_audit
+    - review
+    - repair_execution
+    - verification
+    - postmortem
+  rubric_addons:
+    - state_progression_complete: true   # 7 阶段全部命中
+    - worker_spawn_count: 6               # 6 Worker 实际拉起
+    - hitl_path_skipped: true             # blast_radius=host 不走 HITL
+  notes: |
+    与 pg/long-running-tx 的差异：
+    - 本 case blast_radius=host（只重启 redis 单实例），不走 HITL 双签
+      （cluster/tenant_wide 才走）；
+    - redis 工具无 native plugin 工具，Worker 通过 host.get_processes +
+      metric.query（PromQL redis_*）间接定位；
+    - 修复手段：host.restart_service (mutating) 而非 pg.kill_session；
+    - 端到端跑通仍需真实 Redis 实例 + AgentTeams runtime（sandbox 不可达）。

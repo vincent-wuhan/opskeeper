@@ -1,0 +1,21 @@
+{
+  "phase": "reviewer",
+  "incident_id": "INC-E2E-7STAGE-RECHECK-001",
+  "trace_id": "deadbeefcafef00dbaadf00ddeadbeef",
+  "span_id": "f345040a71ba5a39",
+  "approved_action": "host.garbage_collect",
+  "target": "host:AL-2026-08-26-RECHECK-001",
+  "blast_radius": "single_device",
+  "rollback_plan": "Operator must review and reverse host.garbage_collect on host:AL-2026-08-26-RECHECK-001 before retrying.",
+  "tolerance": 0.15,
+  "verify_metrics": [
+    "cpu",
+    "mem",
+    "request_rate",
+    "disk_io"
+  ],
+  "decided_by": "agent:reviewer",
+  "decided_at": "2026-08-26T14:00:30Z",
+  "verdict": "approved",
+  "notes": "blast_radius=single_device, safe to execute without human"
+}

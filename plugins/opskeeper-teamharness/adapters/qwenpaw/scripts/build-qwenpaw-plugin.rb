@@ -12,7 +12,7 @@ require "yaml"
 
 manifest_path = Pathname.new(ARGV[0] || "plugins/opskeeper-teamharness/plugin.yaml").expand_path
 plugin_root = manifest_path.dirname
-repo_root = plugin_root.ascend.find { |path| (path / ".git").directory? } || plugin_root
+repo_root = plugin_root.parent.parent
 adapter_root = plugin_root / "adapters/qwenpaw"
 out_dir = Pathname.new(ENV["OUT_DIR"] || (plugin_root / "dist").to_s).expand_path
 
@@ -74,6 +74,7 @@ end
 
 out_dir.mkpath
 out_zip = out_dir / "#{package_name}.zip"
+stable_zip = out_dir / "opskeeper-teamharness-qwenpaw.zip"
 
 Dir.mktmpdir("opskeeper-teamharness-qwenpaw-") do |tmp|
   tmp_root = Pathname.new(tmp)
@@ -97,16 +98,15 @@ Dir.mktmpdir("opskeeper-teamharness-qwenpaw-") do |tmp|
 
   copy_entry(adapter_root, staging, "plugin.py")
   copy_entry(adapter_root, staging, "task_trace.py")
-  FileUtils.cp(repo_root / "LICENSE", staging / "LICENSE")
-  FileUtils.cp(repo_root / "NOTICE.md", staging / "NOTICE.md")
+  %w[LICENSE NOTICE.md].each { |entry| copy_entry(repo_root, staging, entry) }
 
   qwenpaw_manifest = {
     "id" => "opskeeper-teamharness",
-    "name" => "OpsKeeper TeamHarness",
+    "name" => "Opskeeper TeamHarness",
     "version" => version,
     "type" => "general",
-    "description" => "OpsKeeper RCA/recovery plugin for AgentTeams QwenPaw workers.",
-    "author" => "OpsKeeper Plugin Contributors",
+    "description" => "Opskeeper RCA/recovery plugin for AgentTeams QwenPaw workers.",
+    "author" => "opskeeper-v2",
     "entry" => { "backend" => "plugin.py" },
     "dependencies" => [],
     "min_version" => "2.0.1",
@@ -116,6 +116,7 @@ Dir.mktmpdir("opskeeper-teamharness-qwenpaw-") do |tmp|
 
   prune_generated(staging)
   zip_dir(tmp_root, package_name, out_zip)
+  FileUtils.cp(out_zip, stable_zip)
 end
 
 puts out_zip

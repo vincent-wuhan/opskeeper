@@ -211,6 +211,7 @@ class StdioMCPEndToEndTests(unittest.TestCase):
             "OPSKEEPER_TENANT_ID": "t1",
             "OPSKEEPER_TIMEOUT": "5",
         }
+
     @classmethod
     def tearDownClass(cls):
         cls.backend.shutdown()
@@ -387,8 +388,6 @@ class TraceContextTests(unittest.TestCase):
             "OPSKEEPER_TENANT_ID": "t1",
             "OPSKEEPER_TIMEOUT": "5",
         }
-        for key in ("TRACEPARENT", "LOONG_TRACE_ID", "LOONG_SPAN_ID"):
-            cls.env.pop(key, None)
 
     @classmethod
     def tearDownClass(cls):
@@ -424,6 +423,11 @@ class TraceContextTests(unittest.TestCase):
 
     def test_w3c_traceparent_propagated_to_backend(self):
         """plugin 端注入 W3C traceparent，backend 收到的 header 应包含。"""
+        # 清掉 setUpClass 继承的旧 env vars，确保 TRACEPARENT 不被
+        # 父类测试残留污染。
+        import os as _os
+        for k in ("TRACEPARENT", "LOONG_TRACE_ID", "LOONG_SPAN_ID"):
+            _os.environ.pop(k, None)
         trace_id = "0af7651916cd43dd8448eb211c80319c"
         span_id = "b7ad6b7169203331"
         self._send([{
@@ -442,6 +446,9 @@ class TraceContextTests(unittest.TestCase):
 
     def test_loong_trace_id_fallback(self):
         """plugin 端无 W3C，只有 LOONG_TRACE_ID → X-Trace-Id header。"""
+        import os as _os
+        for k in ("TRACEPARENT", "LOONG_TRACE_ID", "LOONG_SPAN_ID"):
+            _os.environ.pop(k, None)
         self._send([{
             "jsonrpc": "2.0", "method": "tools/call", "id": 1,
             "params": {"name": "metric.query", "arguments": {"query": "up"}},
@@ -456,6 +463,9 @@ class TraceContextTests(unittest.TestCase):
 
     def test_no_trace_context_no_headers(self):
         """无 trace context → backend 不收到任何 trace headers。"""
+        import os as _os
+        for k in ("TRACEPARENT", "LOONG_TRACE_ID", "LOONG_SPAN_ID"):
+            _os.environ.pop(k, None)
         proc = subprocess.run(
             [sys.executable, os.path.join(HERE, "server.py")],
             input=(json.dumps({
