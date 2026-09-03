@@ -1,5 +1,7 @@
 # OpsKeeper
 
+[简体中文](README_ZH.md) · English
+
 OpsKeeper is an auditable operations platform for multi-agent incident response. It connects alert intake, evidence collection, root-cause analysis, human approval, narrowly authorized recovery, independent verification, and post-incident learning in one closed loop.
 
 ## What OpsKeeper provides
