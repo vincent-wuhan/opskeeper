@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.0.23 — 2026-09-03
+
+- Record the originating Matrix room for each dispatched OpsKeeper task.
+- Inject a mandatory Manager relay instruction when a Worker-room result wakes Manager.
+- Add the `OPSKEEPER_COMPLETE` marker and prevent completion notices from being treated as new dispatches.
+
+## 1.0.24 — 2026-09-03
+
+- Relay `OPSKEEPER_COMPLETE` deterministically through Manager's Matrix client API.
+- Keep prompt-based relay only as a fallback when the direct Matrix send fails.
+
+## 1.0.25 — 2026-09-03
+
+- Persist the original request room from the Manager `PRE_EXECUTE` input before dispatch middleware changes context.
+
+## 1.0.26 — 2026-09-03
+
+- Accept Markdown-emphasized `OPSKEEPER_RESULT` lines from Worker runtime output.
+- Add non-sensitive marker/session logging around request-origin recording, result consumption, and dispatch registration.
+
+## 1.0.27 — 2026-09-03
+
+- Accept Markdown-emphasized Manager mention prefixes in Worker result lines.
+- Consume a matching result marker across dispatch and execution session IDs, then relay to the original entry room.
+
+## 1.0.28 — 2026-09-03
+
+- Relay matching Worker results from the reliable PRE_EXECUTE request-origin map even when dispatch middleware leaves no pending state.
+
+## 1.0.29 — 2026-09-03
+
+- Give an explicit `OPSKEEPER TASK` contract precedence over an embedded `OPSKEEPER_RESULT` instruction.
+
+# [1.0.22] - 2026-09-03
+
+### Fixed
+
+- Make the Matrix wake-up address explicit in the Worker result contract.
+- Require Manager dispatches to include `@manager:<server>` and Worker results to address Manager on the same line as `OPSKEEPER_RESULT`, preventing unmentioned group replies from remaining cached without waking Manager.
+
 # [1.0.21] - 2026-09-02
 
 ### Fixed
