@@ -9,11 +9,15 @@ Same package ships both `plugin.yaml` (AgentTeams runtime) and `dashboard/plugin
 |---|---|
 | `sidebar-menu` | "Opskeeper 诊断" menu item → diagnose route |
 | `route` | 7-stage RCA report page (raw RootCauseJSON viewer) |
-| `dashboard-widget` | Active Incidents counter on Overview |
+| `dashboard-widget` | Active incidents, service health, localization, and audit completeness on Overview |
 | `detail-panel` | Worker detail panel → "Opskeeper 历史" block |
 | `toolbar` | "一键 RCA" top-bar button |
 
 All extensions read opskeeper backend state via the Dashboard's `/api/opskeeper/*` proxy (see Dashboard `proxy-helper.ts`).
+
+## Runtime Readback
+
+The `OpsKeeper Runtime` route reads `/v1/system/health`, `/v1/version`, `/v1/incidents/metrics`, and the incident list through the Dashboard proxy. It provides a bypass execution view while AgentTeams remains the collaboration-task source of truth. Runtime incidents are correlated with collaboration work by `incident_id`, `task_id`, and `trace_id`; the plugin does not mutate native task-board state.
 
 ## Local Development
 

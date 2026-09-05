@@ -91,6 +91,18 @@ export const opskeeperApi = {
     return jsonFetch('/health');
   },
 
+  getSystemHealth() {
+    return jsonFetch('/system/health');
+  },
+
+  getVersion() {
+    return jsonFetch('/version');
+  },
+
+  getIncidentMetrics() {
+    return jsonFetch('/incidents/metrics');
+  },
+
   // ── Plugin registry (Manager) ─────────────────────────────────────────
   // GET /api/v1/plugins — list installed opskeeper plugins
   listPlugins() {
