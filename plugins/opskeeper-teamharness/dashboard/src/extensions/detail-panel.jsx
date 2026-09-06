@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { normalizeIncidentList } from './runtime.js';
 import { opskeeperApi } from './api.js';
 
 // Worker 详情页嵌入区块 — 列出该 worker 最近 5 次 RCA 报告 + 单 worker re-trigger 按钮。
@@ -42,7 +43,7 @@ export default function WorkerOpsBlock({ entity, api }) {
     setError(null);
     try {
       const data = await opskeeperApi.listIncidents({ limit: 50 });
-      const all = data.incidents || data.data || [];
+      const all = normalizeIncidentList(data);
       const filtered = all.filter((i) => workerMatches(i, entity)).slice(0, 5);
       setIncidents(filtered);
     } catch (e) {

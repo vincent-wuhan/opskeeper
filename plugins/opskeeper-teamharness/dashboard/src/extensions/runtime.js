@@ -74,6 +74,11 @@ export function normalizeIncidentMetrics(input) {
   };
 }
 
+export function normalizeIncidentList(input) {
+  const incidents = input?.incidents ?? input?.items ?? input?.data ?? input;
+  return Array.isArray(incidents) ? incidents : [];
+}
+
 export function buildRuntimeSnapshot({ health, version, metrics, incidents = [] }) {
   const normalizedHealth = normalizeHealthReport(health);
   const normalizedVersion = normalizeVersion(version);

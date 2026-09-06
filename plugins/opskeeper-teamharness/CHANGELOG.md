@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.31 — 2026-09-06
+
+- Normalize OpsKeeper incident-list responses across `items`, `incidents`, `data`, and direct-array shapes.
+- Align Dashboard, plugin-manager, QwenPaw, and runtime middleware versions.
+
 ## 1.0.30 — 2026-09-06
 
 - Add the Dashboard Runtime bypass view for service health, dependency checks, manager version, judge metrics, and recent incidents.

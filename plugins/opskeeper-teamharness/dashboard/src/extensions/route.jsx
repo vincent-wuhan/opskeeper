@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { normalizeIncidentList } from './runtime.js';
 import { opskeeperApi } from './api.js';
 
 // 7 阶段 RCA orchestrator 阶段定义（来自 opskeeper 7 阶段 RCA loop）
@@ -192,7 +193,7 @@ export default function OpskeeperRoute({ api }) {
     setIncidentsError(null);
     try {
       const data = await opskeeperApi.listIncidents({ limit: 50 });
-      setIncidents(data.incidents || data.data || []);
+      setIncidents(normalizeIncidentList(data));
     } catch (e) {
       setIncidentsError(e.message);
       setIncidents([]);
