@@ -8,6 +8,7 @@
 import * as React from 'react';
 import SidebarMenu from './extensions/sidebar-menu.jsx';
 import OpskeeperRoute from './extensions/route.jsx';
+import OpskeeperRuntimeRoute from './extensions/runtime-route.jsx';
 import OpskeeperInstallView from './extensions/install-view.jsx';
 import OpskeeperStatsWidget from './extensions/dashboard-widget.jsx';
 import WorkerOpsBlock from './extensions/detail-panel.jsx';
@@ -34,6 +35,14 @@ export function activate(api) {
     order: 11,
   });
 
+  api.registerMenuItem({
+    id: 'opskeeper-runtime',
+    label: 'OpsKeeper Runtime',
+    icon: 'activity',
+    target: { type: 'plugin-route', routeId: 'runtime' },
+    order: 12,
+  });
+
   api.registerRoute({
     id: 'home',
     title: 'Opskeeper 7 阶段 RCA',
@@ -44,6 +53,12 @@ export function activate(api) {
     id: 'install',
     title: 'opskeeper 插件安装',
     component: () => React.createElement(OpskeeperInstallView, { api }),
+  });
+
+  api.registerRoute({
+    id: 'runtime',
+    title: 'OpsKeeper Runtime',
+    component: () => React.createElement(OpskeeperRuntimeRoute, { api }),
   });
 
   api.registerWidget({
