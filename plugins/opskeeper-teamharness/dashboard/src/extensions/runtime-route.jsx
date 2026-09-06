@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { opskeeperApi } from './api.js';
-import { buildRuntimeSnapshot } from './runtime.js';
+import { buildRuntimeSnapshot, normalizeIncidentList } from './runtime.js';
 
 const STATUS_COLORS = {
   ok: '#10b981',
@@ -40,7 +40,7 @@ export default function OpskeeperRuntimeRoute({ api }) {
       health: valueOf(health),
       version: valueOf(version),
       metrics: valueOf(metrics),
-      incidents: incidentsOf(valueOf(incidents)),
+      incidents: normalizeIncidentList(valueOf(incidents)),
     }));
     setLoading(false);
   }, []);
@@ -195,10 +195,6 @@ function EmptyState({ text }) {
 
 function valueOf(result) {
   return result.status === 'fulfilled' ? result.value : null;
-}
-
-function incidentsOf(response) {
-  return response?.incidents || response?.data || [];
 }
 
 function errorText(result) {

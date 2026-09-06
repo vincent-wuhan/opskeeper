@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { opskeeperApi } from './api.js';
-import { buildRuntimeSnapshot } from './runtime.js';
+import { buildRuntimeSnapshot, normalizeIncidentList } from './runtime.js';
 
 // Dashboard overview widget — 概览卡：active / open / closed / avg-RCA / 阶段通过率。
 //
@@ -26,7 +26,7 @@ export default function OpskeeperStatsWidget({ api }) {
         opskeeperApi.getIncidentMetrics(),
       ]);
       const data = incidentsResult.status === 'fulfilled' ? incidentsResult.value : null;
-      const incidents = data?.incidents || data?.data || [];
+      const incidents = normalizeIncidentList(data);
       const ACTIVE = new Set(['open', 'in_progress', 'investigating', 'repairing', 'verifying']);
       let active = 0, openCount = 0, closed = 0;
       const rcaDurations = [];

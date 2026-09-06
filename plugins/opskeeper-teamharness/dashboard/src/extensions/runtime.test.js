@@ -5,6 +5,7 @@ import {
   buildRuntimeSnapshot,
   normalizeHealthReport,
   normalizeIncidentMetrics,
+  normalizeIncidentList,
   normalizeVersion,
 } from './runtime.js';
 
@@ -60,4 +61,14 @@ test('builds a runtime snapshot and counts active incidents', () => {
   assert.equal(snapshot.activeIncidentCount, 1);
   assert.equal(snapshot.totalIncidentCount, 2);
   assert.equal(snapshot.version.managerVersion, 'v1');
+});
+
+test('normalizes incident list response wrappers', () => {
+  const incidents = [{ id: 'inc-1', status: 'open' }];
+
+  assert.deepEqual(normalizeIncidentList({ items: incidents }), incidents);
+  assert.deepEqual(normalizeIncidentList({ incidents }), incidents);
+  assert.deepEqual(normalizeIncidentList({ data: incidents }), incidents);
+  assert.deepEqual(normalizeIncidentList(incidents), incidents);
+  assert.deepEqual(normalizeIncidentList({ total: 1 }), []);
 });
