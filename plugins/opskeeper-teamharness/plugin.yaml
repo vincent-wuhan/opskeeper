@@ -2,7 +2,7 @@ apiVersion: agentteams.agentteam/v1alpha1
 kind: AgentTeamPlugin
 metadata:
   name: opskeeper-teamharness
-  version: 1.0.29
+  version: 1.0.30
   description: |
     Opskeeper TeamHarness plugin — provides 7 ops Worker skills
     (alerter/investigator/critic/reviewer/repairer/verifier/postmortem)
@@ -87,6 +87,10 @@ metadata:
 
     v1.0.29 gives an explicit OPSKEEPER TASK contract precedence over an embedded
     OPSKEEPER_RESULT instruction, ensuring the entry room is recorded reliably.
+
+    v1.0.30 adds the Dashboard Runtime bypass view and overview readback. It surfaces
+    OpsKeeper health, manager version, judge metrics, and recent incidents without
+    modifying AgentTeams or Dashboard source.
 
     v1.0.7 adds a plugin-native Manager continuation gate: dispatched task markers
     wait for matching Worker results, while empty/self continuations are skipped.

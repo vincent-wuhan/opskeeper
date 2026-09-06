@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.30 — 2026-09-06
+
+- Add the Dashboard Runtime bypass view for service health, dependency checks, manager version, judge metrics, and recent incidents.
+- Add service health, localization latency, and audit completeness readback to the Dashboard overview widget.
+- Keep AgentTeams collaboration state and OpsKeeper execution evidence in separate sources of truth, correlated by `incident_id`, `task_id`, and `trace_id`.
+
 ## 1.0.23 — 2026-09-03
 
 - Record the originating Matrix room for each dispatched OpsKeeper task.
