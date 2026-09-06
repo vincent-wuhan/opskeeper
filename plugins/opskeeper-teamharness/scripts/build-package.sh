@@ -7,6 +7,7 @@ cd "$PLUGIN_DIR"
 
 VERSION="$(ruby -ryaml -e 'puts YAML.load_file("plugin.yaml").fetch("metadata").fetch("version")')"
 BASE_PACKAGE="dist/opskeeper-teamharness-${VERSION}-plugin-manager.tar.gz"
+DASHBOARD_PACKAGE="dist/opskeeper-teamharness-dashboard-${VERSION}.zip"
 
 npm install --silent --prefix dashboard
 npm run build --prefix dashboard
@@ -14,6 +15,7 @@ mkdir -p dist
 
 OUT_DIR="$PLUGIN_DIR/dist" ruby adapters/qwenpaw/scripts/build-qwenpaw-plugin.rb plugin.yaml
 rm -f "$BASE_PACKAGE"
+rm -f "$DASHBOARD_PACKAGE"
 tar \
   --uname 0 \
   --gname 0 \
@@ -26,7 +28,12 @@ tar \
   -C "$PLUGIN_DIR" plugin.yaml prompts skills mcp adapters scripts loongsuite examples README.md CHANGELOG.md dashboard \
   -C "$ROOT_DIR" LICENSE NOTICE.md
 
+(
+  cd dashboard
+  zip -X -r "../${DASHBOARD_PACKAGE}" plugin.json dist/main.js dist/main.js.map
+)
+
 printf '\nTeamHarness base package:\n'
 ls -lh "$BASE_PACKAGE"
 printf '\nSHA256:\n'
-shasum -a 256 "$BASE_PACKAGE" dist/opskeeper-teamharness-qwenpaw-"${VERSION}".zip
+shasum -a 256 "$BASE_PACKAGE" "$DASHBOARD_PACKAGE" dist/opskeeper-teamharness-qwenpaw-"${VERSION}".zip

@@ -30,11 +30,14 @@ Manager 在收到 opskeeper 告警或 investigator 输出时，按以下决策�
 
 ```text
 OPSKEEPER TASK incident-123-investigator
-OPSKEEPER_RESULT incident-123-investigator {...}
+@manager:matrix.example.com OPSKEEPER_RESULT incident-123-investigator {...}
 ```
 
-`OPSKEEPER_RESULT` 到达前，Manager 不轮询、不重复派发、不响应空续跑；管理员
-人工指令和新 `OPSKEEPER TASK` 可以优先唤醒。
+`OPSKEEPER_RESULT` 到达前，Manager 不轮询、不重复派发、不响应空续跑。Worker
+必须在结果行同一行 @ Manager，否则群聊消息只进入历史缓存；管理员人工指令和
+新 `OPSKEEPER TASK` 可以优先唤醒。
+Worker 房间的结果唤醒 Manager 后，Manager 必须向原始请求房间回发
+`@admin:<server> OPSKEEPER_COMPLETE <task_id>`；完成通知不触发新派发。
 
 每次派活决策后必须 `state.put`：
 
