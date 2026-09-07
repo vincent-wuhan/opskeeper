@@ -6,10 +6,7 @@
 // Components consume the shared opskeeperApi helper to read opskeeper backend state.
 
 import * as React from 'react';
-import SidebarMenu from './extensions/sidebar-menu.jsx';
-import OpskeeperRoute from './extensions/route.jsx';
-import OpskeeperRuntimeRoute from './extensions/runtime-route.jsx';
-import OpskeeperInstallView from './extensions/install-view.jsx';
+import OpskeeperUnifiedRoute from './extensions/unified-route.jsx';
 import OpskeeperStatsWidget from './extensions/dashboard-widget.jsx';
 import WorkerOpsBlock from './extensions/detail-panel.jsx';
 import OneClickRcaButton from './extensions/toolbar.jsx';
@@ -20,45 +17,29 @@ export const OPSKEEPER_API_BASE = '/api/opskeeper';
 export function activate(api) {
 
   api.registerMenuItem({
-    id: 'opskeeper-home',
-    label: 'Opskeeper 诊断',
+    id: 'opskeeper',
+    label: 'OpsKeeper',
     icon: 'gauge',
     target: { type: 'plugin-route', routeId: 'home' },
     order: 10,
   });
 
-  api.registerMenuItem({
-    id: 'opskeeper-install',
-    label: 'opskeeper 插件',
-    icon: 'package',
-    target: { type: 'plugin-route', routeId: 'install' },
-    order: 11,
-  });
-
-  api.registerMenuItem({
-    id: 'opskeeper-runtime',
-    label: 'OpsKeeper Runtime',
-    icon: 'activity',
-    target: { type: 'plugin-route', routeId: 'runtime' },
-    order: 12,
-  });
-
   api.registerRoute({
     id: 'home',
-    title: 'Opskeeper 7 阶段 RCA',
-    component: () => React.createElement(OpskeeperRoute, { api }),
+    title: 'OpsKeeper',
+    component: () => React.createElement(OpskeeperUnifiedRoute, { api, initialTab: 'diagnostics' }),
   });
 
   api.registerRoute({
     id: 'install',
-    title: 'opskeeper 插件安装',
-    component: () => React.createElement(OpskeeperInstallView, { api }),
+    title: 'OpsKeeper · 插件',
+    component: () => React.createElement(OpskeeperUnifiedRoute, { api, initialTab: 'plugins' }),
   });
 
   api.registerRoute({
     id: 'runtime',
-    title: 'OpsKeeper Runtime',
-    component: () => React.createElement(OpskeeperRuntimeRoute, { api }),
+    title: 'OpsKeeper · Runtime',
+    component: () => React.createElement(OpskeeperUnifiedRoute, { api, initialTab: 'runtime' }),
   });
 
   api.registerWidget({

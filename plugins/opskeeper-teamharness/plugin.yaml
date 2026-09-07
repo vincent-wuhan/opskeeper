@@ -2,7 +2,7 @@ apiVersion: agentteams.agentteam/v1alpha1
 kind: AgentTeamPlugin
 metadata:
   name: opskeeper-teamharness
-  version: 1.0.32
+  version: 1.0.33
   description: |
     Opskeeper TeamHarness plugin — provides 7 ops Worker skills
     (alerter/investigator/critic/reviewer/repairer/verifier/postmortem)
@@ -97,6 +97,10 @@ metadata:
 
     v1.0.32 routes the Dashboard install view through the public Plugin Manager
     endpoint and accepts the plugin-manager tar.gz package format.
+
+    v1.0.33 adds a server-side signed Dashboard RCA proxy, keeping the AgentTeams
+    GatewayKey outside the browser while restoring loop.investigate readback. It also
+    consolidates diagnostics, Runtime, and plugin management into one OpsKeeper entry.
 
     v1.0.7 adds a plugin-native Manager continuation gate: dispatched task markers
     wait for matching Worker results, while empty/self continuations are skipped.

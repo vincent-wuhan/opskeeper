@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.33 — 2026-09-07
+
+- Add a server-side signed Dashboard RCA proxy for `loop.investigate`.
+- Keep the AgentTeams GatewayKey outside the browser and unwrap MCP text content into the Dashboard report shape.
+- Consolidate diagnostics, Runtime, and plugin management into one OpsKeeper entry with internal tabs.
+
 ## 1.0.32 — 2026-09-07
 
 - Route the Dashboard install view through the public Plugin Manager endpoint on port-13000 deployments.
