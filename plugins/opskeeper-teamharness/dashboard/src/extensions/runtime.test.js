@@ -9,6 +9,8 @@ import {
   normalizeVersion,
 } from './runtime.js';
 
+import { resolvePluginManagerBase } from './api.js';
+
 test('normalizes health response wrappers and checks', () => {
   const report = normalizeHealthReport({
     data: {
@@ -71,4 +73,12 @@ test('normalizes incident list response wrappers', () => {
   assert.deepEqual(normalizeIncidentList({ data: incidents }), incidents);
   assert.deepEqual(normalizeIncidentList(incidents), incidents);
   assert.deepEqual(normalizeIncidentList({ total: 1 }), []);
+});
+
+test('routes plugin manager calls around the port-13000 dashboard fallback', () => {
+  assert.equal(
+    resolvePluginManagerBase({ port: '13000', protocol: 'http:', hostname: '8.160.172.235' }),
+    'http://8.160.172.235/api/v1/plugins',
+  );
+  assert.equal(resolvePluginManagerBase({ port: '', protocol: 'http:', hostname: 'example.test' }), '/api/v1/plugins');
 });
