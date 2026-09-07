@@ -10,6 +10,7 @@ import {
 } from './runtime.js';
 
 import { resolvePluginManagerBase } from './api.js';
+import { normalizeOpskeeperTab } from './tabs.js';
 
 test('normalizes health response wrappers and checks', () => {
   const report = normalizeHealthReport({
@@ -81,4 +82,10 @@ test('routes plugin manager calls around the port-13000 dashboard fallback', () 
     'http://8.160.172.235/api/v1/plugins',
   );
   assert.equal(resolvePluginManagerBase({ port: '', protocol: 'http:', hostname: 'example.test' }), '/api/v1/plugins');
+});
+
+test('normalizes the unified OpsKeeper entry tab', () => {
+  assert.equal(normalizeOpskeeperTab('runtime'), 'runtime');
+  assert.equal(normalizeOpskeeperTab('plugins'), 'plugins');
+  assert.equal(normalizeOpskeeperTab('unknown'), 'diagnostics');
 });

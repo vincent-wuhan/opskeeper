@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import hmac
 import json
 import logging
 import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -67,7 +69,7 @@ def manager_prompt(_agent: Any) -> str:
 
 _SANITIZER_KEYWORDS_ENV = "AGENTTEAMS_OUTPUT_SANITIZE_KEYWORDS"
 _PERMISSION_MODE_ENV = "OPSKEEPER_PERMISSION_MODE"
-_PLUGIN_VERSION = "1.0.32"
+_PLUGIN_VERSION = "1.0.33"
 _READ_ONLY_LOGGER = logging.getLogger("opskeeper-teamharness.readonly")
 _MANAGER_GATE_LOGGER = logging.getLogger("opskeeper-teamharness.manager-gate")
 _MANAGER_GATE_TTL_ENV = "OPSKEEPER_MANAGER_GATE_TTL_SECONDS"
@@ -748,6 +750,81 @@ def _load_task_trace_module():
     return module
 
 
+def _investigate_via_mcp(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Call loop.investigate through the signed backend MCP endpoint."""
+    mcp_dir = PLUGIN_DIR / "opskeeper-teamharness" / "mcp"
+    if str(mcp_dir) not in sys.path:
+        sys.path.insert(0, str(mcp_dir))
+    from auth import get_backend_url, sign_request
+
+    request = {
+        "jsonrpc": "2.0",
+        "id": f"dashboard-{int(time.time() * 1000)}",
+        "method": "tools/call",
+        "params": {"name": "loop.investigate", "arguments": arguments},
+    }
+    body = json.dumps(request, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        get_backend_url() + "/api/v1/mcp",
+        data=body,
+        headers=sign_request(body),
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:300]
+        raise RuntimeError(f"OpsKeeper MCP HTTP {exc.code}: {detail}") from exc
+
+    if payload.get("error"):
+        error = payload["error"]
+        raise RuntimeError(error.get("message", "OpsKeeper MCP call failed"))
+
+    result = payload.get("result") or {}
+    content = result.get("content") or []
+    text = content[0].get("text", "{}") if content and isinstance(content[0], dict) else "{}"
+    report = json.loads(text)
+    metadata = result.get("_meta") or {}
+    return {"data": report, "audit_log_id": metadata.get("audit_log_id")}
+
+
+def build_investigate_router():
+    """Expose a server-side signed RCA proxy for the Dashboard extension."""
+    try:
+        from fastapi import APIRouter, Header, HTTPException
+    except ImportError:
+        return None
+
+    router = APIRouter()
+
+    @router.post("/investigate")
+    def investigate(
+        payload: dict[str, Any],
+        x_teamharness_runtime_key: str = Header(default=""),
+    ) -> dict[str, Any]:
+        expected = os.environ.get("OPSKEEPER_GATEWAY_KEY", "")
+        if not expected or not hmac.compare_digest(x_teamharness_runtime_key, expected):
+            raise HTTPException(status_code=401, detail="unauthorized")
+
+        incident_id = str(payload.get("incident_id") or "").strip()
+        if not incident_id:
+            raise HTTPException(status_code=400, detail="incident_id is required")
+        alert_group = payload.get("alert_group")
+        correlation_hints = payload.get("correlation_hints")
+        arguments = {
+            "incident_id": incident_id,
+            "alert_group": alert_group if isinstance(alert_group, list) else [],
+            "correlation_hints": correlation_hints if isinstance(correlation_hints, dict) else {},
+        }
+        try:
+            return _investigate_via_mcp(arguments)
+        except (json.JSONDecodeError, RuntimeError) as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return router
+
+
 def _register_manager_gate_hook(api: Any) -> None:
     """Register the plugin-native Manager continuation gate when QwenPaw is present."""
     try:
@@ -1004,6 +1081,10 @@ class OpskeeperTeamHarnessPlugin:
         install_router = build_install_plugin_router()
         if install_router is not None:
             router.include_router(install_router)
+
+        investigate_router = build_investigate_router()
+        if investigate_router is not None:
+            router.include_router(investigate_router)
 
         try:
             api.register_http_router(

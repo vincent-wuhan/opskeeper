@@ -80,6 +80,59 @@ def test_install_health_reports_qwenpaw_path(client: TestClient) -> None:
     assert body["maxBytes"] == _plugin._MAX_INSTALL_BYTES
 
 
+def test_investigate_proxy_requires_runtime_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = FastAPI()
+    router = _plugin.build_investigate_router()
+    assert router is not None
+    app.include_router(router, prefix="/opskeeper-teamharness")
+    client = TestClient(app)
+    monkeypatch.setenv("OPSKEEPER_GATEWAY_KEY", "test-runtime-key")
+
+    def fail_call(_arguments):
+        raise AssertionError("unauthenticated call must not reach MCP")
+
+    monkeypatch.setattr(_plugin, "_investigate_via_mcp", fail_call)
+    res = client.post(
+        "/opskeeper-teamharness/investigate",
+        json={"incident_id": "incident-1"},
+        headers={"X-Teamharness-Runtime-Key": "wrong"},
+    )
+    assert res.status_code == 401
+
+
+def test_investigate_proxy_normalizes_arguments_and_unwraps_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app = FastAPI()
+    router = _plugin.build_investigate_router()
+    assert router is not None
+    app.include_router(router, prefix="/opskeeper-teamharness")
+    client = TestClient(app)
+    monkeypatch.setenv("OPSKEEPER_GATEWAY_KEY", "test-runtime-key")
+    observed = {}
+
+    def fake_call(arguments):
+        observed.update(arguments)
+        return {"data": {"schema_version": "1", "confidence": 0.9}, "audit_log_id": "audit-1"}
+
+    monkeypatch.setattr(_plugin, "_investigate_via_mcp", fake_call)
+    res = client.post(
+        "/opskeeper-teamharness/investigate",
+        json={"incident_id": "incident-1"},
+        headers={"X-Teamharness-Runtime-Key": "test-runtime-key"},
+    )
+    assert res.status_code == 200
+    assert res.json() == {
+        "data": {"schema_version": "1", "confidence": 0.9},
+        "audit_log_id": "audit-1",
+    }
+    assert observed == {
+        "incident_id": "incident-1",
+        "alert_group": [],
+        "correlation_hints": {},
+    }
+
+
 def test_install_max_bytes_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     """OPSKEEPER_WORKER_MAX_PLUGIN_BYTES env 应能让 worker 端上限随运维调整，
     避免和 manager 端 OPSKEEPER_PLUGIN_MAX_ZIP_BYTES 错配时 manager 收下 / worker 拒收。"""
