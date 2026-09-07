@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.35 — 2026-09-07
+
+- Send Dashboard Runtime readback requests through same-origin `XMLHttpRequest`.
+- Document that AgentTeams gateway deployments must accept both exact and
+  trailing-slash forms of the four read-only OpsKeeper proxy paths.
+
 ## 1.0.34 — 2026-09-07
 
 - Fix the Dashboard RCA proxy for QwenPaw runtimes that inject

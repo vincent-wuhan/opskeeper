@@ -54,26 +54,47 @@ async function pluginManagerFetch(path, init = {}) {
   return data;
 }
 
+export const xhrTransport = {
+  createRequest() {
+    return new XMLHttpRequest();
+  },
+};
+
 async function jsonFetch(path, init = {}) {
   const headers = {
     ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
     ...(init.headers || {}),
   };
-  const res = await fetch(BASE + path, {
-    credentials: 'same-origin',
-    ...init,
-    headers,
+  return new Promise((resolve, reject) => {
+    const request = xhrTransport.createRequest();
+    request.open(init.method || 'GET', BASE + path, true);
+    request.withCredentials = true;
+    for (const [name, value] of Object.entries(headers)) {
+      request.setRequestHeader(name, value);
+    }
+    request.onload = () => {
+      const contentType = request.getResponseHeader('content-type') || '';
+      let data;
+      try {
+        data = contentType.includes('application/json') ? JSON.parse(request.responseText) : request.responseText;
+      } catch {
+        data = null;
+      }
+      if (request.status >= 200 && request.status < 300) {
+        resolve(data);
+        return;
+      }
+      const message = (data && (data.error || data.message))
+        || (typeof data === 'string' && data ? data : `HTTP ${request.status}`);
+      const error = new Error(message);
+      error.status = request.status;
+      error.body = data;
+      reject(error);
+    };
+    request.onerror = () => reject(new Error('network error'));
+    request.onabort = () => reject(new Error('request aborted'));
+    request.send(init.body);
   });
-  const ct = res.headers.get('content-type') || '';
-  const data = ct.includes('application/json') ? await res.json().catch(() => null) : await res.text();
-  if (!res.ok) {
-    const msg = (data && (data.error || data.message)) || (typeof data === 'string' ? data : `HTTP ${res.status}`);
-    const err = new Error(msg);
-    err.status = res.status;
-    err.body = data;
-    throw err;
-  }
-  return data;
 }
 
 export const opskeeperApi = {
