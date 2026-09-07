@@ -15,6 +15,26 @@ export function resolvePluginManagerBase(location = globalThis.location) {
 
 const PLUGIN_MANAGER_BASE = resolvePluginManagerBase();
 
+export function buildInvestigationRequest(incident = {}) {
+  const incidentId = String(incident.id ?? incident.incident_id ?? '').trim();
+  const labels = incident.labels && typeof incident.labels === 'object' ? incident.labels : {};
+  const existingGroup = Array.isArray(incident.alert_group) ? incident.alert_group.filter(Boolean) : [];
+  const alertGroup = existingGroup.length
+    ? existingGroup
+    : [incident.rule_key || incident.alertname || labels.alertname || incidentId].filter(Boolean);
+  const existingHints = incident.correlation_hints && typeof incident.correlation_hints === 'object'
+    ? incident.correlation_hints
+    : {};
+  const correlationHints = Object.keys(existingHints).length
+    ? existingHints
+    : {
+      source_id: labels.source_id || incident.source_id || 'dashboard',
+      device_id: labels.device_id || incident.target_id || incidentId,
+      resource_type: labels.resource_type || incident.target_type || 'unknown',
+    };
+  return { incident_id: incidentId, alert_group: alertGroup, correlation_hints: correlationHints };
+}
+
 async function pluginManagerFetch(path, init = {}) {
   const res = await fetch(PLUGIN_MANAGER_BASE + path, {
     credentials: 'same-origin',

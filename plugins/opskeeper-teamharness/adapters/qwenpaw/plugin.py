@@ -69,7 +69,7 @@ def manager_prompt(_agent: Any) -> str:
 
 _SANITIZER_KEYWORDS_ENV = "AGENTTEAMS_OUTPUT_SANITIZE_KEYWORDS"
 _PERMISSION_MODE_ENV = "OPSKEEPER_PERMISSION_MODE"
-_PLUGIN_VERSION = "1.0.33"
+_PLUGIN_VERSION = "1.0.34"
 _READ_ONLY_LOGGER = logging.getLogger("opskeeper-teamharness.readonly")
 _MANAGER_GATE_LOGGER = logging.getLogger("opskeeper-teamharness.manager-gate")
 _MANAGER_GATE_TTL_ENV = "OPSKEEPER_MANAGER_GATE_TTL_SECONDS"
@@ -77,6 +77,76 @@ _DEFAULT_MANAGER_GATE_TTL_SECONDS = 600.0
 _TASK_MARKER_PATTERN = re.compile(
     r"\bOPSKEEPER[\s_]+TASK[\s_]+([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\b"
 )
+
+
+def _credential_value(text: str, indent: int, name: str) -> str:
+    pattern = rf"(?m)^ {{{indent}}}{re.escape(name)}:\s*[\"']?([^\"'\n]+)[\"']?\s*$"
+    match = re.search(pattern, text)
+    return match.group(1).strip() if match else ""
+
+
+def _credential_from_file(path: Path, name: str) -> str:
+    try:
+        text = path.read_text(encoding="utf-8")
+        server_match = re.search(r"(?ms)^  mcp/opskeeper:\n(.*?)(?=^  \S|\Z)", text)
+        if not server_match:
+            return ""
+        secrets_match = re.search(
+            r"(?ms)^    secrets:\n(.*?)(?=^    \S|\Z)",
+            server_match.group(1),
+        )
+        if not secrets_match:
+            return ""
+        return _credential_value(secrets_match.group(1), 6, name)
+    except (OSError, UnicodeError):
+        return ""
+
+
+def _runtime_credential(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    decoded = _decode_runtime_credential(value)
+    if decoded:
+        return decoded
+
+    explicit_path = os.environ.get("OPSKEEPER_CREDENTIALS_FILE", "").strip()
+    candidates = [Path(explicit_path)] if explicit_path else []
+    for directory in (ASSET_DIR, *ASSET_DIR.parents):
+        if directory.name == ".qwenpaw":
+            candidates.append(directory / "workspaces" / "default" / "credentials.yaml")
+
+    for candidate in candidates:
+        value = _credential_from_file(candidate, name)
+        decoded = _decode_runtime_credential(value)
+        if decoded:
+            return decoded
+    return ""
+
+
+def _decode_runtime_credential(value: str) -> str:
+    if not value:
+        return ""
+    if not value.upper().startswith("ENC:"):
+        return value
+    try:
+        from qwenpaw.security.secret_store import decrypt
+    except ImportError:
+        return ""
+    decoded = decrypt(value)
+    return "" if decoded.upper().startswith("ENC:") else decoded
+
+
+def _runtime_gateway_key() -> str:
+    """Get the injected MCP key, falling back to QwenPaw's credential store."""
+    return _runtime_credential("OPSKEEPER_GATEWAY_KEY")
+
+
+def _runtime_backend_url() -> str:
+    return _runtime_credential("OPSKEEPER_BACKEND_URL") or "http://opskeeper:8080"
+
+
+def _runtime_tenant_id() -> str:
+    return _runtime_credential("OPSKEEPER_TENANT_ID") or get_tenant_id()
+
 _TASK_RESULT_PATTERN = re.compile(
     r"(?m)^(?:[`*_]*(?:@[A-Za-z0-9._=-]+(?::[A-Za-z0-9._=-]+)+|manager)[`*_]*[ \t]+)?"
     r"[`*_]*[ \t]*OPSKEEPER[\s_]+RESULT[\s_]+"
@@ -764,10 +834,17 @@ def _investigate_via_mcp(arguments: dict[str, Any]) -> dict[str, Any]:
         "params": {"name": "loop.investigate", "arguments": arguments},
     }
     body = json.dumps(request, ensure_ascii=False).encode("utf-8")
+    gateway_key = _runtime_gateway_key()
+    if not gateway_key:
+        raise RuntimeError("OpsKeeper GatewayKey is unavailable in the QwenPaw runtime")
+    backend_url = _runtime_backend_url()
+    tenant_id = _runtime_tenant_id()
+    headers = sign_request(body, key=gateway_key)
+    headers["X-Opskeeper-Tenant"] = tenant_id
     req = urllib.request.Request(
-        get_backend_url() + "/api/v1/mcp",
+        backend_url + "/api/v1/mcp",
         data=body,
-        headers=sign_request(body),
+        headers=headers,
         method="POST",
     )
     try:
@@ -803,7 +880,7 @@ def build_investigate_router():
         payload: dict[str, Any],
         x_teamharness_runtime_key: str = Header(default=""),
     ) -> dict[str, Any]:
-        expected = os.environ.get("OPSKEEPER_GATEWAY_KEY", "")
+        expected = _runtime_gateway_key()
         if not expected or not hmac.compare_digest(x_teamharness_runtime_key, expected):
             raise HTTPException(status_code=401, detail="unauthorized")
 

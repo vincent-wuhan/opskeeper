@@ -9,7 +9,7 @@ import {
   normalizeVersion,
 } from './runtime.js';
 
-import { resolvePluginManagerBase } from './api.js';
+import { buildInvestigationRequest, resolvePluginManagerBase } from './api.js';
 import { normalizeOpskeeperTab } from './tabs.js';
 
 test('normalizes health response wrappers and checks', () => {
@@ -82,6 +82,24 @@ test('routes plugin manager calls around the port-13000 dashboard fallback', () 
     'http://8.160.172.235/api/v1/plugins',
   );
   assert.equal(resolvePluginManagerBase({ port: '', protocol: 'http:', hostname: 'example.test' }), '/api/v1/plugins');
+});
+
+test('builds a backend-compatible investigation request', () => {
+  assert.deepEqual(buildInvestigationRequest({
+    id: 35,
+    rule_key: 'pg-pool-exhaustion',
+    target_id: '900001',
+    target_type: 'edge',
+    labels: { source_id: 'pool-fixture' },
+  }), {
+    incident_id: '35',
+    alert_group: ['pg-pool-exhaustion'],
+    correlation_hints: {
+      source_id: 'pool-fixture',
+      device_id: '900001',
+      resource_type: 'edge',
+    },
+  });
 });
 
 test('normalizes the unified OpsKeeper entry tab', () => {

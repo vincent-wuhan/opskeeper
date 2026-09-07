@@ -100,6 +100,80 @@ def test_investigate_proxy_requires_runtime_key(monkeypatch: pytest.MonkeyPatch)
     assert res.status_code == 401
 
 
+def test_runtime_gateway_key_reads_qwenpaw_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    credentials = tmp_path / "credentials.yaml"
+    credentials.write_text(
+        "version: '1'\n"
+        "credentials:\n"
+        "  mcp/opskeeper:\n"
+        "    kind: static\n"
+        "    secrets:\n"
+        "      OPSKEEPER_GATEWAY_KEY: file-runtime-key\n"
+        "      OPSKEEPER_BACKEND_URL: http://opskeeper:8080\n"
+        "      OPSKEEPER_TENANT_ID: demo-tenant\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("OPSKEEPER_GATEWAY_KEY", raising=False)
+    monkeypatch.setenv("OPSKEEPER_CREDENTIALS_FILE", str(credentials))
+    assert _plugin._runtime_gateway_key() == "file-runtime-key"
+    assert _plugin._runtime_credential("OPSKEEPER_BACKEND_URL") == "http://opskeeper:8080"
+    assert _plugin._runtime_credential("OPSKEEPER_TENANT_ID") == "demo-tenant"
+
+
+def test_investigate_proxy_accepts_file_backed_runtime_key(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    credentials = tmp_path / "credentials.yaml"
+    credentials.write_text(
+        "credentials:\n"
+        "  mcp/opskeeper:\n"
+        "    secrets:\n"
+        "      OPSKEEPER_GATEWAY_KEY: file-runtime-key\n",
+        encoding="utf-8",
+    )
+    app = FastAPI()
+    router = _plugin.build_investigate_router()
+    assert router is not None
+    app.include_router(router, prefix="/opskeeper-teamharness")
+    client = TestClient(app)
+    monkeypatch.delenv("OPSKEEPER_GATEWAY_KEY", raising=False)
+    monkeypatch.setenv("OPSKEEPER_CREDENTIALS_FILE", str(credentials))
+    monkeypatch.setattr(
+        _plugin,
+        "_investigate_via_mcp",
+        lambda _arguments: {"data": {"ok": True}, "audit_log_id": "audit-1"},
+    )
+    res = client.post(
+        "/opskeeper-teamharness/investigate",
+        json={"incident_id": "incident-1"},
+        headers={"X-Teamharness-Runtime-Key": "file-runtime-key"},
+    )
+    assert res.status_code == 200
+    assert res.json()["data"] == {"ok": True}
+
+
+def test_runtime_backend_url_ignores_encrypted_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    credentials = tmp_path / "credentials.yaml"
+    credentials.write_text(
+        "credentials:\n"
+        "  mcp/opskeeper:\n"
+        "    secrets:\n"
+        "      OPSKEEPER_BACKEND_URL: enc:not-decrypted-by-plugin\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("OPSKEEPER_BACKEND_URL", raising=False)
+    monkeypatch.setenv("OPSKEEPER_CREDENTIALS_FILE", str(credentials))
+    assert _plugin._runtime_backend_url() == "http://opskeeper:8080"
+    assert _plugin._runtime_credential("OPSKEEPER_BACKEND_URL") == ""
+
+
 def test_investigate_proxy_normalizes_arguments_and_unwraps_report(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
