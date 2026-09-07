@@ -1,6 +1,6 @@
 {
   "name": "opskeeper-teamharness-dashboard-plugin",
-  "version": "1.0.31",
+  "version": "1.0.32",
   "private": true,
   "type": "module",
   "description": "Dashboard UI extension for opskeeper-teamharness (Dashboard plugin apiVersion dashboard.agentteams/v1).",

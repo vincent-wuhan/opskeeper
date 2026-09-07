@@ -8,6 +8,32 @@
 
 const BASE = '/api/opskeeper';
 
+export function resolvePluginManagerBase(location = globalThis.location) {
+  if (!location || location.port !== '13000') return '/api/v1/plugins';
+  return `${location.protocol}//${location.hostname}/api/v1/plugins`;
+}
+
+const PLUGIN_MANAGER_BASE = resolvePluginManagerBase();
+
+async function pluginManagerFetch(path, init = {}) {
+  const res = await fetch(PLUGIN_MANAGER_BASE + path, {
+    credentials: 'same-origin',
+    ...init,
+    headers: {
+      ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+      ...(init.headers || {}),
+    },
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const err = new Error(data?.error || `Plugin Manager HTTP ${res.status}`);
+    err.status = res.status;
+    err.body = data;
+    throw err;
+  }
+  return data;
+}
+
 async function jsonFetch(path, init = {}) {
   const headers = {
     ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
@@ -106,16 +132,16 @@ export const opskeeperApi = {
   // ── Plugin registry (Manager) ─────────────────────────────────────────
   // GET /api/v1/plugins — list installed opskeeper plugins
   listPlugins() {
-    return jsonFetch('/plugins');
+    return pluginManagerFetch('');
   },
 
-  // POST /api/v1/plugins/install — upload a plugin zip; Manager stores it,
+  // POST /api/v1/plugins/install — upload a plugin package; Manager stores it,
   // dispatches to the worker (via /api/opskeeper-teamharness/install-plugin),
   // and re-syncs on success.
   installPlugin(file, { onProgress } = {}) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', BASE + '/plugins/install', true);
+      xhr.open('POST', PLUGIN_MANAGER_BASE + '/install', true);
       xhr.withCredentials = true;
       xhr.upload.onprogress = (ev) => {
         if (ev.lengthComputable && onProgress) {
@@ -143,13 +169,13 @@ export const opskeeperApi = {
       };
       xhr.onerror = () => reject(new Error('network error'));
       const fd = new FormData();
-      fd.append('plugin', file);
+      fd.append('file', file);
       xhr.send(fd);
     });
   },
 
   // DELETE /api/v1/plugins/{id} — uninstall a plugin
   uninstallPlugin(pluginId) {
-    return jsonFetch('/plugins/' + encodeURIComponent(pluginId), { method: 'DELETE' });
+    return pluginManagerFetch('/' + encodeURIComponent(pluginId), { method: 'DELETE' });
   },
 };

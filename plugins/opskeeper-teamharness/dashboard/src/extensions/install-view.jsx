@@ -2,11 +2,11 @@ import * as React from 'react';
 import { opskeeperApi } from './api.js';
 
 // OpskeeperInstallView — Dashboard surface that lists currently-installed
-// opskeeper plugins and lets the operator upload a new plugin zip.
+// opskeeper plugins and lets the operator upload a new plugin package.
 //
 // Wire:
-//   GET  /api/opskeeper/plugins        — list (via Dashboard proxy)
-//   POST /api/opskeeper/plugins/install — upload zip (multipart/form-data)
+//   GET  /api/v1/plugins        — list (via public Plugin Manager proxy)
+//   POST /api/v1/plugins/install — upload package (multipart/form-data)
 //
 // The Dashboard proxy in turn calls Manager → worker
 // /api/opskeeper-teamharness/install-plugin → qwenpaw plugin install. The
@@ -151,7 +151,7 @@ export default function OpskeeperInstallView({ api }) {
         </div>
         <input
           type="file"
-          accept=".zip"
+          accept=".tar.gz,.zip"
           onChange={onPickFile}
           disabled={installing}
           style={{

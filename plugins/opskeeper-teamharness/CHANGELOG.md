@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.32 — 2026-09-07
+
+- Route the Dashboard install view through the public Plugin Manager endpoint on port-13000 deployments.
+- Use the Plugin Manager `file` upload field and accept its tar.gz package format.
+
 ## 1.0.31 — 2026-09-06
 
 - Normalize OpsKeeper incident-list responses across `items`, `incidents`, `data`, and direct-array shapes.
