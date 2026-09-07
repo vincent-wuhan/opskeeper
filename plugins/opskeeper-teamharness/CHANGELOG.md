@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.34 — 2026-09-07
+
+- Fix the Dashboard RCA proxy for QwenPaw runtimes that inject
+  `OPSKEEPER_GATEWAY_KEY` only into the stdio MCP child process.
+- Read the existing `mcp/opskeeper` credential binding when the HTTP-router
+  plugin process lacks the environment variable, without exposing the key to
+  the browser.
+- Derive backend-required alert-group and correlation hints from each incident
+  when triggering RCA from the unified Dashboard entry.
+
 ## 1.0.33 — 2026-09-07
 
 - Add a server-side signed Dashboard RCA proxy for `loop.investigate`.

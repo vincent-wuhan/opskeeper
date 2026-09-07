@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { normalizeIncidentList } from './runtime.js';
-import { opskeeperApi } from './api.js';
+import { buildInvestigationRequest, opskeeperApi } from './api.js';
 
 // Worker 详情页嵌入区块 — 列出该 worker 最近 5 次 RCA 报告 + 单 worker re-trigger 按钮。
 //
@@ -61,7 +61,7 @@ export default function WorkerOpsBlock({ entity, api }) {
     if (!i?.id) return;
     setBusy(i.id);
     try {
-      await opskeeperApi.investigate({ incident_id: i.id });
+      await opskeeperApi.investigate(buildInvestigationRequest(i));
       api.dashboard.toast(`已重新触发 RCA：${i.id}`, 'success');
       await refresh();
     } catch (e) {

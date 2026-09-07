@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { normalizeIncidentList } from './runtime.js';
-import { opskeeperApi } from './api.js';
+import { buildInvestigationRequest, opskeeperApi } from './api.js';
 
 // 7 阶段 RCA orchestrator 阶段定义（来自 opskeeper 7 阶段 RCA loop）
 const STAGES = [
@@ -213,11 +213,11 @@ export default function OpskeeperRoute({ api }) {
     setReportError(null);
     setReport(null);
     try {
-      const r = await opskeeperApi.investigate({ incident_id: incident.id });
+      const r = await opskeeperApi.investigate(buildInvestigationRequest(incident));
       const payload = r.data || r.report || r;
       setReport(payload);
-      api.eventBus.emit('dashboard:rca-finished', payload);
-      api.dashboard.toast(`RCA 完成：${incident.id}`, 'success');
+      api?.eventBus?.emit?.('dashboard:rca-finished', payload);
+      api?.dashboard?.toast?.(`RCA 完成：${incident.id}`, 'success');
     } catch (e) {
       setReportError(e.message);
       api.dashboard.toast(`RCA 失败：${e.message}`, 'error');
