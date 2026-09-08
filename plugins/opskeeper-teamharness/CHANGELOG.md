@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.38 — 2026-09-08
+
+- Normalize Dashboard RCA reports from `root_cause_object` and render the
+  evidence-backed summary, type, detail, confidence, and evidence chain.
+- Use a high-contrast report card and a versioned Dashboard entry URL to avoid
+  stale module caching after plugin upgrades.
+
 ## 1.0.36 — 2026-09-08
 
 - Deduplicate concurrent Dashboard RCA requests by incident ID across the unified entry and worker detail panel.

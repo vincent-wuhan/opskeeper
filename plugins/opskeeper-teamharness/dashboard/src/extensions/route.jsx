@@ -67,19 +67,32 @@ function PhaseProgress({ phase }) {
   );
 }
 
+function normalizeRootReport(report) {
+  if (!report || typeof report !== 'object') {
+    return { root: {}, chain: [], evidence: [], confidence: null };
+  }
+  const obj = report.root_cause_object && typeof report.root_cause_object === 'object'
+    ? report.root_cause_object
+    : null;
+  const root = obj || report.root_cause || report.rootCause || {};
+  const chain = report.causal_chain || report.causalChain || (obj && Array.isArray(obj.causal_chain) ? obj.causal_chain : []);
+  const evidence = report.evidence_chain || report.evidence || (obj && Array.isArray(obj.evidence_chain) ? obj.evidence_chain : []);
+  const confidence = report.confidence ?? report.confidence_score
+    ?? (obj && typeof obj.confidence === 'number' ? obj.confidence : null);
+  return { root, chain, evidence, confidence };
+}
+
 function ReportViewer({ report }) {
   if (!report) return null;
-  const root = report.root_cause || report.rootCause || {};
-  const chain = report.causal_chain || report.causalChain || [];
-  const evidence = report.evidence || [];
-  const confidence = report.confidence ?? report.confidence_score ?? null;
+  const normalized = normalizeRootReport(report);
+  const { root, chain, evidence, confidence } = normalized;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {/* Root cause */}
       <div style={{
         padding: 14, borderRadius: 8, border: '1px solid var(--border)',
-        background: 'var(--card)', color: 'var(--card-foreground)',
+        background: '#111827', color: '#f9fafb',
       }}>
         <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>根因</div>
         <div style={{ fontSize: 14, fontWeight: 600 }}>
@@ -88,6 +101,18 @@ function ReportViewer({ report }) {
         {root.entity && (
           <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
             实体：{root.entity.type} = {root.entity.id}
+          </div>
+        )}
+        {root.kind && (
+          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>
+            类型：<code>{root.kind}</code>
+          </div>
+        )}
+        {root.detail && typeof root.detail === 'object' && (
+          <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 4 }}>
+            {Object.entries(root.detail).map(([k, v]) => (
+              <div key={k}><span style={{ color: '#6b7280' }}>{k}:</span> {String(v)}</div>
+            ))}
           </div>
         )}
         {confidence !== null && (
@@ -103,7 +128,7 @@ function ReportViewer({ report }) {
       {chain.length > 0 && (
         <div style={{
           padding: 14, borderRadius: 8, border: '1px solid var(--border)',
-          background: 'var(--card)',
+          background: '#111827',
         }}>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>因果链</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -134,19 +159,24 @@ function ReportViewer({ report }) {
       {evidence.length > 0 && (
         <div style={{
           padding: 14, borderRadius: 8, border: '1px solid var(--border)',
-          background: 'var(--card)',
+          background: '#111827',
         }}>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 8 }}>
             证据 ({evidence.length} 条)
           </div>
           <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12 }}>
-            {evidence.map((e, i) => (
-              <li key={i} style={{ marginBottom: 4 }}>
-                <code style={{ fontSize: 11, color: 'var(--muted)' }}>{e.source || 'evidence'}</code>
-                {e.signal && <span> — {e.signal}</span>}
-                {e.timestamp && <span style={{ color: 'var(--muted)' }}> @ {e.timestamp}</span>}
-              </li>
-            ))}
+            {evidence.map((e, i) => {
+              const source = e.source || e.type || 'evidence';
+              const detail = e.signal || e.snippet || e.value || '';
+              const at = e.timestamp || e.observed_at;
+              return (
+                <li key={i} style={{ marginBottom: 6, color: '#e5e7eb' }}>
+                  <code style={{ fontSize: 11, color: '#9ca3af' }}>{source}</code>
+                  {detail && <span> — <span style={{ color: '#e5e7eb' }}>{String(detail).slice(0, 240)}</span></span>}
+                  {at && <span style={{ color: '#6b7280' }}> @ {at}</span>}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
@@ -155,7 +185,7 @@ function ReportViewer({ report }) {
       {report.phase && (
         <div style={{
           padding: 14, borderRadius: 8, border: '1px solid var(--border)',
-          background: 'var(--card)',
+          background: '#111827',
         }}>
           <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 4 }}>
             7 阶段进度 — 当前阶段：<strong>{report.phase}</strong>

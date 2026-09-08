@@ -11,6 +11,8 @@ DASHBOARD_PACKAGE="dist/opskeeper-teamharness-dashboard-${VERSION}.zip"
 
 npm install --silent --prefix dashboard
 npm run build --prefix dashboard
+cp dashboard/dist/main.js "dashboard/dist/main-${VERSION}.js"
+cp dashboard/dist/main.js.map "dashboard/dist/main-${VERSION}.js.map"
 mkdir -p dist
 
 OUT_DIR="$PLUGIN_DIR/dist" ruby adapters/qwenpaw/scripts/build-qwenpaw-plugin.rb plugin.yaml
@@ -30,7 +32,7 @@ tar \
 
 (
   cd dashboard
-  zip -X -r "../${DASHBOARD_PACKAGE}" plugin.json dist/main.js dist/main.js.map
+  zip -X -r "../${DASHBOARD_PACKAGE}" plugin.json dist/main.js dist/main.js.map "dist/main-${VERSION}.js" "dist/main-${VERSION}.js.map"
 )
 
 printf '\nTeamHarness base package:\n'
