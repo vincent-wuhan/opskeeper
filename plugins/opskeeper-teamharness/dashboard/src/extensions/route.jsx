@@ -208,6 +208,7 @@ export default function OpskeeperRoute({ api }) {
 
   async function triggerRCA(incident) {
     if (!incident) return;
+    if (running) return;
     setSelected(incident);
     setRunning(true);
     setReportError(null);
@@ -287,9 +288,13 @@ export default function OpskeeperRoute({ api }) {
         {filtered.map((i) => (
           <div
             key={i.id}
-            onClick={() => triggerRCA(i)}
+            onClick={() => {
+              if (!running) triggerRCA(i);
+            }}
             style={{
-              padding: 12, borderRadius: 6, fontSize: 12, cursor: 'pointer',
+              padding: 12, borderRadius: 6, fontSize: 12,
+              cursor: running ? 'wait' : 'pointer',
+              opacity: running ? 0.6 : 1,
               border: '1px solid var(--border)',
               background: selected?.id === i.id ? 'var(--primary)' : 'var(--card)',
               color: selected?.id === i.id ? 'var(--primary-foreground)' : 'var(--card-foreground)',

@@ -14,6 +14,7 @@ export function resolvePluginManagerBase(location = globalThis.location) {
 }
 
 const PLUGIN_MANAGER_BASE = resolvePluginManagerBase();
+const investigationRequests = new Map();
 
 export function buildInvestigationRequest(incident = {}) {
   const incidentId = String(incident.id ?? incident.incident_id ?? '').trim();
@@ -84,7 +85,7 @@ async function jsonFetch(path, init = {}) {
         resolve(data);
         return;
       }
-      const message = (data && (data.error || data.message))
+      const message = (data && (data.detail || data.error || data.message))
         || (typeof data === 'string' && data ? data : `HTTP ${request.status}`);
       const error = new Error(message);
       error.status = request.status;
@@ -101,10 +102,24 @@ export const opskeeperApi = {
   // ── 7-stage RCA ────────────────────────────────────────────────────────
   // POST /v1/mcp/investigate → orchestrator.Run → RootCauseJSON
   investigate({ incident_id, alert_group = [], correlation_hints = {} } = {}) {
-    return jsonFetch('/investigate', {
+    const normalizedIncidentId = String(incident_id ?? '').trim();
+    if (!normalizedIncidentId) {
+      return Promise.reject(new Error('incident_id is required'));
+    }
+    if (investigationRequests.has(normalizedIncidentId)) {
+      return investigationRequests.get(normalizedIncidentId);
+    }
+
+    const request = jsonFetch('/investigate', {
       method: 'POST',
-      body: JSON.stringify({ incident_id, alert_group, correlation_hints }),
-    });
+      body: JSON.stringify({
+        incident_id: normalizedIncidentId,
+        alert_group,
+        correlation_hints,
+      }),
+    }).finally(() => investigationRequests.delete(normalizedIncidentId));
+    investigationRequests.set(normalizedIncidentId, request);
+    return request;
   },
 
   // ── Incidents ──────────────────────────────────────────────────────────

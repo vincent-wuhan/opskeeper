@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.36 — 2026-09-08
+
+- Deduplicate concurrent Dashboard RCA requests by incident ID across the unified entry and worker detail panel.
+- Surface FastAPI `detail` messages and disable incident clicks while an RCA is in flight.
+
 ## 1.0.35 — 2026-09-07
 
 - Send Dashboard Runtime readback requests through same-origin `XMLHttpRequest`.

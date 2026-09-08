@@ -138,6 +138,44 @@ test('runtime readback uses same-origin XMLHttpRequest requests', async () => {
   }
 });
 
+test('deduplicates concurrent investigations for one incident', async () => {
+  const originalCreateRequest = xhrTransport.createRequest;
+  const requests = [];
+  globalThis.XMLHttpRequest = function StubXMLHttpRequest() {
+    const request = {
+      status: 200,
+      responseText: JSON.stringify({ data: { incident_id: 'inc-dedupe-1' } }),
+      open(method, url) {
+        requests.push({ method, url });
+      },
+      setRequestHeader() {},
+      getResponseHeader() {
+        return 'application/json';
+      },
+      send() {
+        queueMicrotask(() => request.onload());
+      },
+    };
+    return request;
+  };
+
+  try {
+    xhrTransport.createRequest = () => new globalThis.XMLHttpRequest();
+    const first = opskeeperApi.investigate({ incident_id: 'inc-dedupe-1' });
+    const second = opskeeperApi.investigate({ incident_id: 'inc-dedupe-1' });
+
+    assert.equal(requests.length, 1);
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    assert.deepEqual(firstResult, secondResult);
+
+    const repeated = opskeeperApi.investigate({ incident_id: 'inc-dedupe-1' });
+    assert.equal(requests.length, 2);
+    await repeated;
+  } finally {
+    xhrTransport.createRequest = originalCreateRequest;
+  }
+});
+
 test('normalizes the unified OpsKeeper entry tab', () => {
   assert.equal(normalizeOpskeeperTab('runtime'), 'runtime');
   assert.equal(normalizeOpskeeperTab('plugins'), 'plugins');
