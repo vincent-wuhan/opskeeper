@@ -197,6 +197,21 @@ backend mcp middleware `ExtractTrace` 解析后写入 ctx；`/v1/state/{task_id}
 
 CI 自检脚本：`scripts/self_check.py`（7 checks）覆盖 plugin 全链路一致性。
 
+## Dashboard Runtime 代理兼容
+
+AgentTeams Dashboard 宿主可能把插件的网络请求规范化为带尾斜杠的 URL。如果
+Runtime 页面通过 Dashboard 域名下的 `/api/opskeeper/*` 代理读取 OpsKeeper，
+网关必须同时接受以下路径的无尾斜杠和带尾斜杠形式：
+
+- `/api/opskeeper/system/health`
+- `/api/opskeeper/version`
+- `/api/opskeeper/incidents/metrics`
+- `/api/opskeeper/incidents`
+
+每个代理 location 都应保留现有鉴权注入、`Host`、`X-Real-IP`、
+`X-Forwarded-For` 和 `X-Forwarded-Proto` 头。不要把网关凭据写入插件代码或
+浏览器可见配置。
+
 ## 协议版本
 
 - AgentTeams v1alpha1（apiVersion: agentteams.agentteam/v1alpha1）

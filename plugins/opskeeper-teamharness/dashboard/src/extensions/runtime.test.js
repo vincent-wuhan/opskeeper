@@ -9,7 +9,12 @@ import {
   normalizeVersion,
 } from './runtime.js';
 
-import { buildInvestigationRequest, resolvePluginManagerBase } from './api.js';
+import {
+  buildInvestigationRequest,
+  opskeeperApi,
+  resolvePluginManagerBase,
+  xhrTransport,
+} from './api.js';
 import { normalizeOpskeeperTab } from './tabs.js';
 
 test('normalizes health response wrappers and checks', () => {
@@ -100,6 +105,75 @@ test('builds a backend-compatible investigation request', () => {
       resource_type: 'edge',
     },
   });
+});
+
+test('runtime readback uses same-origin XMLHttpRequest requests', async () => {
+  const originalCreateRequest = xhrTransport.createRequest;
+  const requests = [];
+  globalThis.XMLHttpRequest = function StubXMLHttpRequest() {
+    const request = {
+      status: 200,
+      responseText: JSON.stringify({ manager_version: 'release20260905' }),
+      open(method, url) {
+        requests.push({ method, url });
+      },
+      setRequestHeader() {},
+      getResponseHeader() {
+        return 'application/json';
+      },
+      send() {
+        request.onload();
+      },
+    };
+    return request;
+  };
+
+  try {
+    xhrTransport.createRequest = () => new globalThis.XMLHttpRequest();
+    const version = await opskeeperApi.getVersion();
+    assert.equal(version.manager_version, 'release20260905');
+    assert.deepEqual(requests, [{ method: 'GET', url: '/api/opskeeper/version' }]);
+  } finally {
+    xhrTransport.createRequest = originalCreateRequest;
+  }
+});
+
+test('deduplicates concurrent investigations for one incident', async () => {
+  const originalCreateRequest = xhrTransport.createRequest;
+  const requests = [];
+  globalThis.XMLHttpRequest = function StubXMLHttpRequest() {
+    const request = {
+      status: 200,
+      responseText: JSON.stringify({ data: { incident_id: 'inc-dedupe-1' } }),
+      open(method, url) {
+        requests.push({ method, url });
+      },
+      setRequestHeader() {},
+      getResponseHeader() {
+        return 'application/json';
+      },
+      send() {
+        queueMicrotask(() => request.onload());
+      },
+    };
+    return request;
+  };
+
+  try {
+    xhrTransport.createRequest = () => new globalThis.XMLHttpRequest();
+    const first = opskeeperApi.investigate({ incident_id: 'inc-dedupe-1' });
+    const second = opskeeperApi.investigate({ incident_id: 'inc-dedupe-1' });
+
+    assert.equal(requests.length, 1);
+    const [firstResult, secondResult] = await Promise.all([first, second]);
+    assert.deepEqual(firstResult, secondResult);
+
+    const repeated = opskeeperApi.investigate({ incident_id: 'inc-dedupe-1' });
+    assert.equal(requests.length, 2);
+    await repeated;
+  } finally {
+    xhrTransport.createRequest = originalCreateRequest;
+  }
 });
 
 test('normalizes the unified OpsKeeper entry tab', () => {
