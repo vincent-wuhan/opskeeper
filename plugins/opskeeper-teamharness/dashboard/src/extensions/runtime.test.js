@@ -83,10 +83,11 @@ test('normalizes incident list response wrappers', () => {
 
 test('routes plugin manager calls around the port-13000 dashboard fallback', () => {
   assert.equal(
-    resolvePluginManagerBase({ port: '13000', protocol: 'http:', hostname: '8.160.172.235' }),
-    'http://8.160.172.235/api/v1/plugins',
+    resolvePluginManagerBase({ port: '13000', protocol: 'http:', hostname: 'plugin-manager.example.test' }),
+    'http://plugin-manager.example.test/api/v1/plugins',
   );
-  assert.equal(resolvePluginManagerBase({ port: '', protocol: 'http:', hostname: 'example.test' }), '/api/v1/plugins');
+  assert.equal(resolvePluginManagerBase({ port: '', protocol: 'http:', hostname: 'dashboard.example.test' }), '/api/v1/plugins');
+  assert.equal(resolvePluginManagerBase({ port: '13001', protocol: 'http:', hostname: 'dashboard.example.test' }), '/api/v1/plugins');
 });
 
 test('builds a backend-compatible investigation request', () => {
