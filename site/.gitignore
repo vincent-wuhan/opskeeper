@@ -10,3 +10,6 @@ dist/
 .idea/
 .vscode/
 tsconfig.tsbuildinfo
+
+# Allow screenshots to be tracked
+!screenshots/

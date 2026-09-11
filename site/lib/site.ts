@@ -16,13 +16,15 @@ export type NavLink = { label: string; href: string };
 export const PRIMARY_NAV: NavLink[] = [
   { label: 'Platform', href: '/platform' },
   { label: 'Workers', href: '/workers' },
+  { label: 'Use cases', href: '/use-cases' },
   { label: 'Integrations', href: '/integrations' },
   { label: 'Docs', href: '/docs' },
+  { label: 'Open source', href: '/open-source' },
   { label: 'Roadmap', href: '/roadmap' },
-  { label: 'Security', href: '/security' },
 ];
 
 export const SECONDARY_NAV: NavLink[] = [
+  { label: 'FAQ', href: '/faq' },
   { label: 'Changelog', href: '/changelog' },
   { label: 'Brand', href: '/brand' },
   { label: 'GitHub', href: SITE.repo },

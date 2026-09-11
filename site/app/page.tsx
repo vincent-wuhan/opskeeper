@@ -18,6 +18,7 @@ import {
 import { Button } from '@/components/button';
 import { Section, SectionHeader } from '@/components/section';
 import { CodeBlock } from '@/components/code-block';
+import { TechMarquee } from '@/components/tech-marquee';
 
 export const metadata = {
   title: 'Auditable operations for multi-agent incident response',
@@ -132,7 +133,17 @@ export default function HomePage() {
   return (
     <>
       {/* Hero */}
-      <Section className="pt-20 pb-24 md:pt-28 md:pb-32">
+      <Section className="relative pt-20 pb-24 md:pt-28 md:pb-32">
+        {/* grain overlay */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 -z-10 opacity-[0.035] mix-blend-overlay"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.5 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")",
+            backgroundSize: '240px 240px',
+          }}
+        />
         <div className="grid gap-12 lg:grid-cols-12 lg:gap-16 items-center">
           <div className="lg:col-span-7">
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-ink-200">
@@ -201,6 +212,7 @@ export default function HomePage() {
       </Section>
 
       {/* The closed loop */}
+      <TechMarquee label="Built on the open-source stack you already run" />
       <Section id="closed-loop" className="py-20 md:py-28">
         <SectionHeader
           eyebrow="The closed loop"
@@ -403,7 +415,8 @@ export default function HomePage() {
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <Button href="/docs/getting-started">Get started</Button>
-              <Button href="https://github.com/louloulin/opskeeper" variant="secondary" external>
+              <Button href="/use-cases" variant="secondary">See use cases</Button>
+              <Button href="https://github.com/louloulin/opskeeper" variant="ghost" external>
                 View on GitHub
               </Button>
             </div>
