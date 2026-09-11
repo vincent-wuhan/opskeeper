@@ -48,6 +48,19 @@ func TestSignAgentTeamsServiceRejectsAlerterAndReporterKnowledgeLookup(t *testin
 	}
 }
 
+func TestSignAgentTeamsServiceAllowsReviewerIncidentEvidence(t *testing.T) {
+	signer := NewSigner("test-secret", time.Minute, time.Minute)
+	tools := []string{"query_knowledge", "query_incidents", "get_incident_detail"}
+	service := AgentTeamsServiceClaims{
+		TenantID: "tenant-a", Service: AgentTeamsServiceName,
+		Worker: AgentTeamsWorkerForRole("reviewer"), Role: "reviewer",
+		AllowedTools: tools,
+	}
+	if _, err := signer.SignAgentTeamsService(service, time.Minute); err != nil {
+		t.Fatalf("SignAgentTeamsService() error = %v", err)
+	}
+}
+
 func TestSignAgentTeamsServiceRejectsUnboundWorkerRole(t *testing.T) {
 	signer := NewSigner("test-secret", time.Minute, time.Minute)
 	service := AgentTeamsServiceClaims{
@@ -112,6 +125,14 @@ func TestAgentTeamsWorkerPermissionsMatrixIsCanonical(t *testing.T) {
 		if !AgentTeamsRoleAllows("investigator", tool) {
 			t.Errorf("investigator denied read-only diagnostic tool %q", tool)
 		}
+	}
+	for _, tool := range []string{"query_knowledge", "query_incidents", "get_incident_detail"} {
+		if !AgentTeamsRoleAllows("reviewer", tool) {
+			t.Errorf("reviewer denied read-only approval-evidence tool %q", tool)
+		}
+	}
+	if AgentTeamsRoleAllows("reviewer", "recovery.execute") {
+		t.Error("reviewer allowed recovery.execute; approval review must remain read-only")
 	}
 }
 

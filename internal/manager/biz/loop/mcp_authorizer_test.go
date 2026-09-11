@@ -54,14 +54,17 @@ func TestMCPAuthorizer_FilterToolNamesCoversWorkerRoles(t *testing.T) {
 		want []string
 	}{
 		{role: "alerter", want: []string{"loop.correlate"}},
-		{role: "investigator", want: []string{"loop.correlate", "loop.investigate", "query_knowledge"}},
+		{role: "investigator", want: []string{"loop.correlate", "loop.investigate", "query_knowledge", "query_incidents", "get_incident_detail"}},
 		{role: "critic", want: []string{"query_knowledge"}},
-		{role: "reviewer", want: []string{"query_knowledge"}},
+		{role: "reviewer", want: []string{"query_knowledge", "query_incidents", "get_incident_detail"}},
 		{role: "repairer", want: []string{"recovery.execute", "query_knowledge"}},
 		{role: "verifier", want: []string{"recovery.verify", "query_knowledge"}},
 		{role: "reporter", want: []string{}},
 	}
-	all := []string{"loop.correlate", "loop.investigate", "recovery.execute", "recovery.verify", "host_restart_service", "query_knowledge"}
+	all := []string{
+		"loop.correlate", "loop.investigate", "recovery.execute", "recovery.verify",
+		"host_restart_service", "query_knowledge", "query_incidents", "get_incident_detail",
+	}
 	for _, test := range tests {
 		t.Run(test.role, func(t *testing.T) {
 			identity := tenantctx.AgentTeamsIdentity{

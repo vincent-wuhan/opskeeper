@@ -198,8 +198,11 @@ func AgentTeamsWorkerPermissions() []WorkerPermission {
 		},
 		{
 			Role: "reviewer", Worker: AgentTeamsWorkerForRole("reviewer"),
-			Tools: []string{"query_knowledge", "incident.record"}, Mutating: false, ReadOnly: true,
-			Rationale: "approval guidance plus append-only approved-recommendation audit backed by HITL evidence",
+			Tools: []string{
+				"query_knowledge", "query_incidents", "get_incident_detail",
+				"incident.record",
+			}, Mutating: false, ReadOnly: true,
+			Rationale: "approval guidance with incident evidence plus append-only approved-recommendation audit backed by HITL evidence",
 		},
 		{
 			Role: "repairer", Worker: AgentTeamsWorkerForRole("repairer"),

@@ -434,6 +434,43 @@ func TestJSONRPC_ToolsListFiltersByWorkerIdentity(t *testing.T) {
 	}
 }
 
+func TestJSONRPC_ToolsListIncludesReviewerIncidentEvidence(t *testing.T) {
+	handler, loopHandler := newJSONRPCHandler(t)
+	if err := loopHandler.SetLoopTools(stubLoopService{}, []mcpclient.Tool{{
+		Name:        "query_incidents",
+		Description: "Query incidents",
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+	}, {
+		Name:        "get_incident_detail",
+		Description: "Get incident detail",
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+	}}, nil); err != nil {
+		t.Fatal(err)
+	}
+	claims := auth.AgentTeamsServiceClaims{
+		TenantID: "tenant-a", Service: "agentteams", Worker: "opskeeper-reviewer", Role: "reviewer",
+		AllowedTools: []string{"query_incidents", "get_incident_detail"},
+	}
+	recorder := serveServiceJSONRPCMethod(handler, claims, "tools/list", "")
+	var body jsonRPCResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	result, _ := body.Result.(map[string]any)
+	rawTools, _ := result["tools"].([]any)
+	if len(rawTools) != 2 {
+		t.Fatalf("tools = %+v, want reviewer incident evidence tools", rawTools)
+	}
+	names := make(map[string]bool, len(rawTools))
+	for _, rawTool := range rawTools {
+		tool, _ := rawTool.(map[string]any)
+		names[tool["name"].(string)] = true
+	}
+	if !names["query_incidents"] || !names["get_incident_detail"] {
+		t.Fatalf("tools = %+v, want query_incidents and get_incident_detail", rawTools)
+	}
+}
+
 func TestJSONRPC_AuthorizationDenialEmitsAuditEvent(t *testing.T) {
 	handler, loopHandler := newJSONRPCHandler(t)
 	emitter := &recordingAuditEmitter{}

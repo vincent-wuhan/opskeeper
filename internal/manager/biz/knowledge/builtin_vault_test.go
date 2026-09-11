@@ -35,6 +35,26 @@ func TestBuiltinVault_Embedded(t *testing.T) {
 	}
 }
 
+func TestBuiltinVault_IncludesPoolExhaustionReviewSOP(t *testing.T) {
+	path := filepath.Join(builtinVaultRoot, "diagnostics", "pg-pool-exhaustion-resize-pool-v1.md")
+	body, err := fs.ReadFile(builtinVaultFS, path)
+	if err != nil {
+		t.Fatalf("read embedded pool-exhaustion SOP: %v", err)
+	}
+	for _, needle := range []string{
+		"pg:pool-fixture",
+		"pool_manifest_id",
+		"resize_pool",
+		"recovery.execute",
+		"recovery_signal.observed",
+		"shared PostgreSQL service",
+	} {
+		if !strings.Contains(string(body), needle) {
+			t.Errorf("pool-exhaustion SOP missing required invariant %q", needle)
+		}
+	}
+}
+
 func TestIsBuiltinVaultURL(t *testing.T) {
 	cases := map[string]bool{
 		BuiltinVaultURL:                          true,
