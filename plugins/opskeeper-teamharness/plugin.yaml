@@ -2,7 +2,7 @@ apiVersion: agentteams.agentteam/v1alpha1
 kind: AgentTeamPlugin
 metadata:
   name: opskeeper-teamharness
-  version: 1.0.38
+  version: 1.0.39
   description: |
     Opskeeper TeamHarness plugin — provides 7 ops Worker skills
     (alerter/investigator/critic/reviewer/repairer/verifier/postmortem)
@@ -114,6 +114,10 @@ metadata:
 
     v1.0.38 normalizes the OpsKeeper RootCauseJSON display and improves report
     contrast, evidence readability, and Dashboard upgrade cache-busting.
+
+    v1.0.39 closes the PG pool incident loop in read-only mode: approved
+    proposal-bound recovery can execute, every stage records audit events, and
+    Runtime readback uses the incident API page-size contract.
 
     v1.0.7 adds a plugin-native Manager continuation gate: dispatched task markers
     wait for matching Worker results, while empty/self continuations are skipped.

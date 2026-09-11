@@ -70,14 +70,21 @@ Worker 房间的结果唤醒 Manager 后，Manager 必须向原始请求房间�
    `pool_manifest_id` 必须属于该 incident。
 4. **HITL**：向用户展示动作、目标 pool、容量变化、blast radius、回滚方式和证据。
    未获批准前禁止执行。AgentTeams caller 不能设置 `skip_audit`。
-5. **repairer**：仅在运行时管理员显式配置 `OPSKEEPER_PERMISSION_MODE=standard`
-   且拿到已批准 `proposal_id` 后调用 `recovery.execute`。参数只能是
+5. **repairer**：在默认 `OPSKEEPER_PERMISSION_MODE=read_only` 边界内，只有完整绑定已批准 `proposal_id`、
+   incident、manifest、target 与 command 的 `recovery.execute` 才会放行。参数只能是
    `incident_id`、`pool_manifest_id`、`reason`；禁止重启共享 PostgreSQL、kill
    无关连接、执行 shell/browser 或写业务文件。
 6. **verifier**：以修复后 probe 成功、active/capacity 恢复、waiters 下降、请求
    延迟回落为通过条件；命令执行成功本身不等于恢复成功。
 7. **postmortem**：只有在 verifier 通过后输出复盘并写入 knowledge vault，记录
    根因、审批、恢复动作、VerifiedDelta 与防复发建议。
+
+每个阶段 Worker 完成核心动作后必须调用一次 `incident.record`：
+alerter 写 `alert.received`，investigator 写 `root_cause.confirmed`，
+reviewer 写 `recommendation.approved`，repairer 写带 `action_fingerprint` 的
+`action.executed`，verifier 写 `recovery_signal=true` 的
+`recovery_signal.observed`，reporter/postmortem 写 `incident.closed`。critic
+只做推理审计，不写阶段事件。
 
 该分支的初始故障可以通过 `pool-fixture` 注入，但所有阶段推进必须由 Manager
 调度 Worker 并通过 MCP 工具完成；不得用脚本直接改状态或代替 Worker 回报。

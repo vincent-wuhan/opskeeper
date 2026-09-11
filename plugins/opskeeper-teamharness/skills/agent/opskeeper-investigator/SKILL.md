@@ -16,6 +16,7 @@ description: 事故根因诊断 worker。调用 loop.investigate 顺因果链溯
   - incident.get
   - postgres.analyze_status
   - host.get_load
+  - incident.record
 
 
 ## Tools Removed in This Revision
@@ -49,6 +50,8 @@ stdio MCP server 内部自动注入：
 ## Critical Rules
 
   - 只看不动。任何 mutating 提案通过最终回复返回给 coordinator
+  - RootCauseJSON 确认后必须调用 `incident.record`；`evidence_ref` 指向
+    RootCauseJSON / 诊断工具证据，不携带 `recovery_signal`
   - 溯源要往源头深挖，但死分支立刻砍：同一工具失败 / 空 ≥2 次必须换工具或换方向
   - RootCauseJSON 必须包含：根因（点名源头）/ 因果链（源头→症状，每段带证据）/ 现象 / 置信度与验证
   - 低置信度 (<0.6) 自动派回 critic 审计

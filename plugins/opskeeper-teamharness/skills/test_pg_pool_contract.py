@@ -19,7 +19,7 @@ class PgPoolContractTest(unittest.TestCase):
             "fault_family=capacity/connection_pool",
             "pool_manifest_id",
             "proposal_id",
-            "OPSKEEPER_PERMISSION_MODE=standard",
+            "OPSKEEPER_PERMISSION_MODE=read_only",
             "recovery.execute",
             "resize_pool",
             "禁止重启共享 PostgreSQL",
@@ -50,7 +50,7 @@ class PgPoolContractTest(unittest.TestCase):
             "skip_audit",
             "resize_pool",
             "pool_manifest_id",
-            "OPSKEEPER_PERMISSION_MODE=standard",
+            "action_fingerprint",
             "禁止重启共享 PostgreSQL",
         ):
             with self.subTest(expected=expected):
@@ -67,6 +67,21 @@ class PgPoolContractTest(unittest.TestCase):
         ):
             with self.subTest(expected=expected):
                 self.assertIn(expected, content)
+
+    def test_stage_workers_record_incident_timeline(self) -> None:
+        expectations = {
+            "agent/opskeeper-alerter/SKILL.md": ("incident.record",),
+            "agent/opskeeper-investigator/SKILL.md": ("incident.record",),
+            "agent/opskeeper-reviewer/SKILL.md": ("incident.record",),
+            "agent/opskeeper-repairer/SKILL.md": ("incident.record", "action_fingerprint"),
+            "agent/opskeeper-verifier/SKILL.md": ("incident.record", "recovery_signal=true"),
+            "agent/opskeeper-postmortem/SKILL.md": ("incident.record", "incident.closed"),
+        }
+        for relative_path, expected in expectations.items():
+            with self.subTest(path=relative_path):
+                content = _skill(relative_path)
+                for text in expected:
+                    self.assertIn(text, content)
 
 
 if __name__ == "__main__":

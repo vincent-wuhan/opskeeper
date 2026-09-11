@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	aiopstools "github.com/vincent-wuhan/opskeeper/internal/manager/biz/aiops/tools"
 	aiopstoolsbase "github.com/vincent-wuhan/opskeeper/internal/manager/biz/aiops/tools/basetool"
@@ -116,6 +118,64 @@ func TestJSONRPC_InitializeReturnsMCPSession(t *testing.T) {
 	}
 	if sessionID := recorder.Header().Get("Mcp-Session-Id"); len(sessionID) < 32 {
 		t.Fatalf("Mcp-Session-Id = %q, want a UUID-compatible session ID", sessionID)
+	}
+}
+
+func TestAnnotateMCPSpanAddsSafeBusinessAttributes(t *testing.T) {
+	spanRecorder := tracetest.NewSpanRecorder()
+	tracerProvider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(spanRecorder))
+	spanContext, span := tracerProvider.Tracer("opskeeper-test").Start(context.Background(), "mcp")
+	request := httptest.NewRequest(http.MethodPost, "/v1/mcp", nil).WithContext(tenantctx.With(spanContext, tenantctx.Tenant{
+		AgentTeams: &tenantctx.AgentTeamsIdentity{
+			TenantID: "goai-demo",
+			Service:  "agentteams",
+			Worker:   "opskeeper-repairer",
+			Role:     "repairer",
+		},
+	}))
+	params := json.RawMessage(`{
+		"name": "recovery.execute",
+		"arguments": {
+			"incident_id": "incident-live-pool-smoke",
+			"proposal_id": "13a1c286-ca32-483c-bffd-647b65e313d0",
+			"credential": "secret-must-not-be-recorded",
+			"parameters": {
+				"command": "resize_pool",
+				"pool_manifest_id": "7f5c60e593e68840f974789166cc3374",
+				"reason": "secret-must-not-be-recorded"
+			}
+		}
+	}`)
+
+	annotateMCPSpan(request, jsonRPCRequest{Params: params}, "audit-889")
+	span.End()
+
+	ended := spanRecorder.Ended()
+	if len(ended) != 1 {
+		t.Fatalf("span count = %d, want 1", len(ended))
+	}
+	attributes := make(map[string]string)
+	for _, entry := range ended[0].Attributes() {
+		attributes[string(entry.Key)] = entry.Value.AsString()
+	}
+	for key, want := range map[string]string{
+		"opskeeper.tool.name":   "recovery.execute",
+		"opskeeper.tenant.id":   "goai-demo",
+		"opskeeper.worker.name": "opskeeper-repairer",
+		"opskeeper.worker.role": "repairer",
+		"opskeeper.audit.id":    "audit-889",
+		"opskeeper.incident.id": "incident-live-pool-smoke",
+		"opskeeper.manifest.id": "7f5c60e593e68840f974789166cc3374",
+		"opskeeper.proposal.id": "13a1c286-ca32-483c-bffd-647b65e313d0",
+	} {
+		if attributes[key] != want {
+			t.Fatalf("attribute %s = %q, want %q; all=%v", key, attributes[key], want, attributes)
+		}
+	}
+	for key := range attributes {
+		if strings.Contains(key, "credential") || strings.Contains(key, "reason") {
+			t.Fatalf("unsafe attribute %q recorded; all=%v", key, attributes)
+		}
 	}
 }
 

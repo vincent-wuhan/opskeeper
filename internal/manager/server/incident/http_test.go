@@ -59,6 +59,26 @@ func TestMetricsUserCannotOverrideTenant(t *testing.T) {
 	}
 }
 
+func TestMetricsDefaultTenantCanBeConfigured(t *testing.T) {
+	t.Setenv("OPSKEEPER_DEFAULT_INCIDENT_TENANT_ID", "goai-demo")
+	repository := &stubMetricsRepository{tenantID: "goai-demo"}
+	router := routerWithHandler(NewHandler(repository))
+	request := httptest.NewRequest(http.MethodGet, "/v1/incidents/metrics", nil)
+	request = request.WithContext(tenantctx.With(request.Context(), tenantctx.Tenant{
+		AgentTeams: &tenantctx.AgentTeamsIdentity{TenantID: "default", Role: "worker"},
+	}))
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if repository.lastTenantID != "goai-demo" {
+		t.Fatalf("tenant = %q, want goai-demo", repository.lastTenantID)
+	}
+}
+
 func TestMetricsRepositoryErrorReturns500(t *testing.T) {
 	router := routerWithHandler(NewHandler(&stubMetricsRepository{err: errors.New("database unavailable")}))
 	request := httptest.NewRequest(http.MethodGet, "/v1/incidents/metrics", nil)

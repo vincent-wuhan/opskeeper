@@ -1,15 +1,20 @@
 package agentteams
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	incidentcontrol "github.com/vincent-wuhan/opskeeper/internal/control/incident"
+	alertbiz "github.com/vincent-wuhan/opskeeper/internal/manager/biz/alert"
+	alertmodel "github.com/vincent-wuhan/opskeeper/internal/manager/model/alert"
 	mcpauth "github.com/vincent-wuhan/opskeeper/internal/manager/server/mcp/middleware"
 	"github.com/vincent-wuhan/opskeeper/internal/pkg/auth"
 )
@@ -20,6 +25,12 @@ type recordIncidentEventReq struct {
 	ActionFingerprint string     `json:"action_fingerprint,omitempty"`
 	EvidenceRef       string     `json:"evidence_ref"`
 	RecoverySignal    bool       `json:"recovery_signal,omitempty"`
+}
+
+type recordIncidentEventResp struct {
+	incidentcontrol.Event
+	AlertResolved        bool   `json:"alert_resolved"`
+	AlertResolutionError string `json:"alert_resolution_error,omitempty"`
 }
 
 type incidentEventSpec struct {
@@ -48,7 +59,13 @@ func (h *Handler) recordIncidentEvent(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusForbidden, "role not allowed to record this incident event")
 		return
 	}
-	if identity.TenantID == "" {
+	tenantID := identity.TenantID
+	if tenantID == "default" {
+		if configured := os.Getenv("OPSKEEPER_DEFAULT_INCIDENT_TENANT_ID"); configured != "" {
+			tenantID = configured
+		}
+	}
+	if tenantID == "" {
 		writeJSONError(w, http.StatusForbidden, "tenant could not be derived")
 		return
 	}
@@ -95,7 +112,7 @@ func (h *Handler) recordIncidentEvent(w http.ResponseWriter, r *http.Request) {
 	if req.OccurredAt != nil {
 		occurredAt = req.OccurredAt.UTC()
 	}
-	existing, err := h.incident.ListIncident(r.Context(), identity.TenantID, req.IncidentID)
+	existing, err := h.incident.ListIncident(r.Context(), tenantID, req.IncidentID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "load incident timeline failed")
 		return
@@ -111,9 +128,9 @@ func (h *Handler) recordIncidentEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	event := incidentcontrol.Event{
 		ID: uuid.NewSHA1(uuid.NameSpaceURL, []byte(
-			"opskeeper:incident-event:"+identity.TenantID+"/"+req.IncidentID+"/"+spec.EventType+"/"+req.EvidenceRef,
+			"opskeeper:incident-event:"+tenantID+"/"+req.IncidentID+"/"+spec.EventType+"/"+req.EvidenceRef,
 		)).String(),
-		TenantID:          identity.TenantID,
+		TenantID:          tenantID,
 		IncidentID:        req.IncidentID,
 		OccurredAt:        occurredAt,
 		Phase:             spec.Phase,
@@ -134,10 +151,56 @@ func (h *Handler) recordIncidentEvent(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "append incident event failed")
 		return
 	}
+	response := recordIncidentEventResp{Event: event}
+	if spec.EventType == incidentcontrol.EventClosed {
+		resolved, resolutionErr := h.resolveLinkedAlertIncident(r.Context(), tenantID, req.IncidentID, occurredAt)
+		response.AlertResolved = resolved
+		if resolutionErr != nil {
+			response.AlertResolutionError = resolutionErr.Error()
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(event)
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+func (h *Handler) resolveLinkedAlertIncident(
+	ctx context.Context,
+	tenantID,
+	incidentID string,
+	occurredAt time.Time,
+) (bool, error) {
+	if h.alerts == nil {
+		return false, nil
+	}
+	incidents, err := h.alerts.ListIncidents(ctx, alertbiz.IncidentFilter{
+		Status: alertmodel.IncidentStatusOpen,
+		Limit:  500,
+	})
+	if err != nil {
+		return false, fmt.Errorf("load linked alert incident: %w", err)
+	}
+	for _, incident := range incidents {
+		if incident == nil || !incidentLabelsContain(incident.LabelsJSON, "incident_id", incidentID) {
+			continue
+		}
+		return h.alerts.SystemResolveIncident(
+			ctx,
+			incident.DedupeKey,
+			"AgentTeams verifier observed recovery and reporter closed incident "+incidentID,
+			occurredAt,
+		)
+	}
+	return false, nil
+}
+
+func incidentLabelsContain(rawLabels, key, value string) bool {
+	var labels map[string]string
+	if err := json.Unmarshal([]byte(rawLabels), &labels); err != nil {
+		return false
+	}
+	return labels[key] == value
 }
 
 func validateIncidentProgress(spec incidentEventSpec, existing []incidentcontrol.Event, occurredAt time.Time) error {

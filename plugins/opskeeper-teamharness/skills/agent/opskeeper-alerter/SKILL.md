@@ -11,6 +11,7 @@ description: 告警接入与聚合 worker。监听外部告警源，dedup 相关
 
   - metric.query
   - incident.list
+  - incident.record
 
 ## Tools Removed in This Revision
 
@@ -42,7 +43,9 @@ stdio MCP server 内部自动注入：
 
 ## Critical Rules
 
-  - 只读 + 0 写入（incident 状态由 opskeeper webhook 后端直接处理；alerter 不写 MCP 工具）
+  - 只读 + 0 业务写入；唯一写入是 append-only `incident.record` 审计事件
+  - 聚合完成后必须调用 `incident.record`：`incident_id` 使用告警标签内的业务事故 ID，
+    `evidence_ref` 指向聚合证据，不携带 `recovery_signal`
   - 每次聚合后必须写 shared/tasks/incident-{id}/spec.md 并 @manager
   - blast_radius 评估结果写入 incident.labels
 

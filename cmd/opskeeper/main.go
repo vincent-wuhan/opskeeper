@@ -2952,6 +2952,7 @@ func main() {
 				agentteamsHandler.SetKnowledgeWriter(knowledgeUC)
 			}
 			agentteamsHandler.SetIncidentRecorder(incidentcontrol.NewSQLRepository(db))
+			agentteamsHandler.SetAlertIncidentResolver(alertUC)
 			_ = agentteamsHigress // 用于 cmd/opskeeper/auth_agentteams.go 的 Bearer 中间件
 
 			// Plugin 生命周期管理：filesystem registry + Bearer-auth CRUD/sync
