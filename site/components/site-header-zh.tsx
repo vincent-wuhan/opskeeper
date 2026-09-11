@@ -4,12 +4,12 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import { Menu, X, Github } from 'lucide-react';
-import { PRIMARY_NAV, SITE } from '@/lib/site';
+import { PRIMARY_NAV_ZH, SITE_ZH } from '@/lib/site-zh';
 import { BrandMark } from '@/components/brand-mark';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { cn } from '@/lib/utils';
 
-export function SiteHeader() {
+export function SiteHeaderZh() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -19,7 +19,7 @@ export function SiteHeader() {
         <div className="flex items-center gap-8">
           <BrandMark />
           <nav className="hidden md:flex items-center gap-1 text-sm">
-            {PRIMARY_NAV.map((item) => {
+            {PRIMARY_NAV_ZH.map((item) => {
               const active = pathname === item.href || pathname.startsWith(item.href + '/');
               return (
                 <Link
@@ -41,21 +41,21 @@ export function SiteHeader() {
         <div className="hidden md:flex items-center gap-2">
           <LanguageSwitcher />
           <Link
-            href={SITE.repo}
+            href={SITE_ZH.repo}
             className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-ink-100 hover:bg-white/10"
           >
             <Github className="h-4 w-4" />
-            <span>{SITE.repoShort}</span>
+            <span>{SITE_ZH.repoShort}</span>
           </Link>
           <Link
-            href="/docs/getting-started"
+            href="/zh/docs/getting-started"
             className="inline-flex items-center rounded-md bg-white px-3 py-1.5 text-sm font-medium text-ink-950 hover:bg-ink-100"
           >
-            Get started
+            快速开始
           </Link>
         </div>
         <button
-          aria-label="Toggle navigation"
+          aria-label="切换导航"
           onClick={() => setOpen((v) => !v)}
           className="md:hidden inline-flex items-center justify-center rounded-md border border-white/10 bg-white/5 p-2 text-ink-100"
         >
@@ -65,7 +65,7 @@ export function SiteHeader() {
       {open && (
         <div className="md:hidden border-t border-white/5 px-4 py-3">
           <nav className="flex flex-col gap-1 text-sm">
-            {PRIMARY_NAV.map((item) => (
+            {PRIMARY_NAV_ZH.map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
@@ -75,20 +75,20 @@ export function SiteHeader() {
                 {item.label}
               </Link>
             ))}
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <LanguageSwitcher />
               <Link
-                href={SITE.repo}
+                href={SITE_ZH.repo}
                 className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-ink-100"
               >
                 <Github className="h-4 w-4" />
                 GitHub
               </Link>
               <Link
-                href="/docs/getting-started"
+                href="/zh/docs/getting-started"
                 className="inline-flex items-center rounded-md bg-white px-3 py-1.5 text-sm font-medium text-ink-950"
               >
-                Get started
+                快速开始
               </Link>
             </div>
           </nav>

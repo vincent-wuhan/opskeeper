@@ -1,8 +1,7 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter, JetBrains_Mono } from 'next/font/google';
+import { Inter, JetBrains_Mono, Noto_Sans_SC } from 'next/font/google';
 import './globals.css';
-import { SiteHeader } from '@/components/site-header';
-import { SiteFooter } from '@/components/site-footer';
+import { LocaleShell } from '@/components/locale-shell';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -14,6 +13,14 @@ const jetbrains = JetBrains_Mono({
   subsets: ['latin'],
   variable: '--font-mono',
   display: 'swap',
+});
+
+const notoSC = Noto_Sans_SC({
+  weight: ['400', '500', '600', '700'],
+  subsets: ['latin'],
+  variable: '--font-cjk',
+  display: 'swap',
+  preload: false,
 });
 
 export const metadata: Metadata = {
@@ -52,6 +59,10 @@ export const metadata: Metadata = {
   },
   alternates: {
     canonical: '/',
+    languages: {
+      en: '/',
+      'zh-CN': '/zh',
+    },
   },
   category: 'technology',
 };
@@ -64,14 +75,9 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrains.variable} dark`}>
+    <html lang="en" className={`${inter.variable} ${jetbrains.variable} ${notoSC.variable} dark`}>
       <body className="min-h-screen bg-ink-950 text-ink-100 antialiased font-sans">
-        <div className="relative isolate flex min-h-screen flex-col">
-          <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[640px] bg-radial-fade" />
-          <SiteHeader />
-          <main className="flex-1">{children}</main>
-          <SiteFooter />
-        </div>
+        <LocaleShell>{children}</LocaleShell>
       </body>
     </html>
   );

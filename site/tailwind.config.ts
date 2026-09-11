@@ -43,8 +43,18 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ['ui-sans-serif', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
-        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+        sans: [
+          'var(--font-sans)',
+          'var(--font-cjk)',
+          'ui-sans-serif',
+          'system-ui',
+          '-apple-system',
+          '"PingFang SC"',
+          '"Microsoft YaHei"',
+          '"Hiragino Sans GB"',
+          'sans-serif',
+        ],
+        mono: ['var(--font-mono)', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
       },
       backgroundImage: {
         'grid-faint':
