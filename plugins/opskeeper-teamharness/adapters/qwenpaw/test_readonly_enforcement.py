@@ -208,6 +208,11 @@ class ReadOnlyEnforcementTest(unittest.TestCase):
             "read_file",
             "opskeeper__metric_query",
             "opskeeper__postgres_analyze_status",
+            "opskeeper__query_promql",
+            "opskeeper__query_incidents",
+            "opskeeper__get_incident_detail",
+            "opskeeper__analyze_database_status",
+            "opskeeper__query_knowledge",
         ):
             with self.subTest(tool_name=tool_name):
                 events, executed = self._invoke(tool_name)

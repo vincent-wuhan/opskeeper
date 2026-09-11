@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.40 — 2026-09-12
+
+- Allow the backend's canonical `query_promql`, incident, database status, and
+  knowledge tool names in Worker read-only mode while retaining fail-closed
+  enforcement for unlisted and mutating tools.
+
 ## 1.0.39 — 2026-09-12
 
 - Keep Worker read-only mode fail-closed while allowing only complete,

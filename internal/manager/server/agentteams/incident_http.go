@@ -107,6 +107,10 @@ func (h *Handler) recordIncidentEvent(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "recovery_signal=true is only allowed for recovery_signal.observed")
 		return
 	}
+	if req.OccurredAt != nil && req.OccurredAt.After(time.Now().UTC().Add(5*time.Minute)) {
+		writeJSONError(w, http.StatusBadRequest, "occurred_at is too far in the future")
+		return
+	}
 
 	occurredAt := time.Now().UTC()
 	if req.OccurredAt != nil {

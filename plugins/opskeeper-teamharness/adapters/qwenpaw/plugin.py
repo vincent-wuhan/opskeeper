@@ -69,7 +69,7 @@ def manager_prompt(_agent: Any) -> str:
 
 _SANITIZER_KEYWORDS_ENV = "AGENTTEAMS_OUTPUT_SANITIZE_KEYWORDS"
 _PERMISSION_MODE_ENV = "OPSKEEPER_PERMISSION_MODE"
-_PLUGIN_VERSION = "1.0.39"
+_PLUGIN_VERSION = "1.0.40"
 _READ_ONLY_LOGGER = logging.getLogger("opskeeper-teamharness.readonly")
 _MANAGER_GATE_LOGGER = logging.getLogger("opskeeper-teamharness.manager-gate")
 _MANAGER_GATE_TTL_ENV = "OPSKEEPER_MANAGER_GATE_TTL_SECONDS"
@@ -165,12 +165,17 @@ _READ_ONLY_ALLOWED_TOOLS = frozenset({
     "get_current_time",
     "get_token_usage",
     "opskeeper.metric.query",
+    "opskeeper.query.promql",
+    "opskeeper.query.incidents",
+    "opskeeper.get.incident.detail",
     "opskeeper.incident.list",
     "opskeeper.incident.get",
+    "opskeeper.analyze.database.status",
     "opskeeper.postgres.analyze.status",
     "opskeeper.host.get_load",
     "opskeeper.host.get_processes",
     "opskeeper.knowledge.query",
+    "opskeeper.query.knowledge",
     "opskeeper.state.get",
     "opskeeper.recovery.verify",
     "opskeeper.incident.record",

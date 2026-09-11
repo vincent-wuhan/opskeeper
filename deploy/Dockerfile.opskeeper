@@ -180,6 +180,8 @@ RUN set -eux; \
     tar -xzf /tmp/ort.tgz -C /tmp; \
     install -m 0755 /tmp/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION} /usr/lib/; \
     ln -sf /usr/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION} /usr/lib/libonnxruntime.so; \
+    mkdir -p /usr/local/lib; \
+    ln -sf /usr/lib/libonnxruntime.so.${ONNXRUNTIME_VERSION} /usr/local/lib/libonnxruntime.so; \
     rm -rf /tmp/ort.tgz /tmp/onnxruntime-linux-${ORT_ARCH}-${ONNXRUNTIME_VERSION}; \
     apt-get purge -y --auto-remove unzip; \
     rm -rf /var/lib/apt/lists/*; \

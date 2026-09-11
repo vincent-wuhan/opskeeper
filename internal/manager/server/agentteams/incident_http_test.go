@@ -65,7 +65,7 @@ func TestRecordIncidentEventClosesLinkedAlert(t *testing.T) {
 		{role: "verifier", body: `{"evidence_ref":"evidence/verified-delta.json","recovery_signal":true}`},
 		{role: "reporter", body: `{"evidence_ref":"evidence/postmortem.json"}`},
 	}
-	base := time.Date(2026, 9, 12, 9, 0, 0, 0, time.UTC)
+	base := time.Now().UTC().Add(-5 * time.Minute).Truncate(time.Second)
 	for index, stage := range stages {
 		occurredAt := base.Add(time.Duration(index) * time.Minute)
 		requestBody := fmt.Sprintf(
@@ -105,6 +105,27 @@ func TestRecordIncidentEventClosesLinkedAlert(t *testing.T) {
 	}
 	if resolver.seenLimit < 1 {
 		t.Fatalf("resolver limit = %d, want a bounded open-alert query", resolver.seenLimit)
+	}
+}
+
+func TestRecordIncidentEventRejectsFutureOccurredAt(t *testing.T) {
+	handler := NewHandler(newMemBackend(), nil, "")
+	handler.SetIncidentRecorder(&memIncidentRecorder{})
+	router := newRouter(handler)
+	body := fmt.Sprintf(
+		`{"incident_id":"incident-future","occurred_at":%q,"evidence_ref":"evidence/alert.json"}`,
+		time.Now().UTC().Add(time.Hour).Format(time.RFC3339Nano),
+	)
+	request := httptest.NewRequest(http.MethodPost, "/v1/incidents/events", bytes.NewReader([]byte(body)))
+	context := mcpauth.WithTraceContext(
+		mcpauth.WithIdentity(request.Context(), mcpauth.ResolvedIdentity{Role: "alerter", TenantID: "goai-demo"}),
+		mcpauth.TraceContext{TraceID: "0123456789abcdef0123456789abcdef"},
+	)
+	*request = *request.WithContext(context)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
 	}
 }
 
