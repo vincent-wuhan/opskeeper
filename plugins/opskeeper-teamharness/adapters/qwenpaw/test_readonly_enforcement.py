@@ -194,6 +194,14 @@ class ReadOnlyEnforcementTest(unittest.TestCase):
         self.assertTrue(executed)
         self.assertEqual(events, ["allowed"])
 
+    def test_reporter_knowledge_write_is_role_gated_by_backend(self):
+        events, executed = self._invoke(
+            "opskeeper__knowledge_write",
+            arguments={"title": "postmortem", "content": "timeline"},
+        )
+        self.assertTrue(executed)
+        self.assertEqual(events, ["allowed"])
+
     def test_shell_and_browser_are_denied(self):
         for tool_name in ("execute_shell_command", "browser_use"):
             with self.subTest(tool_name=tool_name):

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.41 — 2026-09-12
+
+- Allow reporter-only `knowledge.write` through the Worker boundary while retaining backend role-token enforcement.
+- Keep unrelated filesystem, shell, browser, and mutating tools denied in read-only mode.
+
 ## 1.0.40 — 2026-09-12
 
 - Allow the backend's canonical `query_promql`, incident, database status, and
