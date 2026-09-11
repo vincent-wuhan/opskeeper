@@ -4,7 +4,7 @@ import { CheckCircle2, Lock, ShieldCheck, FileLock, KeyRound, Eye, GitBranch } f
 export const metadata = {
   title: 'Security',
   description:
-    'OpsKeeper security model: read-by-default, write-by-proposal, HMAC-chained audit ledger, and an independent verifier on every recovery.',
+    'OpsKeeper security model: read-by-default, write-by-proposal, append-only event log + SHA256-chained proposal audit, and an independent verifier on every recovery.',
 };
 
 const principles = [
@@ -34,8 +34,8 @@ const principles = [
     icon: ShieldCheck,
   },
   {
-    title: 'HMAC-chained audit',
-    desc: 'Every dispatched action appends to the ledger; on completion the event is sealed. The chain is daily-exported as ndjson and is replayable.',
+    title: 'Hash-chained audit',
+    desc: 'Every dispatch appends to loop_event_log (DB-enforced append-only). Every mutating-proposal transition appends to a SHA256 hash chain — tamper-evident and verifiable in-repo.',
     icon: GitBranch,
   },
 ];
@@ -149,11 +149,12 @@ export default function SecurityPage() {
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6">
             <div className="flex items-center gap-2 text-sm font-medium text-white">
-              <CheckCircle2 className="h-4 w-4 text-accent-400" /> Audit replay
+              <CheckCircle2 className="h-4 w-4 text-accent-400" /> Tamper-evident audit
             </div>
             <p className="mt-3 text-sm text-ink-300">
-              Every dispatch and completion is replayable from the HMAC-chained ledger.
-              See the <code className="text-accent-300">opskeeper audit replay</code> command.
+              loop_event_log is append-only at the DB layer. chat_proposal_audit chains every
+              mutating-proposal transition with SHA256 — the in-repo verifier walks the chain and
+              reports the first tampered entry.
             </p>
           </div>
         </div>

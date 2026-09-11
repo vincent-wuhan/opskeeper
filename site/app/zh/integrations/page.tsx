@@ -21,7 +21,7 @@ const groups = [
   },
   {
     title: 'OpsKeeper TeamHarness',
-    desc: 'Worker 侧插件，让六个 Operational Worker 通过 stdio MCP 代理调用 OpsKeeper。14 个 MCP 工具，Bearer + HMAC + W3C traceparent 三重鉴权。',
+    desc: 'Worker 侧插件，让六个 Operational Worker 通过 stdio MCP 代理调用 OpsKeeper。17 个 MCP 工具，Bearer + HMAC + W3C traceparent 三重鉴权。',
     bullets: [
       'stdio MCP server，兼容 Streamable HTTP',
       'FastAPI 路由 /api/opskeeper-teamharness/{health,sync,install-plugin}',
@@ -77,25 +77,28 @@ const mcpExample = `{
   "method": "tools/list",
   "params": {}
 }
-// → opskeeper-teamharness 暴露 14 个工具：
-//   opskeeper.incident.list
-//   opskeeper.incident.show
-//   opskeeper.skill.list
-//   opskeeper.skill.deploy
-//   opskeeper.proposal.create
-//   opskeeper.proposal.approve
-//   …… 还有 8 个`;
+// → opskeeper-teamharness 暴露 17 个工具：
+//   loop.investigate
+//   loop.correlate
+//   recovery.verify
+//   recovery.execute
+//   metric.query
+//   incident.list / incident.get
+//   postgres.analyze_status
+//   host.get_load / host.get_processes / host.restart_service
+//   knowledge.query / knowledge.write
+//   hitl.decide
+//   state.put / state.get
+//   incident.record`;
 
-const pluginInstall = `# 安装 AgentTeams Dashboard 插件
-opskeeper plugin install agentteams-plugin-installer \\
-  --registry https://plugins.opskeeper.dev \\
-  --endpoint http://localhost:8080
+const pluginInstall = `# 构建 + 安装 AgentTeams Dashboard 插件
+make build-plugins                     # zip 产物在 dist/plugins/
 
-# 或者直接为任何 Worker 跑 MCP 代理
-opskeeper-teamharness serve \\
-  --mcp-transport stdio \\
-  --opskeeper-endpoint http://localhost:8090 \\
-  --hmac-secret "$OPSKEEPER_PLUGIN_HMAC"`;
+# 或者直接为任何 Worker 跑 stdio MCP 代理
+cd plugins/opskeeper-teamharness
+OPSKEEPER_BACKEND_URL=http://localhost:8080 \\
+OPSKEEPER_GATEWAY_KEY="$GATEWAY_KEY" \\
+python3 mcp/server.py`;
 
 export default function IntegrationsZhPage() {
   return (
@@ -147,7 +150,7 @@ export default function IntegrationsZhPage() {
             <SectionHeader
               eyebrow="stdio MCP"
               title="任何 Worker，同一套协议。"
-              description="OpsKeeper Worker 插件通过 stdio 讲 JSON-RPC。发现 14 个工具，传递 W3C traceparent，用 Bearer + HMAC 鉴权。Streamable HTTP 在路线图上。"
+              description="OpsKeeper Worker 插件通过 stdio 讲 JSON-RPC。发现 17 个工具，传递 W3C traceparent，用 Bearer + HMAC 鉴权。Streamable HTTP 在路线图上。"
             />
           </div>
           <div className="lg:col-span-7">

@@ -9,7 +9,7 @@ export const metadata = {
 
 const shipping = [
   '7 worker skills + manager decision table with L0–L3 safety levels',
-  'Append-only HMAC-chained audit ledger',
+  'Append-only loop_event_log + SHA256-chained proposal audit',
   'Real-environment verification harness (alert_storm, rca_loop, recovery_verify)',
   'Plugin stdio MCP server with W3C traceparent passthrough',
   'Four reproducible PostgreSQL incident scenarios',
@@ -18,6 +18,7 @@ const shipping = [
 const next = [
   'AgentLoop / LoongSuite OTLP adapter (env-var switch ingest endpoint)',
   'Red-team security playbooks: tool injection, role escape, blast-radius bypass, replan loop',
+  'External anchoring of the audit chain root (transparency log) for regulatory evidence',
   'Product demo video (≤ 3 min, end-to-end playbook)',
 ];
 

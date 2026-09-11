@@ -35,7 +35,7 @@ export default function PluginsZhPage() {
 
       <h2 id="opskeeper-teamharness">opskeeper-teamharness</h2>
       <p>
-        Worker 侧插件。把 OpsKeeper 的能力暴露给任何讲 stdio MCP 的 Worker —— Bearer + HMAC + W3C <code>traceparent</code> 鉴权，14 个工具，并自带 FastAPI HTTP 路由用于插件生命周期管理。
+        Worker 侧插件。把 OpsKeeper 的能力暴露给任何讲 stdio MCP 的 Worker —— Bearer + HMAC + W3C <code>traceparent</code> 鉴权，17 个工具，并自带 FastAPI HTTP 路由用于插件生命周期管理。
       </p>
       <CodeBlock language="bash" title="teamharness">
         {`# 构建插件包
@@ -44,30 +44,28 @@ bash plugins/opskeeper-teamharness/scripts/build-package.sh
 # 跑插件测试
 python3 -m unittest discover -s plugins/opskeeper-teamharness -p 'test_*.py'
 
-# 跑 stdio MCP 代理
-opskeeper-teamharness serve \\
-  --mcp-transport stdio \\
-  --opskeeper-endpoint http://localhost:8090 \\
-  --hmac-secret "$OPSKEEPER_PLUGIN_HMAC"`}
+# 跑 stdio MCP 代理（环境变量配置）
+cd plugins/opskeeper-teamharness
+OPSKEEPER_BACKEND_URL=http://localhost:8080 \\
+OPSKEEPER_GATEWAY_KEY="$GATEWAY_KEY" \\
+python3 mcp/server.py`}
       </CodeBlock>
 
       <h3 id="mcp-tools">MCP 工具</h3>
-      <p><code>opskeeper-teamharness</code> 暴露的 14 个工具：</p>
+      <p><code>opskeeper-teamharness</code> 暴露的 17 个工具：</p>
       <ul>
-        <li><code>opskeeper.incident.list</code></li>
-        <li><code>opskeeper.incident.show</code></li>
-        <li><code>opskeeper.incident.timeline</code></li>
-        <li><code>opskeeper.incident.evidence</code></li>
-        <li><code>opskeeper.proposal.create</code></li>
-        <li><code>opskeeper.proposal.show</code></li>
-        <li><code>opskeeper.proposal.approve</code></li>
-        <li><code>opskeeper.proposal.reject</code></li>
-        <li><code>opskeeper.skill.list</code></li>
-        <li><code>opskeeper.skill.deploy</code></li>
-        <li><code>opskeeper.skill.uninstall</code></li>
-        <li><code>opskeeper.audit.query</code></li>
-        <li><code>opskeeper.audit.replay</code></li>
-        <li><code>opskeeper.health</code></li>
+        <li><code>loop.investigate</code> —— 对事件触发 RCA</li>
+        <li><code>loop.correlate</code> —— 把告警关联成事件</li>
+        <li><code>recovery.verify</code> —— 独立恢复验证</li>
+        <li><code>recovery.execute</code> —— 窄域授权的修复动作</li>
+        <li><code>metric.query</code> —— 查询指标后端</li>
+        <li><code>incident.list</code> / <code>incident.get</code> —— 事件记忆库</li>
+        <li><code>postgres.analyze_status</code> —— PostgreSQL 状态快照</li>
+        <li><code>host.get_load</code> / <code>host.get_processes</code> / <code>host.restart_service</code></li>
+        <li><code>knowledge.query</code> / <code>knowledge.write</code> —— 知识库</li>
+        <li><code>hitl.decide</code> —— 人工审批决策</li>
+        <li><code>state.put</code> / <code>state.get</code> —— 共享状态</li>
+        <li><code>incident.record</code> —— 向时间线追加证据 / 恢复信号</li>
       </ul>
 
       <h2 id="auth">鉴权</h2>

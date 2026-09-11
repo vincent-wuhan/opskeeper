@@ -95,7 +95,7 @@ const pillars = [
   },
   {
     title: '可观测与审计',
-    desc: 'OpenTelemetry 追踪上下文、Prometheus 指标、Loki 日志、Tempo 追踪、Grafana 仪表盘 —— 外加 HMAC 链式审计账本。',
+    desc: 'OpenTelemetry 追踪上下文、Prometheus 指标、Loki 日志、Tempo 追踪、Grafana 仪表盘 —— 外加 append-only 事件日志与 SHA256 链式提案审计。',
     icon: Activity,
   },
 ];
@@ -104,30 +104,32 @@ const safetyItems = [
   '诊断工具默认只读 —— 可变更动作必须先有挂起的提案。',
   '在派发任何恢复命令前，必须经过显式的人工审批。',
   '对资源、命令、payload 哈希进行精确目标匹配 —— 未知工具和跨资源目标默认拒绝。',
-  'append-only HMAC 链式审计账本；所有动作都可重放。',
+  'loop_event_log 由数据库触发器强制 append-only；每个变更提案的跃迁都做 SHA256 链式记录。',
   '独立验证器把"行动者"和"裁判者"分开，保证每一次恢复都有独立判定。',
 ];
 
-const codeSnippet = `# 安装 OpsKeeper CLI 并启动本地环境
-curl -fsSL https://opskeeper.dev/install.sh | bash
+const codeSnippet = `# 克隆仓库，用根目录 compose 拉起整套本地环境
+git clone https://github.com/louloulin/opskeeper.git
+cd opskeeper
+cp deploy/demo.env.example .env
+docker compose up -d --build
 
-# 拉起 Postgres + Qdrant + OpsKeeper 控制平面
-docker compose up -d opskeeper postgres qdrant
+# 把 4 个可复现 PostgreSQL 场景写入事件记忆库
+go run ./cmd/incident-seed \\
+  -dsn "postgres://opskeeper:opskeeper@localhost:5432/opskeeper?sslmode=disable" \\
+  -dir deploy/incident-events
 
-# 打开闭环演示（内置 4 个可复现场景）
-opskeeper demo replay pg-connection-pool-exhaustion
+# 在 Web 控制台检视 timeline、证据、提案与审计
+# → API + Swagger UI 见 http://localhost:8080`;
 
-# 端到端检视任意一个事件
-opskeeper incident show INC-PG-POOL-001 \\
-  --include timeline,evidence,proposals,audit`;
+const installSnippet = `# Worker 插件 —— 从 AgentTeams Dashboard 安装
+# （热部署：qwenpaw plugin install <path> --force）
 
-const installSnippet = `# Worker 插件 —— 一键装入 AgentTeams Dashboard
-opskeeper plugin install agentteams-plugin-installer
-
-# 或直接为任何 Worker 启动 MCP 代理
-opskeeper-teamharness serve \\
-  --mcp-transport stdio \\
-  --opskeeper-endpoint http://localhost:8090`;
+# 或直接为任何 Worker 启动 stdio MCP 代理
+cd plugins/opskeeper-teamharness
+OPSKEEPER_BACKEND_URL=http://localhost:8080 \\
+OPSKEEPER_GATEWAY_KEY="$GATEWAY_KEY" \\
+python3 mcp/server.py`;
 
 export default function HomeZhPage() {
   return (
@@ -147,7 +149,7 @@ export default function HomeZhPage() {
           <div className="lg:col-span-7">
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-ink-200">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent-400 animate-pulse" />
-              v1.0.0 · Apache-2.0 · 开源
+              v2026.09.03 · Apache-2.0 · 开源
             </div>
             <h1 className="text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl md:text-6xl">
               让多智能体事件响应{' '}
@@ -177,13 +179,13 @@ export default function HomeZhPage() {
             </div>
             <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-ink-400">
               <span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5 text-accent-400" /> 默认安全</span>
-              <span className="inline-flex items-center gap-1.5"><Lock className="h-3.5 w-3.5 text-accent-400" /> HMAC 链式审计</span>
+              <span className="inline-flex items-center gap-1.5"><Lock className="h-3.5 w-3.5 text-accent-400" /> 哈希链式审计</span>
               <span className="inline-flex items-center gap-1.5"><Database className="h-3.5 w-3.5 text-accent-400" /> Postgres + Qdrant</span>
               <span className="inline-flex items-center gap-1.5"><Cpu className="h-3.5 w-3.5 text-accent-400" /> 7 个工作流角色</span>
             </div>
           </div>
           <div className="lg:col-span-5">
-            <CodeBlock language="bash" title="安装 · 30 秒">
+            <CodeBlock language="bash" title="安装 · 本地环境">
               {installSnippet}
             </CodeBlock>
           </div>
@@ -342,9 +344,9 @@ export default function HomeZhPage() {
         <div className="grid gap-10 lg:grid-cols-12 lg:items-start">
           <div className="lg:col-span-5">
             <SectionHeader
-              eyebrow="30 秒跑通演示"
-              title="端到端重放一个真实事件。"
-              description="仓库内置 4 个可复现的 PostgreSQL 场景。挑一个、回放一下，看 Web Console 里从检测到复盘跑完整个闭环。"
+              eyebrow="演示"
+              title="把一个真实事件端到端写入闭环。"
+              description="deploy/incident-events/ 内置 4 个可复现的 PostgreSQL 场景。选一个写入事件记忆库，然后在 Web Console 里看闭环从检测到复盘跑完全程。"
             />
             <ul className="mt-6 space-y-2 text-sm text-ink-300">
               <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-accent-400" /> pg-connection-pool-exhaustion</li>
@@ -359,7 +361,7 @@ export default function HomeZhPage() {
             </div>
           </div>
           <div className="lg:col-span-7">
-            <CodeBlock language="bash" title="demo · pg-connection-pool-exhaustion">
+            <CodeBlock language="bash" title="seed · deploy/incident-events">
               {codeSnippet}
             </CodeBlock>
           </div>
@@ -376,7 +378,7 @@ export default function HomeZhPage() {
         <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
             { t: 'AgentTeams Dashboard', d: '插件安装器 —— 侧边栏、路由、看板组件、详情面板、工具栏。' },
-            { t: 'OpsKeeper TeamHarness', d: 'Worker/Manager 插件 + stdio MCP 代理（14 个工具，Bearer + HMAC + W3C traceparent）。' },
+            { t: 'OpsKeeper TeamHarness', d: 'Worker/Manager 插件 + stdio MCP 代理（17 个工具，Bearer + HMAC + W3C traceparent）。' },
             { t: 'Prometheus + Loki + Tempo', d: '原生抓取配置，按 trace_id 关联日志 / 指标 / 追踪。' },
             { t: 'Grafana 仪表盘', d: '为闭环、审计账本、技能健康度预置仪表盘。' },
             { t: 'PostgreSQL', d: '事件记忆、append-only 账本、MySQL GET_LOCK 风格的咨询锁。' },

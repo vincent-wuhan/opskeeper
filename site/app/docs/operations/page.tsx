@@ -18,8 +18,9 @@ export default function OperationsPage() {
 
       <h2 id="backups">Backups</h2>
       <p>
-        Back up three things: PostgreSQL (the ledger is authoritative), Qdrant snapshots
-        (vector memory), and the daily ndjson exports (audit chain).
+        Back up two things: PostgreSQL (the ledger and incident memory are authoritative) and
+        Qdrant snapshots (vector memory). There is no separate export pipeline — the database
+        is the source of truth.
       </p>
       <CodeBlock language="bash" title="backup">
         {`# 1. PostgreSQL logical backup
@@ -27,17 +28,14 @@ pg_dump --schema=public --file=opskeeper-$(date +%F).sql "$POSTGRES_DSN"
 
 # 2. Qdrant snapshot
 curl -X POST "$QDRANT_URL/snapshots" -H 'content-type: application/json' \\
-  -d '{"collection_name":"opskeeper_incidents"}'
-
-# 3. Daily ndjson (HMAC-chained) is already on disk under /var/lib/opskeeper/ledger/
-#    Sync to object storage with your existing pipeline.`}
+  -d '{"collection_name":"opskeeper_incidents"}'`}
       </CodeBlock>
 
-      <h2 id="key-rotation">Key and HMAC rotation</h2>
+      <h2 id="key-rotation">Key rotation</h2>
       <ul>
-        <li><strong>Plugin HMAC</strong>: rotate via <code>opskeeper plugin rotate-secret</code>. The new key is staged; the old key is honored for 24 hours.</li>
+        <li><strong>Plugin HMAC secrets</strong>: stage a new secret in your secret manager, then roll workers. The MCP proxy reads <code>OPSKEEPER_GATEWAY_KEY</code> from the environment at startup.</li>
         <li><strong>JWT signing key</strong>: rotate via the API. Old tokens expire on their next refresh.</li>
-        <li><strong>Ledger HMAC root</strong>: re-keying requires a fresh append-only chain; the old chain is sealed and archived.</li>
+        <li><strong>Edge secret keys</strong>: <code>RotateSecret</code> regenerates an edge&apos;s key and replaces the stored hash.</li>
       </ul>
 
       <h2 id="scaling">Scaling</h2>
@@ -49,32 +47,34 @@ curl -X POST "$QDRANT_URL/snapshots" -H 'content-type: application/json' \\
 
       <h2 id="monitoring">Monitoring</h2>
       <p>
-        Grafana dashboards are provisioned automatically. Key signals:
+        Grafana dashboards are provisioned automatically. Key signals emitted by the control
+        plane:
       </p>
       <ul>
-        <li><code>opskeeper_loop_phase_duration_seconds</code> — time spent in each phase (p50 / p95 / p99).</li>
-        <li><code>opskeeper_proposals_pending</code> — count of pending proposals awaiting human approval.</li>
-        <li><code>opskeeper_audit_chain_valid</code> — boolean: is the HMAC chain still verifiable end-to-end?</li>
-        <li><code>opskeeper_skill_health</code> — per-skill success/failure over the last 5 minutes.</li>
+        <li><code>loop_phase_total</code> / <code>loop_phase_duration_seconds</code> — closed-loop throughput and latency per phase.</li>
+        <li><code>opskeeper_tool_invocations_total</code> / <code>opskeeper_tool_duration_seconds</code> — per-tool call counts and latency.</li>
+        <li><code>opskeeper_llm_requests_total</code> / <code>opskeeper_llm_tokens_total</code> — LLM usage per worker.</li>
+        <li><code>opskeeper_http_requests_total</code> / <code>opskeeper_http_request_duration_seconds</code> — API health.</li>
       </ul>
 
       <h2 id="incident-drill">Incident drill</h2>
       <p>
         Run a drill at least once per quarter. The repo ships four reproducible PostgreSQL
-        scenarios; rotate through them and confirm:
+        scenarios; seed them with <code>cmd/incident-seed</code> and confirm:
       </p>
       <ol>
         <li>The loop reaches <code>postmortem</code> for each scenario.</li>
-        <li>The audit chain is verifiable after the drill.</li>
+        <li>The proposal audit chain verifies (walk <code>chat_proposal_audit</code> hashes).</li>
         <li>The verifier returns a <code>VerifiedDelta</code> matching the expected metric allowlist.</li>
         <li>The reporter writes a postmortem in &lt; 60 seconds.</li>
       </ol>
 
       <h2 id="data-retention">Data retention</h2>
       <p>
-        Ledger events are retained for 365 days by default. Vector memory is retained
-        indefinitely unless your retention policy deletes it. Daily ndjson exports are the
-        long-term authoritative record.
+        loop_event_log rows carry your tenant and timestamp; set retention with a scheduled
+        purge per tenant. Vector memory is retained until your retention policy deletes it.
+        External anchoring of a daily chain root (transparency log) is on the roadmap — until
+        then, database backups are the durable record.
       </p>
     </>
   );

@@ -28,42 +28,43 @@ export default function GettingStartedPage() {
       </ul>
 
       <h2 id="install">1. Install</h2>
-      <p>Clone the repo and bring up the local stack:</p>
+      <p>Clone the repo and bring up the local stack from the repo root:</p>
       <CodeBlock language="bash" title="bootstrap">
         {`git clone https://github.com/louloulin/opskeeper.git
 cd opskeeper
+cp deploy/demo.env.example .env
 
-# Start Postgres, Qdrant, and the OpsKeeper control plane
-docker compose up -d opskeeper postgres qdrant
+# Build and start the full demo stack (first run takes a few minutes)
+docker compose up -d --build
+docker compose ps                      # wait until every service is healthy
 
-# Verify the control plane is healthy
-curl -fsS http://localhost:8090/healthz`}
+# Verify the control plane is healthy (opskeeper serves HTTP on 8080)
+curl -fsS http://localhost:8080/healthz`}
       </CodeBlock>
 
-      <h2 id="replay-a-scenario" className="scroll-mt-24">2. Replay a scenario</h2>
+      <h2 id="replay-a-scenario" className="scroll-mt-24">2. Seed a scenario</h2>
       <p>
         Four reproducible PostgreSQL scenarios ship in <code>deploy/incident-events/</code>.
-        Pick one and replay it end-to-end:
+        Seed them into incident memory with the incident-seed tool:
       </p>
-      <CodeBlock language="bash" title="replay">
-        {`# Connection-pool exhaustion
-opskeeper demo replay pg-connection-pool-exhaustion
+      <CodeBlock language="bash" title="seed">
+        {`# Validate the datasets first (no database writes)
+go run ./cmd/incident-seed -dry-run -dir deploy/incident-events
 
-# Disk I/O saturation
-opskeeper demo replay pg-disk-io-saturation
-
-# Lock-wait / long transaction
-opskeeper demo replay pg-lock-wait-long-transaction
-
-# Replica replay lag
-opskeeper demo replay pg-replica-replay-lag`}
+# Write all 4 scenarios into incident memory
+go run ./cmd/incident-seed \\
+  -dsn "postgres://opskeeper:opskeeper@localhost:5432/opskeeper?sslmode=disable" \\
+  -dir deploy/incident-events`}
       </CodeBlock>
       <p>
-        The CLI drives the scenario through every phase of the closed loop. Inspect any incident:
+        The seeded incidents cover connection-pool exhaustion, disk I/O saturation, lock-wait /
+        long transaction, and replica replay lag. Inspect timelines, recall logs, and runbooks
+        over the incident API, or browse them in the web console:
       </p>
       <CodeBlock language="bash" title="inspect">
-        {`opskeeper incident show INC-PG-POOL-001 \\
-  --include timeline,evidence,proposals,audit`}
+        {`# Incident metrics + runbooks served by the control plane
+curl -fsS "http://localhost:8080/v1/incidents/metrics" | jq .
+curl -fsS "http://localhost:8080/v1/incidents/runbooks" | jq .`}
       </CodeBlock>
 
       <h2 id="open-the-web-console" className="scroll-mt-24">3. Open the web console</h2>
@@ -80,25 +81,35 @@ pnpm dev
 
       <h2 id="install-a-worker-plugin">4. Install a worker plugin</h2>
       <p>
-        Drop the TeamHarness MCP proxy into any worker that speaks stdio MCP. It exposes 14 tools
-        and authenticates with Bearer + HMAC.
+        Drop the TeamHarness MCP proxy into any worker that speaks stdio MCP. It exposes 17 tools
+        and authenticates with Bearer + HMAC. The server reads its configuration from environment
+        variables:
       </p>
       <CodeBlock language="bash" title="plugin">
-        {`opskeeper plugin install agentteams-plugin-installer
-opskeeper-teamharness serve \\
-  --mcp-transport stdio \\
-  --opskeeper-endpoint http://localhost:8090 \\
-  --hmac-secret "$OPSKEEPER_PLUGIN_HMAC"`}
+        {`cd plugins/opskeeper-teamharness
+
+OPSKEEPER_BACKEND_URL=http://localhost:8080 \\
+OPSKEEPER_GATEWAY_KEY="$GATEWAY_KEY" \\
+OPSKEEPER_TENANT_ID=default \\
+python3 mcp/server.py`}
       </CodeBlock>
+      <p>
+        For the AgentTeams Dashboard plugin package, run <code>make build-plugins</code> and
+        install the resulting zip from the Dashboard (hot-deploy:{' '}
+        <code>qwenpaw plugin install &lt;path&gt; --force</code>).
+      </p>
 
       <h2 id="demos" className="scroll-mt-24">Demos</h2>
       <p>
-        After the first replay, run the verification harness to confirm the manager, critic, and
-        verifier are wired correctly:
+        After seeding, run the verification harness scenarios to confirm the manager, critic, and
+        verifier are wired correctly. Each scenario is a self-contained compose stack with a
+        runner container:
       </p>
       <CodeBlock language="bash" title="verify">
-        {`make verify
-# alert_storm / rca_loop / recovery_verify scenarios`}
+        {`# From the plugin directory — alert_storm / rca_loop / recovery_verify
+bash plugins/opskeeper-teamharness/eval/scenarios/alert_storm/run.sh
+bash plugins/opskeeper-teamharness/eval/scenarios/rca_loop/run.sh
+bash plugins/opskeeper-teamharness/eval/scenarios/recovery_verify/run.sh`}
       </CodeBlock>
 
       <h2 id="next">Next</h2>

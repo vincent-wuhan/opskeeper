@@ -62,12 +62,11 @@ audit:
       </CodeBlock>
 
       <h2 id="audit-ledger">审计账本</h2>
-      <p>每一次派发和完成都 append 到 <code>loop_event_log</code>。每条事件都做 HMAC 链式：</p>
+      <p>每一次派发和完成都 append 到 <code>loop_event_log</code>，数据库将其强制为 append-only（触发器拒绝 UPDATE/DELETE；更正是新事件）。此外，每个变更提案的跃迁都会 append 到 <code>chat_proposal_audit</code>，一条 SHA256 哈希链：</p>
       <CodeBlock language="text" title="hash chaining">
-        {`hash_0 = HMAC(root_key, GENESIS)
-hash_n = HMAC(key, hash_prev || event_n)`}
+        {`hash_n = SHA256(prev_hash || canonical_json(payload) || proposal_id || action)`}
       </CodeBlock>
-      <p>每日 ndjson 导出按链签名并校验。<code>opskeeper audit replay</code> 端到端走完整条链，并在第一次断链处报错。</p>
+      <p>仓库内置校验器按 <code>created_at</code> 顺序遍历整条链、重算每个哈希，并报告第一条被篡改的记录。把每日链根锚定到外部透明日志属于 roadmap 项，尚未发布。</p>
 
       <h2 id="threat-model">威胁模型</h2>
       <p>以下缓解措施是 Manager 的一部分，不在 prompt 里。即使某个 Worker 彻底被攻陷也仍然生效。</p>

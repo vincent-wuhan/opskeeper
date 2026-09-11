@@ -88,14 +88,20 @@ export default function ArchitecturePage() {
       </p>
       <ul>
         <li><strong>agentteams-plugin-installer</strong> — turns the AgentTeams Dashboard into the OpsKeeper plugin console (5 extension points, HTTP API).</li>
-        <li><strong>opskeeper-teamharness</strong> — worker-side plugin that exposes 14 MCP tools over stdio MCP. Bearer + HMAC + W3C traceparent auth.</li>
+        <li><strong>opskeeper-teamharness</strong> — worker-side plugin that exposes 17 MCP tools over stdio MCP. Bearer + HMAC + W3C traceparent auth.</li>
       </ul>
 
       <h2 id="ledger">Append-only ledger</h2>
       <p>
-        Every dispatch and completion appends to <code>loop_event_log</code>. Each event is
-        HMAC-chained: <code>hash_n = HMAC(hash_prev || event_n)</code>. On completion the event
-        is sealed and exported to daily ndjson, with an optional Nacos history sync.
+        Two durable records back the loop. <code>loop_event_log</code> is the append-only event
+        source of truth — a DB trigger rejects UPDATE/DELETE, so the only way to correct an event
+        is to append a <code>correction</code>. Every write carries an idempotency key, making
+        replays exactly-once. On top of that, every mutating-proposal transition (insert / decide
+        / expire / execute / rollback) appends one row to <code>chat_proposal_audit</code>, a
+        SHA256 hash chain:{' '}
+        <code>hash_n = SHA256(prev_hash || canonical_json(payload) || proposal_id || action)</code>.
+        Any tampering with payload or order invalidates every subsequent hash, and the in-repo
+        verifier walks the chain to report the first break.
       </p>
 
       <h2 id="observability">Observability</h2>

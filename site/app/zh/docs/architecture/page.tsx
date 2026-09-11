@@ -79,12 +79,17 @@ export default function ArchitectureZhPage() {
       <p>仓库里自带两个插件：</p>
       <ul>
         <li><strong>agentteams-plugin-installer</strong> —— 把 AgentTeams Dashboard 变成 OpsKeeper 的插件控制台（5 个扩展点 + HTTP API）。</li>
-        <li><strong>opskeeper-teamharness</strong> —— Worker 侧插件，通过 stdio MCP 暴露 14 个工具。Bearer + HMAC + W3C traceparent 鉴权。</li>
+        <li><strong>opskeeper-teamharness</strong> —— Worker 侧插件，通过 stdio MCP 暴露 17 个工具。Bearer + HMAC + W3C traceparent 鉴权。</li>
       </ul>
 
       <h2 id="ledger">Append-only 账本</h2>
       <p>
-        每次派发和完成都 append 到 <code>loop_event_log</code>。每条事件做 HMAC 链式：<code>hash_n = HMAC(hash_prev || event_n)</code>。完成后事件被 seal 并按日导出为 ndjson，可选同步到 Nacos 历史。
+        闭环背后有两份持久化记录。<code>loop_event_log</code> 是 append-only 事件事实源 ——
+        数据库触发器拒绝 UPDATE/DELETE，更正一条事件的唯一方式是追加一条{' '}
+        <code>correction</code>。每次写入都带幂等键，重放是 exactly-once。在此之上，每个变更提案的
+        跃迁（insert / decide / expire / execute / rollback）都会向 <code>chat_proposal_audit</code>{' '}
+        追加一行，构成 SHA256 哈希链：<code>hash_n = SHA256(prev_hash || canonical_json(payload) || proposal_id || action)</code>。
+        任何对 payload 或顺序的篡改都会使后续所有哈希失效，仓库内置的校验器会遍历整条链并报告第一处断链。
       </p>
 
       <h2 id="observability">可观测</h2>

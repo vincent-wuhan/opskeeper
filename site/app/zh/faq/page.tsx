@@ -29,11 +29,11 @@ const groups: { title: string; items: { q: string; a: string }[] }[] = [
     items: [
       {
         q: '如果一个 Worker 被攻陷，会怎样？',
-        a: '安全边界由 Manager 强制执行，不在 prompt 里。被攻陷的 Worker 也无法绕过工具白名单、爆炸半径护栏或人工审批。HMAC 链式审计账本保留每一次派发的可验证记录。',
+        a: '安全边界由 Manager 强制执行，不在 prompt 里。被攻陷的 Worker 也无法绕过工具白名单、爆炸半径护栏或人工审批。append-only 事件日志 + SHA256 链式提案审计为每一次派发保留可验证记录。',
       },
       {
         q: '审计账本是什么，怎么保留？',
-        a: '每一次派发和完成都 append 到 loop_event_log。每个事件都做 HMAC 链式（hash_n = HMAC(hash_prev, event_n)）。链每天以 ndjson 形式导出，可用 opskeeper audit replay 端到端重放。',
+        a: '每一次派发和完成都 append 到 loop_event_log，数据库触发器拒绝 UPDATE/DELETE，更正只能以追加 correction 事件的方式完成。每个变更提案的跃迁（insert / decide / expire / execute / rollback）都会向 chat_proposal_audit 追加一行，构成 SHA256 哈希链：hash_n = SHA256(prev_hash || canonical_json(payload) || proposal_id || action)。任何篡改都会使后续哈希全部失效，仓库内置校验器会遍历整条链并报告第一处断链。',
       },
       {
         q: 'LLM 跑在哪里？OpsKeeper 会把我的数据发给 OpenAI 吗？',

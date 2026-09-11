@@ -77,7 +77,7 @@ export default function DocsIntroPage() {
         <li><strong>Recovery writes.</strong> Mutating tools require a proposal.</li>
         <li><strong>A human approves.</strong> Approval is bound to a specific resource and payload hash.</li>
         <li><strong>An independent worker verifies.</strong> The actor is not the judge.</li>
-        <li><strong>Every transition is replayable.</strong> The ledger is HMAC-chained.</li>
+        <li><strong>Every transition is durable.</strong> loop_event_log is append-only at the DB layer; mutating proposals are chained with SHA256.</li>
       </ol>
 
       <h2 id="next">Next</h2>

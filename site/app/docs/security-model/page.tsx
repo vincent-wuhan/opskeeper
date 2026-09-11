@@ -73,16 +73,18 @@ audit:
 
       <h2 id="audit-ledger">Audit ledger</h2>
       <p>
-        Every dispatch and completion appends to <code>loop_event_log</code>. Each event is
-        HMAC-chained:
+        Every dispatch and completion appends to <code>loop_event_log</code>, which the database
+        enforces as append-only (a trigger rejects UPDATE/DELETE; corrections are new events).
+        Separately, every mutating-proposal transition appends to <code>chat_proposal_audit</code>,
+        a SHA256 hash chain:
       </p>
       <CodeBlock language="text" title="hash chaining">
-        {`hash_0 = HMAC(root_key, GENESIS)
-hash_n = HMAC(key, hash_{n-1} || event_n)`}
+        {`hash_n = SHA256(prev_hash || canonical_json(payload) || proposal_id || action)`}
       </CodeBlock>
       <p>
-        Daily ndjson exports are signed and verified by the chain. <code>opskeeper audit
-        replay</code> walks the chain end-to-end and reports the first break, if any.
+        The in-repo verifier walks the chain in <code>created_at</code> order, recomputes each
+        hash, and reports the first tampered entry. External anchoring of a daily root hash
+        (transparency log) is a roadmap item, not a shipped feature.
       </p>
 
       <h2 id="threat-model">Threat model</h2>

@@ -21,7 +21,7 @@ const groups = [
   },
   {
     title: 'OpsKeeper TeamHarness',
-    desc: 'A worker-side plugin that lets the six operational workers call OpsKeeper through a stdio MCP proxy. 14 MCP tools, Bearer + HMAC + W3C traceparent auth.',
+    desc: 'A worker-side plugin that lets the six operational workers call OpsKeeper through a stdio MCP proxy. 17 MCP tools, Bearer + HMAC + W3C traceparent auth.',
     bullets: [
       'stdio MCP server, Streamable HTTP-compatible',
       'FastAPI router at /api/opskeeper-teamharness/{health,sync,install-plugin}',
@@ -61,10 +61,10 @@ const groups = [
   },
   {
     title: 'Security',
-    desc: 'HMAC-chained audit ledger, daily ndjson export, optional Nacos history sync, role-based auth on every API.',
+    desc: 'Append-only event log, SHA256-chained proposal audit, Bearer + HMAC on plugin endpoints, role-based auth on every API.',
     bullets: [
-      'Append-only HMAC-chained ledger',
-      'Daily ndjson with optional Nacos history sync',
+      'loop_event_log append-only (DB trigger enforced)',
+      'chat_proposal_audit SHA256 hash chain + in-repo verifier',
       'Bearer + HMAC on plugin endpoints',
     ],
     icon: ShieldCheck,
@@ -77,25 +77,28 @@ const mcpExample = `{
   "method": "tools/list",
   "params": {}
 }
-// → 14 tools exposed by opskeeper-teamharness:
-//   opskeeper.incident.list
-//   opskeeper.incident.show
-//   opskeeper.skill.list
-//   opskeeper.skill.deploy
-//   opskeeper.proposal.create
-//   opskeeper.proposal.approve
-//   ...and 8 more`;
+// → 17 tools exposed by opskeeper-teamharness:
+//   loop.investigate
+//   loop.correlate
+//   recovery.verify
+//   recovery.execute
+//   metric.query
+//   incident.list / incident.get
+//   postgres.analyze_status
+//   host.get_load / host.get_processes / host.restart_service
+//   knowledge.query / knowledge.write
+//   hitl.decide
+//   state.put / state.get
+//   incident.record`;
 
-const pluginInstall = `# Install the AgentTeams Dashboard plugin
-opskeeper plugin install agentteams-plugin-installer \\
-  --registry https://plugins.opskeeper.dev \\
-  --endpoint http://localhost:8080
+const pluginInstall = `# Build + install the AgentTeams Dashboard plugin
+make build-plugins                     # zip lands in dist/plugins/
 
-# Or run the MCP proxy directly
-opskeeper-teamharness serve \\
-  --mcp-transport stdio \\
-  --opskeeper-endpoint http://localhost:8090 \\
-  --hmac-secret "$OPSKEEPER_PLUGIN_HMAC"`;
+# Or run the stdio MCP proxy directly for any worker
+cd plugins/opskeeper-teamharness
+OPSKEEPER_BACKEND_URL=http://localhost:8080 \\
+OPSKEEPER_GATEWAY_KEY="$GATEWAY_KEY" \\
+python3 mcp/server.py`;
 
 export default function IntegrationsPage() {
   return (
@@ -148,7 +151,7 @@ export default function IntegrationsPage() {
             <SectionHeader
               eyebrow="stdio MCP"
               title="Any worker. One protocol."
-              description="The OpsKeeper Worker plugin speaks JSON-RPC over stdio. Discover 14 tools, propagate W3C traceparent, and authenticate with Bearer + HMAC. Streamable HTTP is on the roadmap."
+              description="The OpsKeeper Worker plugin speaks JSON-RPC over stdio. Discover 17 tools, propagate W3C traceparent, and authenticate with Bearer + HMAC. Streamable HTTP is on the roadmap."
             />
           </div>
           <div className="lg:col-span-7">

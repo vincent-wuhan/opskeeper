@@ -29,11 +29,11 @@ const groups: { title: string; items: { q: string; a: string }[] }[] = [
     items: [
       {
         q: 'What happens if a worker is compromised?',
-        a: 'The safety boundary is enforced at the manager, not the prompt. A compromised worker still cannot bypass tool allowlists, blast-radius guards, or human approval. The HMAC-chained audit ledger preserves a verifiable record of every dispatch.',
+        a: 'The safety boundary is enforced at the manager, not the prompt. A compromised worker still cannot bypass tool allowlists, blast-radius guards, or human approval. The append-only event log and SHA256-chained proposal audit preserve a verifiable record of every dispatch.',
       },
       {
         q: 'What is the audit ledger and how is it preserved?',
-        a: 'Every dispatch and completion appends to loop_event_log. Each event is HMAC-chained (hash_n = HMAC(hash_prev, event_n)). The chain is daily-exported to ndjson and can be replayed end-to-end with `opskeeper audit replay`.',
+        a: 'Every dispatch and completion appends to loop_event_log, which the database enforces as append-only (a trigger rejects UPDATE/DELETE; corrections are new events). On top of that, every mutating-proposal transition appends to chat_proposal_audit — a SHA256 hash chain where hash_n = SHA256(prev_hash || canonical_json(payload) || proposal_id || action). Any tampering invalidates every later hash, and the in-repo verifier walks the chain to report the first break.',
       },
       {
         q: 'Where does the LLM run? Does OpsKeeper send my data to OpenAI?',
@@ -46,7 +46,7 @@ const groups: { title: string; items: { q: string; a: string }[] }[] = [
     items: [
       {
         q: 'What does it take to run OpsKeeper locally?',
-        a: 'Docker 24+, Go 1.25+, Node 20+, pnpm 9+, Python 3.11+. Run `docker compose up -d opskeeper postgres qdrant` and you have the full stack. The first replay takes under five minutes.',
+        a: 'Docker 24+, Go 1.25+, Node 20+, pnpm 9+, Python 3.11+. From the repo root, `docker compose up -d --build` brings up the full stack, and seeding the four demo scenarios takes one `go run ./cmd/incident-seed`.',
       },
       {
         q: 'Can it run on Kubernetes?',

@@ -34,8 +34,8 @@ const principles = [
     icon: ShieldCheck,
   },
   {
-    title: 'HMAC 链式审计',
-    desc: '每一次派发都 append 到账本，完成时 seal。链每天以 ndjson 形式导出，可整体重放。',
+    title: '哈希链式审计',
+    desc: '每次派发都 append 到 loop_event_log（DB 强制 append-only）。每个变更提案的跃迁都向 SHA256 哈希链追加一行 —— 防篡改，可在仓库内校验。',
     icon: GitBranch,
   },
 ];
@@ -144,10 +144,11 @@ export default function SecurityZhPage() {
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/[0.02] p-6">
             <div className="flex items-center gap-2 text-sm font-medium text-white">
-              <CheckCircle2 className="h-4 w-4 text-accent-400" /> 审计重放
+              <CheckCircle2 className="h-4 w-4 text-accent-400" /> 防篡改审计
             </div>
             <p className="mt-3 text-sm text-ink-300">
-              每次派发和完成都可从 HMAC 链式账本重放。详见 <code className="text-accent-300">opskeeper audit replay</code> 命令。
+              loop_event_log 在数据库层就是 append-only。chat_proposal_audit 用 SHA256
+              把每个变更提案的跃迁链接成链 —— 仓库内置校验器遍历整条链并报告第一处篡改。
             </p>
           </div>
         </div>

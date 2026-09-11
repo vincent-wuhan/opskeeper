@@ -95,7 +95,7 @@ const pillars = [
   },
   {
     title: 'Observability & audit',
-    desc: 'OpenTelemetry trace context, Prometheus metrics, Loki logs, Tempo traces, Grafana dashboards — plus an HMAC-chained audit ledger.',
+    desc: 'OpenTelemetry trace context, Prometheus metrics, Loki logs, Tempo traces, Grafana dashboards — plus an append-only event log and a SHA256-chained proposal audit.',
     icon: Activity,
   },
 ];
@@ -104,30 +104,32 @@ const safetyItems = [
   'Diagnosis tools are read-only by default — mutating actions require a pending proposal.',
   'Explicit human-in-the-loop approval before any recovery command is dispatched.',
   'Exact target matching on resource, command, and payload hash — unknown tools and cross-resource targets fail closed.',
-  'Append-only HMAC-chained audit ledger; every action is replayable.',
+  'Append-only loop_event_log enforced by a DB trigger; every mutating-proposal transition is chained with SHA256.',
   'Independent verifier separates the actor from the judge on every recovery.',
 ];
 
-const codeSnippet = `# Install the OpsKeeper CLI and start the local stack
-curl -fsSL https://opskeeper.dev/install.sh | bash
+const codeSnippet = `# Clone and bring up the full local stack (repo-root compose)
+git clone https://github.com/louloulin/opskeeper.git
+cd opskeeper
+cp deploy/demo.env.example .env
+docker compose up -d --build
 
-# Bring up Postgres + Qdrant + the OpsKeeper control plane
-docker compose up -d opskeeper postgres qdrant
+# Seed the 4 reproducible PostgreSQL scenarios into incident memory
+go run ./cmd/incident-seed \\
+  -dsn "postgres://opskeeper:opskeeper@localhost:5432/opskeeper?sslmode=disable" \\
+  -dir deploy/incident-events
 
-# Open the closed-loop demo (4 reproducible scenarios included)
-opskeeper demo replay pg-connection-pool-exhaustion
+# Inspect timelines, evidence, proposals, and audit in the web console
+# → API + Swagger UI at http://localhost:8080`;
 
-# Inspect any incident end-to-end
-opskeeper incident show INC-PG-POOL-001 \\
-  --include timeline,evidence,proposals,audit`;
+const installSnippet = `# Worker plugin — install from the AgentTeams Dashboard
+# (hot-deploy: qwenpaw plugin install <path> --force)
 
-const installSnippet = `# Worker plugin — drop into AgentTeams Dashboard
-opskeeper plugin install agentteams-plugin-installer
-
-# Or run the MCP proxy directly for any worker
-opskeeper-teamharness serve \\
-  --mcp-transport stdio \\
-  --opskeeper-endpoint http://localhost:8090`;
+# Or run the stdio MCP proxy directly for any worker
+cd plugins/opskeeper-teamharness
+OPSKEEPER_BACKEND_URL=http://localhost:8080 \\
+OPSKEEPER_GATEWAY_KEY="$GATEWAY_KEY" \\
+python3 mcp/server.py`;
 
 export default function HomePage() {
   return (
@@ -148,7 +150,7 @@ export default function HomePage() {
           <div className="lg:col-span-7">
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-ink-200">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent-400 animate-pulse" />
-              v1.0.0 · Apache-2.0 · open source
+              v2026.09.03 · Apache-2.0 · open source
             </div>
             <h1 className="text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl md:text-6xl">
               Auditable operations for{' '}
@@ -178,13 +180,13 @@ export default function HomePage() {
             </div>
             <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-ink-400">
               <span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5 text-accent-400" /> Safety by default</span>
-              <span className="inline-flex items-center gap-1.5"><Lock className="h-3.5 w-3.5 text-accent-400" /> HMAC-chained audit</span>
+              <span className="inline-flex items-center gap-1.5"><Lock className="h-3.5 w-3.5 text-accent-400" /> Hash-chained audit</span>
               <span className="inline-flex items-center gap-1.5"><Database className="h-3.5 w-3.5 text-accent-400" /> Postgres + Qdrant</span>
               <span className="inline-flex items-center gap-1.5"><Cpu className="h-3.5 w-3.5 text-accent-400" /> 7 worker roles</span>
             </div>
           </div>
           <div className="lg:col-span-5">
-            <CodeBlock language="bash" title="install · 30s">
+            <CodeBlock language="bash" title="install · local stack">
               {installSnippet}
             </CodeBlock>
           </div>
@@ -344,9 +346,9 @@ export default function HomePage() {
         <div className="grid gap-10 lg:grid-cols-12 lg:items-start">
           <div className="lg:col-span-5">
             <SectionHeader
-              eyebrow="Demo in 30 seconds"
-              title="Replay a real incident end-to-end."
-              description="Four reproducible PostgreSQL scenarios ship with the repo. Pick one, replay it, and watch the closed loop run from detection to postmortem in the web console."
+              eyebrow="Demo"
+              title="Seed a real incident end-to-end."
+              description="Four reproducible PostgreSQL scenarios ship in deploy/incident-events/. Seed one into incident memory and watch the closed loop run from detection to postmortem in the web console."
             />
             <ul className="mt-6 space-y-2 text-sm text-ink-300">
               <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-accent-400" /> pg-connection-pool-exhaustion</li>
@@ -361,7 +363,7 @@ export default function HomePage() {
             </div>
           </div>
           <div className="lg:col-span-7">
-            <CodeBlock language="bash" title="demo · pg-connection-pool-exhaustion">
+            <CodeBlock language="bash" title="seed · deploy/incident-events">
               {codeSnippet}
             </CodeBlock>
           </div>
@@ -378,7 +380,7 @@ export default function HomePage() {
         <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
             { t: 'AgentTeams Dashboard', d: 'Plugin installer — sidebar, route, dashboard widget, detail panel, toolbar.' },
-            { t: 'OpsKeeper TeamHarness', d: 'Worker/Manager plugin + stdio MCP proxy (14 tools, Bearer + HMAC + W3C traceparent).' },
+            { t: 'OpsKeeper TeamHarness', d: 'Worker/Manager plugin + stdio MCP proxy (17 tools, Bearer + HMAC + W3C traceparent).' },
             { t: 'Prometheus + Loki + Tempo', d: 'Native scrape config, log/metric/trace correlation by trace_id.' },
             { t: 'Grafana dashboards', d: 'Provisioned dashboards for the closed loop, audit ledger, and skill health.' },
             { t: 'PostgreSQL', d: 'Incident memory, append-only ledger, MySQL GET_LOCK advisory locks.' },

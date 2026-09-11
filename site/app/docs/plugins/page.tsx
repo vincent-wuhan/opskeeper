@@ -40,7 +40,7 @@ export default function PluginsPage() {
       <h2 id="opskeeper-teamharness">opskeeper-teamharness</h2>
       <p>
         The worker-side plugin. It exposes OpsKeeper&apos;s capabilities to any worker that speaks
-        stdio MCP — Bearer + HMAC + W3C <code>traceparent</code> auth, 14 tools, FastAPI HTTP
+        stdio MCP — Bearer + HMAC + W3C <code>traceparent</code> auth, 17 tools, FastAPI HTTP
         router for plugin lifecycle.
       </p>
       <CodeBlock language="bash" title="teamharness">
@@ -58,22 +58,20 @@ opskeeper-teamharness serve \\
       </CodeBlock>
 
       <h3 id="mcp-tools">MCP tools</h3>
-      <p>The 14 tools exposed by <code>opskeeper-teamharness</code>:</p>
+      <p>The 17 tools exposed by <code>opskeeper-teamharness</code>:</p>
       <ul>
-        <li><code>opskeeper.incident.list</code></li>
-        <li><code>opskeeper.incident.show</code></li>
-        <li><code>opskeeper.incident.timeline</code></li>
-        <li><code>opskeeper.incident.evidence</code></li>
-        <li><code>opskeeper.proposal.create</code></li>
-        <li><code>opskeeper.proposal.show</code></li>
-        <li><code>opskeeper.proposal.approve</code></li>
-        <li><code>opskeeper.proposal.reject</code></li>
-        <li><code>opskeeper.skill.list</code></li>
-        <li><code>opskeeper.skill.deploy</code></li>
-        <li><code>opskeeper.skill.uninstall</code></li>
-        <li><code>opskeeper.audit.query</code></li>
-        <li><code>opskeeper.audit.replay</code></li>
-        <li><code>opskeeper.health</code></li>
+        <li><code>loop.investigate</code> &mdash; trigger RCA on an incident</li>
+        <li><code>loop.correlate</code> &mdash; correlate alerts into an incident</li>
+        <li><code>recovery.verify</code> &mdash; independent recovery verification</li>
+        <li><code>recovery.execute</code> &mdash; narrowly-authorized repair action</li>
+        <li><code>metric.query</code> &mdash; query the metrics backend</li>
+        <li><code>incident.list</code> / <code>incident.get</code> &mdash; incident memory</li>
+        <li><code>postgres.analyze_status</code> &mdash; PostgreSQL status snapshot</li>
+        <li><code>host.get_load</code> / <code>host.get_processes</code> / <code>host.restart_service</code></li>
+        <li><code>knowledge.query</code> / <code>knowledge.write</code> &mdash; knowledge vault</li>
+        <li><code>hitl.decide</code> &mdash; human-in-the-loop decision</li>
+        <li><code>state.put</code> / <code>state.get</code> &mdash; shared state</li>
+        <li><code>incident.record</code> &mdash; append evidence / recovery signals to the timeline</li>
       </ul>
 
       <h2 id="auth">Authentication</h2>

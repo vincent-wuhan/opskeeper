@@ -9,7 +9,7 @@ export const metadata = {
 
 const shipping = [
   '7 个 Worker 技能 + 带 L0–L3 安全级别的 Manager 决策表',
-  'append-only HMAC 链式审计账本',
+  'append-only loop_event_log + SHA256 链式提案审计',
   '真实环境验证 Harness（alert_storm、rca_loop、recovery_verify）',
   '插件 stdio MCP server，W3C traceparent 直通',
   '四个可复现的 PostgreSQL 事件场景',

@@ -21,10 +21,10 @@ const entries: Entry[] = [
     tag: 'release',
     highlights: [
       'Manager 风格派发 + 显式 L0–L3 安全级别',
-      'append-only HMAC 链式审计账本，每日 ndjson 导出',
+      'append-only loop_event_log（DB 强制）+ SHA256 链式提案审计',
       '插件 stdio MCP server，W3C traceparent 直通',
       '四个可复现的 PostgreSQL 事件场景',
-      'OpsKeeper TeamHarness v0：14 个 MCP 工具，Bearer + HMAC 鉴权',
+      'OpsKeeper TeamHarness v0：17 个 MCP 工具，Bearer + HMAC 鉴权',
     ],
   },
   {

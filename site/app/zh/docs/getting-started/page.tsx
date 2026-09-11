@@ -26,39 +26,42 @@ export default function GettingStartedZhPage() {
       </ul>
 
       <h2 id="install">1. 安装</h2>
-      <p>克隆仓库并启动本地环境：</p>
+      <p>克隆仓库，在仓库根目录启动本地环境：</p>
       <CodeBlock language="bash" title="bootstrap">
         {`git clone https://github.com/louloulin/opskeeper.git
 cd opskeeper
+cp deploy/demo.env.example .env
 
-# 启动 Postgres、Qdrant 和 OpsKeeper 控制平面
-docker compose up -d opskeeper postgres qdrant
+# 构建并启动整套演示环境（首次构建需要几分钟）
+docker compose up -d --build
+docker compose ps                      # 等待所有服务 healthy
 
-# 校验控制平面健康
-curl -fsS http://localhost:8090/healthz`}
+# 校验控制平面健康（opskeeper 的 HTTP 端口是 8080）
+curl -fsS http://localhost:8080/healthz`}
       </CodeBlock>
 
-      <h2 id="replay-a-scenario" className="scroll-mt-24">2. 重放一个场景</h2>
+      <h2 id="replay-a-scenario" className="scroll-mt-24">2. 写入场景</h2>
       <p>
-        <code>deploy/incident-events/</code> 下有四个可复现的 PostgreSQL 场景，挑一个端到端跑一遍：
+        <code>deploy/incident-events/</code> 下有四个可复现的 PostgreSQL 场景，用 incident-seed
+        工具把它们写入事件记忆库：
       </p>
-      <CodeBlock language="bash" title="replay">
-        {`# 连接池耗尽
-opskeeper demo replay pg-connection-pool-exhaustion
+      <CodeBlock language="bash" title="seed">
+        {`# 先校验数据集（不写数据库）
+go run ./cmd/incident-seed -dry-run -dir deploy/incident-events
 
-# 磁盘 I/O 饱和
-opskeeper demo replay pg-disk-io-saturation
-
-# 锁等待 / 长事务
-opskeeper demo replay pg-lock-wait-long-transaction
-
-# 副本 replay 延迟
-opskeeper demo replay pg-replica-replay-lag`}
+# 把 4 个场景全部写入事件记忆库
+go run ./cmd/incident-seed \\
+  -dsn "postgres://opskeeper:opskeeper@localhost:5432/opskeeper?sslmode=disable" \\
+  -dir deploy/incident-events`}
       </CodeBlock>
-      <p>CLI 会把场景驱动走闭环的每一个阶段。要查看某个事件：</p>
+      <p>
+        写入的事件覆盖连接池耗尽、磁盘 I/O 饱和、锁等待 / 长事务、副本 replay 延迟。通过事件
+        API 查看指标、召回日志与 runbook：
+      </p>
       <CodeBlock language="bash" title="inspect">
-        {`opskeeper incident show INC-PG-POOL-001 \\
-  --include timeline,evidence,proposals,audit`}
+        {`# 控制平面提供的事件指标 + runbook
+curl -fsS "http://localhost:8080/v1/incidents/metrics" | jq .
+curl -fsS "http://localhost:8080/v1/incidents/runbooks" | jq .`}
       </CodeBlock>
 
       <h2 id="open-the-web-console" className="scroll-mt-24">3. 打开 Web Console</h2>
@@ -74,23 +77,32 @@ pnpm dev
 
       <h2 id="install-a-worker-plugin">4. 安装一个 Worker 插件</h2>
       <p>
-        把 TeamHarness MCP 代理塞进任何讲 stdio MCP 的 Worker。它暴露 14 个工具，使用 Bearer + HMAC 鉴权。
+        把 TeamHarness MCP 代理塞进任何讲 stdio MCP 的 Worker。它暴露 17 个工具，使用 Bearer + HMAC
+        鉴权，全部通过环境变量配置：
       </p>
       <CodeBlock language="bash" title="plugin">
-        {`opskeeper plugin install agentteams-plugin-installer
-opskeeper-teamharness serve \\
-  --mcp-transport stdio \\
-  --opskeeper-endpoint http://localhost:8090 \\
-  --hmac-secret "$OPSKEEPER_PLUGIN_HMAC"`}
+        {`cd plugins/opskeeper-teamharness
+
+OPSKEEPER_BACKEND_URL=http://localhost:8080 \\
+OPSKEEPER_GATEWAY_KEY="$GATEWAY_KEY" \\
+OPSKEEPER_TENANT_ID=default \\
+python3 mcp/server.py`}
       </CodeBlock>
+      <p>
+        AgentTeams Dashboard 插件包请运行 <code>make build-plugins</code>，然后在 Dashboard 里安装生成的
+        zip（热部署：<code>qwenpaw plugin install &lt;path&gt; --force</code>）。
+      </p>
 
       <h2 id="demos" className="scroll-mt-24">演示</h2>
       <p>
-        第一次重放完成后，跑一遍验证 Harness，确认 Manager、critic、verifier 都正确接入：
+        写入场景后，跑一遍验证 Harness，确认 Manager、critic、verifier 都正确接入。每个场景都是带
+        runner 容器的独立 compose 栈：
       </p>
       <CodeBlock language="bash" title="verify">
-        {`make verify
-# alert_storm / rca_loop / recovery_verify 三个场景`}
+        {`# 在插件目录下执行 —— alert_storm / rca_loop / recovery_verify
+bash plugins/opskeeper-teamharness/eval/scenarios/alert_storm/run.sh
+bash plugins/opskeeper-teamharness/eval/scenarios/rca_loop/run.sh
+bash plugins/opskeeper-teamharness/eval/scenarios/recovery_verify/run.sh`}
       </CodeBlock>
 
       <h2 id="next">下一步</h2>

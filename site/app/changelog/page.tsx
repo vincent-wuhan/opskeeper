@@ -21,10 +21,10 @@ const entries: Entry[] = [
     tag: 'release',
     highlights: [
       'Manager-style dispatch with explicit L0–L3 safety levels',
-      'Append-only HMAC-chained audit ledger, daily ndjson export',
+      'Append-only loop_event_log (DB-enforced) + SHA256-chained proposal audit',
       'Plugin stdio MCP server with W3C traceparent passthrough',
       'Four reproducible PostgreSQL incident scenarios',
-      'OpsKeeper TeamHarness v0: 14 MCP tools, Bearer + HMAC auth',
+      'OpsKeeper TeamHarness v0: 17 MCP tools, Bearer + HMAC auth',
     ],
   },
   {
