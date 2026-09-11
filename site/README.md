@@ -60,3 +60,19 @@ site/
 The site is configured for the Next.js `standalone` output. Build it and ship the
 `.next/standalone` directory plus the `.next/static` and `public/` assets to your container
 of choice.
+
+## Deploy to Vercel
+
+The cleanest path is the Vercel GitHub integration:
+
+1. Push the branch (e.g. `agent/devbox1/3685b1c9c3ad` or a fresh `feat/site`) to GitHub.
+2. In the Vercel dashboard → **Add New Project** → import `louloulin/opskeeper`.
+3. Set **Root Directory** to `site` (the repo also contains Go services at the root, so
+   Vercel needs to know where the Next.js project lives).
+4. Framework preset auto-detects as **Next.js**. The shipped `site/vercel.json` pins the
+   build / install commands and adds basic security headers.
+5. Add the custom domain `opskeeper.dev` (or whichever you own) once the first deploy
+   succeeds.
+
+If you prefer the CLI flow, install `vercel` locally on a machine that is already logged
+in to your Vercel team and run `vercel --cwd site` from the repo root.
