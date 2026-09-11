@@ -39,6 +39,7 @@ type ResolvedIdentity struct {
 	APIKeyID     string    //  Higress API key id
 	Role         string    //  映射到 opskeeper 角色：worker / manager / admin
 	TenantID     string    //  从 consumer name 或 X-Opskeeper-Tenant 头提取
+	AllowedTools []string  // AgentTeams 角色实际允许的工具
 	ResolvedAt   time.Time //  解析时间，用于 TTL 判定
 }
 
@@ -77,6 +78,10 @@ type HigressClient interface {
 	ResolveConsumer(ctx context.Context, apiKey string) (consumerName, apiKeyID, role string, err error)
 }
 
+type AgentTeamsTokenVerifier interface {
+	Verify(token string) (*auth.Claims, error)
+}
+
 // Logger 是 slog 兼容的最小接口。
 type Logger interface {
 	Warn(msg string, args ...any)
@@ -98,6 +103,7 @@ var (
 	ErrTimestampSkew     = errors.New("X-Opskeeper-Timestamp out of replay window")
 	ErrRoleMismatch      = errors.New("consumer name and apiKey role suffix mismatch")
 	ErrTenantMismatch    = errors.New("consumer name and X-Opskeeper-Tenant mismatch")
+	ErrAgentTeamsToken   = errors.New("invalid AgentTeams service token")
 )
 
 // FromContext 取出 ctx 中的 ResolvedIdentity。
@@ -163,6 +169,7 @@ func (c *Cache) Invalidate() {
 // Authenticator 校验 Authorization 头 + 解析 consumer。
 type Authenticator struct {
 	higress HigressClient
+	tokens  AgentTeamsTokenVerifier
 	cache   *Cache
 	log     Logger
 	// SkipCache 用于测试
@@ -176,8 +183,13 @@ type Authenticator struct {
 
 // NewAuthenticator 构造。
 func NewAuthenticator(h HigressClient, log Logger) *Authenticator {
+	return NewAuthenticatorWithSigner(h, log, nil)
+}
+
+func NewAuthenticatorWithSigner(h HigressClient, log Logger, tokens AgentTeamsTokenVerifier) *Authenticator {
 	return &Authenticator{
 		higress:          h,
+		tokens:           tokens,
 		cache:            NewCache(),
 		log:              log,
 		RequireSignature: true, // 默认开启：HMAC + ts + 角色/租户一致性
@@ -298,6 +310,12 @@ func (a *Authenticator) Resolve(ctx context.Context, h http.Header) (ResolvedIde
 	}
 	requestTenantID := extractTenant(h)
 
+	if strings.Count(token, ".") == 2 && a.tokens != nil {
+		if id, recognized, err := a.resolveAgentTeamsToken(token, requestTenantID); recognized || err != nil {
+			return id, err
+		}
+	}
+
 	if !a.SkipCache {
 		if id, ok := a.cache.Get(token); ok {
 			// cache 命中仍要重新校验完整性护栏：HMAC / ts / 角色 / 租户
@@ -349,10 +367,44 @@ func (a *Authenticator) Resolve(ctx context.Context, h http.Header) (ResolvedIde
 		APIKeyID:     apiKeyID,
 		Role:         role,
 		TenantID:     consumerTenantID,
+		AllowedTools: allowedToolsForRole(role),
 		ResolvedAt:   time.Now(),
 	}
 	a.cache.Put(token, id)
 	return id, nil
+}
+
+func (a *Authenticator) resolveAgentTeamsToken(token, requestTenantID string) (ResolvedIdentity, bool, error) {
+	claims, verifyErr := a.tokens.Verify(token)
+	if verifyErr != nil {
+		return ResolvedIdentity{}, true, ErrAgentTeamsToken
+	}
+	service := claims.AgentTeams
+	if claims.TokenType != auth.AgentTeamsTokenType ||
+		claims.RegisteredClaims.Issuer != auth.AgentTeamsTokenIssuer ||
+		len(claims.RegisteredClaims.Audience) != 1 ||
+		claims.RegisteredClaims.Audience[0] != auth.AgentTeamsTokenAudience ||
+		claims == nil || service == nil || service.Service != auth.AgentTeamsServiceName ||
+		!auth.AgentTeamsWorkerBoundToRole(service.Worker, service.Role) ||
+		len(service.AllowedTools) == 0 {
+		return ResolvedIdentity{}, true, ErrAgentTeamsToken
+	}
+	for _, tool := range service.AllowedTools {
+		if !auth.AgentTeamsRoleAllows(service.Role, tool) {
+			return ResolvedIdentity{}, true, ErrAgentTeamsToken
+		}
+	}
+	if requestTenantID != "" && requestTenantID != service.TenantID {
+		return ResolvedIdentity{}, true, ErrTenantMismatch
+	}
+	return ResolvedIdentity{
+		ConsumerName: service.Worker,
+		APIKeyID:     "agentteams-service-token",
+		Role:         service.Role,
+		TenantID:     service.TenantID,
+		AllowedTools: append([]string{}, service.AllowedTools...),
+		ResolvedAt:   time.Now(),
+	}, true, nil
 }
 
 // checkSignature 校验 X-Opskeeper-Signature = HMAC-SHA256(token, ts + "." + body)。
@@ -532,6 +584,7 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			switch {
 			case errors.Is(err, ErrMissingAuth),
 				errors.Is(err, ErrBadScheme),
+				errors.Is(err, ErrAgentTeamsToken),
 				errors.Is(err, ErrSignatureMissing),
 				errors.Is(err, ErrSignatureMismatch),
 				errors.Is(err, ErrTimestampSkew):
@@ -568,7 +621,7 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 				Service:      auth.AgentTeamsServiceName,
 				Worker:       canonicalAgentTeamsWorkerName(id.ConsumerName, id.Role),
 				Role:         id.Role,
-				AllowedTools: allowedToolsForRole(id.Role),
+				AllowedTools: id.AllowedTools,
 			},
 		}
 		ctx = tenantctx.With(ctx, tenant)

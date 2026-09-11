@@ -5,6 +5,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/vincent-wuhan/opskeeper/internal/pkg/auth"
+	"github.com/vincent-wuhan/opskeeper/internal/pkg/tenantctx"
 )
 
 type mockHigress struct {
@@ -105,6 +109,79 @@ func TestAuthenticator_ResolveAndCache(t *testing.T) {
 	}
 	if h.called != 1 {
 		t.Fatalf("expected 1 Higress call (cached on 2nd), got %d", h.called)
+	}
+}
+
+func TestAuthenticator_ResolvesAgentTeamsServiceToken(t *testing.T) {
+	signer := auth.NewSigner("test-secret", time.Minute, time.Hour)
+	token, err := signer.SignAgentTeamsService(auth.AgentTeamsServiceClaims{
+		TenantID:     "goai-demo",
+		Service:      auth.AgentTeamsServiceName,
+		Worker:       auth.AgentTeamsWorkerForRole("investigator"),
+		Role:         "investigator",
+		AllowedTools: []string{"incident.record", "loop.investigate"},
+	}, 2*time.Minute)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+
+	higress := &mockHigress{}
+	authenticator := NewAuthenticatorWithSigner(higress, nopLogger{}, signer)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-Opskeeper-Tenant", "goai-demo")
+
+	var resolved ResolvedIdentity
+	var caller tenantctx.Tenant
+	var ok bool
+	handler := authenticator.Middleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		resolved, ok = FromContext(r.Context())
+		caller, _ = tenantctx.From(r.Context())
+	}))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if !ok || resolved.ConsumerName != "opskeeper-investigator" || resolved.Role != "investigator" {
+		t.Fatalf("unexpected resolved identity: %+v", resolved)
+	}
+	if len(resolved.AllowedTools) != 2 || resolved.AllowedTools[0] != "incident.record" {
+		t.Fatalf("unexpected token tools: %+v", resolved.AllowedTools)
+	}
+	if caller.AgentTeams == nil || caller.AgentTeams.Worker != "opskeeper-investigator" {
+		t.Fatalf("unexpected caller identity: %+v", caller.AgentTeams)
+	}
+	if higress.called != 0 {
+		t.Fatalf("AgentTeams JWT should not resolve through Higress, called=%d", higress.called)
+	}
+}
+
+func TestAuthenticator_RejectsAgentTeamsTenantMismatch(t *testing.T) {
+	signer := auth.NewSigner("test-secret", time.Minute, time.Hour)
+	token, err := signer.SignAgentTeamsService(auth.AgentTeamsServiceClaims{
+		TenantID:     "goai-demo",
+		Service:      auth.AgentTeamsServiceName,
+		Worker:       auth.AgentTeamsWorkerForRole("investigator"),
+		Role:         "investigator",
+		AllowedTools: []string{"incident.record"},
+	}, 2*time.Minute)
+	if err != nil {
+		t.Fatalf("sign token: %v", err)
+	}
+	authenticator := NewAuthenticatorWithSigner(&mockHigress{}, nopLogger{}, signer)
+	req := httptest.NewRequest(http.MethodPost, "/v1/mcp", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-Opskeeper-Tenant", "other-tenant")
+
+	handler := authenticator.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", recorder.Code)
 	}
 }
 

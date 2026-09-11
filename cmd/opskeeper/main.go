@@ -2963,7 +2963,7 @@ func main() {
 				pluginRegistry, pluginSync, nil, pluginMaxZipBytes,
 			)
 
-			bearerAuth := newAgentTeamsAuthenticator(nil)
+			bearerAuth := newAgentTeamsAuthenticator(nil, signer)
 			agentteamsRouter.Use(bearerAuth.Middleware)
 			mcpHandler.RegisterJSONRPC(agentteamsRouter)
 			agentteamsHandler.Register(agentteamsRouter)

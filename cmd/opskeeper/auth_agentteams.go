@@ -20,6 +20,7 @@ import (
 
 	internalagentteams "github.com/vincent-wuhan/opskeeper/internal/agentteams"
 	mcpauth "github.com/vincent-wuhan/opskeeper/internal/manager/server/mcp/middleware"
+	"github.com/vincent-wuhan/opskeeper/internal/pkg/auth"
 )
 
 // newAgentTeamsAuthenticator 构造 Higress + Bearer auth 中间件。
@@ -35,7 +36,7 @@ import (
 //	OPSKEEPER_REQUIRE_SIGNATURE   "1"/"true" → 强制校验 X-Opskeeper-Signature + ts + 角色/租户一致性
 //	                                    "0"/"false" → 关闭（dev 模式）
 //	OPSKEEPER_REPLAY_WINDOW       seconds, default 300
-func newAgentTeamsAuthenticator(log *slog.Logger) *mcpauth.Authenticator {
+func newAgentTeamsAuthenticator(log *slog.Logger, signer *auth.Signer) *mcpauth.Authenticator {
 	higress := internalagentteams.NewHigressHTTPClientFromEnv()
 	if os.Getenv("HIGRESS_CONSOLE_URL") == "" {
 		_ = os.Setenv("HIGRESS_CONSOLE_URL", "http://127.0.0.1:8001")
@@ -44,7 +45,7 @@ func newAgentTeamsAuthenticator(log *slog.Logger) *mcpauth.Authenticator {
 	if log == nil {
 		log = slog.Default()
 	}
-	authn := mcpauth.NewAuthenticator(higress, slogAdapter{log})
+	authn := mcpauth.NewAuthenticatorWithSigner(higress, slogAdapter{log}, signer)
 	// 默认开启完整性护栏；显式 OPSKEEPER_REQUIRE_SIGNATURE=0 才关闭（dev / CI）。
 	authn.RequireSignature = !isFalsy(os.Getenv("OPSKEEPER_REQUIRE_SIGNATURE"))
 	// isFalsy 把空字符串 / 1 / true / yes / on 当作"真"（即开启），仅 0/false/no/off 关闭。
@@ -79,8 +80,8 @@ func (a slogAdapter) Info(msg string, args ...any)  { a.log.Info(msg, args...) }
 // withAgentTeamsAuth 返回带 Bearer auth 中间件的 chi.Router。
 //
 // 调用方应在自己 route group 上 .With(withAgentTeamsAuth(...)) 来启用。
-func withAgentTeamsAuth(r chi.Router) func(http.Handler) http.Handler {
-	authn := newAgentTeamsAuthenticator(nil)
+func withAgentTeamsAuth(r chi.Router, signer *auth.Signer) func(http.Handler) http.Handler {
+	authn := newAgentTeamsAuthenticator(nil, signer)
 	return func(h http.Handler) http.Handler {
 		// The middleware will only enforce auth on /v1/mcp, /v1/state, /v1/hitl;
 		// other paths pass through.
