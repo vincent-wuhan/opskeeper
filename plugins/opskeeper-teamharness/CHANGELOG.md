@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.42 — 2026-09-12
+
+- Allow reporter-only knowledge persistence and incident closure through the Worker boundary while retaining backend role enforcement.
+- Document that Manager agent mirrors are authoritative for Worker FileSync to prevent version rollback after restart.
+
 ## 1.0.41 — 2026-09-12
 
 - Allow reporter-only `knowledge.write` through the Worker boundary while retaining backend role-token enforcement.

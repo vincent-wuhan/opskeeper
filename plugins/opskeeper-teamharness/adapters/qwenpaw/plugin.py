@@ -69,7 +69,7 @@ def manager_prompt(_agent: Any) -> str:
 
 _SANITIZER_KEYWORDS_ENV = "AGENTTEAMS_OUTPUT_SANITIZE_KEYWORDS"
 _PERMISSION_MODE_ENV = "OPSKEEPER_PERMISSION_MODE"
-_PLUGIN_VERSION = "1.0.41"
+_PLUGIN_VERSION = "1.0.42"
 _READ_ONLY_LOGGER = logging.getLogger("opskeeper-teamharness.readonly")
 _MANAGER_GATE_LOGGER = logging.getLogger("opskeeper-teamharness.manager-gate")
 _MANAGER_GATE_TTL_ENV = "OPSKEEPER_MANAGER_GATE_TTL_SECONDS"
@@ -186,6 +186,7 @@ _ROLE_GATED_MUTATING_TOOLS = frozenset({
     # Reporter may persist postmortem knowledge. OpsKeeper rejects this tool
     # for every other AgentTeams role at role-token exchange and MCP layers.
     "opskeeper.knowledge.write",
+    "opskeeper.incident.record",
 })
 
 
