@@ -13,6 +13,7 @@ description: 修复执行 worker。执行已获审批的受控恢复动作，如
   - host.restart_service
   - host.get_load
   - host.get_processes
+  - incident.record
 
 ## Tools Removed in This Revision
 
@@ -47,8 +48,11 @@ stdio MCP server 内部自动注入：
   - 修复前必须看到 reviewer.approve=true 或 blast_radius ∈ {host}；L2 动作还必须拿到人工批准后的精确 proposal_id
   - `recovery.execute` 只能执行 proposal 精确绑定的动作；AgentTeams caller 禁止设置 `skip_audit`
   - `capacity/connection_pool` 场景只允许 `command=resize_pool`、`target=pg:pool-fixture`、`resource_type=pg`，且 `pool_manifest_id` 必须属于同一 incident
-  - 禁止重启共享 PostgreSQL、终止无关连接、执行 shell/browser 或写业务文件；变更型 Worker 必须由运行时管理员显式设置 `OPSKEEPER_PERMISSION_MODE=standard`
+  - 禁止重启共享 PostgreSQL、终止无关连接、执行 shell/browser 或写业务文件；
+    默认 read-only 中间件只放行完整绑定 approved proposal 的 `recovery.execute`
   - 每次 mutating 操作必须依赖 OpsKeeper approved proposal / audit；不得用提示词自授权
+  - `recovery.execute` 成功后必须调用 `incident.record`，且 `action_fingerprint`
+    使用 `proposal_id:command:target:pool_manifest_id`；不携带 `recovery_signal`
   - 修复完成后必须调 state.put 推进 state.json 到 phase=repair.completed
 
 ## Decision Logic

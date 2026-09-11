@@ -26,13 +26,21 @@ export function buildInvestigationRequest(incident = {}) {
   const existingHints = incident.correlation_hints && typeof incident.correlation_hints === 'object'
     ? incident.correlation_hints
     : {};
-  const correlationHints = Object.keys(existingHints).length
-    ? existingHints
-    : {
-      source_id: labels.source_id || incident.source_id || 'dashboard',
-      device_id: labels.device_id || incident.target_id || incidentId,
-      resource_type: labels.resource_type || incident.target_type || 'unknown',
-    };
+  const correlationHints = { ...existingHints };
+  const hints = {
+    incident_id: labels.incident_id || incidentId,
+    target: labels.target || incident.target_name || incident.target_id,
+    pool_manifest_id: labels.pool_manifest_id,
+    fault_family: labels.fault_family,
+    source_id: labels.source_id || incident.source_id || 'dashboard',
+    device_id: labels.device_id || incident.target_id || incidentId,
+    resource_type: labels.resource_type || incident.target_type || 'unknown',
+  };
+  for (const [key, value] of Object.entries(hints)) {
+    if (value !== undefined && value !== null && value !== '') {
+      correlationHints[key] = String(value);
+    }
+  }
   return { incident_id: incidentId, alert_group: alertGroup, correlation_hints: correlationHints };
 }
 
@@ -128,7 +136,7 @@ export const opskeeperApi = {
     const q = new URLSearchParams();
     if (status) q.set('status', status);
     if (severity) q.set('severity', severity);
-    q.set('limit', String(limit));
+    q.set('page_size', String(limit));
     return jsonFetch('/incidents?' + q.toString());
   },
 

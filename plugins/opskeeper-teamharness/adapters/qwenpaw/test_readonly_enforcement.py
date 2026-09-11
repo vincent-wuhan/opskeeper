@@ -1,5 +1,6 @@
 import asyncio
 import importlib.util
+import json
 import sys
 import unittest
 from enum import Enum
@@ -80,7 +81,12 @@ class ReadOnlyEnforcementTest(unittest.TestCase):
     def tearDown(self):
         _restore_agentscope(self.saved_modules)
 
-    def _invoke(self, tool_name: str, permission_mode: str | None = None):
+    def _invoke(
+        self,
+        tool_name: str,
+        permission_mode: str | None = None,
+        arguments: dict | None = None,
+    ):
         middleware = self.module._readonly_enforcement_factory(None, None)
         executed = False
 
@@ -93,7 +99,10 @@ class ReadOnlyEnforcementTest(unittest.TestCase):
             self.module._PERMISSION_MODE_ENV: permission_mode,
         }
         input_kwargs = {
-            "tool_call": SimpleNamespace(name=tool_name, input="{}"),
+            "tool_call": SimpleNamespace(
+                name=tool_name,
+                input=json.dumps(arguments or {}),
+            ),
         }
 
         async def run():
@@ -124,6 +133,66 @@ class ReadOnlyEnforcementTest(unittest.TestCase):
         events, executed = self._invoke("opskeeper__state_put")
         self.assertFalse(executed)
         self.assertEqual(events[0].state, _ToolResultState.DENIED)
+
+    def test_recovery_execute_requires_a_complete_proposal_binding(self):
+        arguments = {
+            "incident_id": "incident-live-pool",
+            "proposal_id": "13a1c286-ca32-483c-bffd-647b65e313d0",
+            "skill_id": "resize-pg-pool",
+            "target": "pg:pool-fixture",
+            "resource_type": "pg",
+            "parameters": {
+                "command": "resize_pool",
+                "incident_id": "incident-live-pool",
+                "pool_manifest_id": "7f5c60e593e68840f974789166cc3374",
+                "reason": "Resize the disposable fixture pool.",
+            },
+        }
+        partial = dict(arguments)
+        del partial["proposal_id"]
+        self.assertFalse(self.module._is_proposal_bound_recovery_execute(
+            "opskeeper.recovery.execute", partial,
+        ))
+        events, executed = self._invoke("opskeeper__recovery_execute", arguments=partial)
+        self.assertFalse(executed)
+        self.assertEqual(events[0].state, _ToolResultState.DENIED)
+
+        events, executed = self._invoke("opskeeper__recovery_execute", arguments=arguments)
+        self.assertTrue(executed)
+        self.assertEqual(events, ["allowed"])
+
+    def test_recovery_execute_rejects_skip_audit_and_unbound_pool_manifest(self):
+        arguments = {
+            "incident_id": "incident-live-pool",
+            "proposal_id": "13a1c286-ca32-483c-bffd-647b65e313d0",
+            "skill_id": "resize-pg-pool",
+            "target": "pg:pool-fixture",
+            "resource_type": "pg",
+            "parameters": {
+                "command": "resize_pool",
+                "incident_id": "incident-live-pool",
+                "pool_manifest_id": "7f5c60e593e68840f974789166cc3374",
+                "reason": "Resize the disposable fixture pool.",
+            },
+        }
+        for mutation in (
+            {"parameters": {**arguments["parameters"], "skip_audit": True}},
+            {"parameters": {**arguments["parameters"], "pool_manifest_id": ""}},
+            {"parameters": {**arguments["parameters"], "incident_id": "another-incident"}},
+        ):
+            with self.subTest(mutation=mutation):
+                invalid = {**arguments, **mutation}
+                self.assertFalse(self.module._is_proposal_bound_recovery_execute(
+                    "opskeeper.recovery.execute", invalid,
+                ))
+                events, executed = self._invoke("opskeeper__recovery_execute", arguments=invalid)
+                self.assertFalse(executed)
+                self.assertEqual(events[0].state, _ToolResultState.DENIED)
+
+    def test_incident_record_is_an_append_only_read_only_exception(self):
+        events, executed = self._invoke("opskeeper__incident_record")
+        self.assertTrue(executed)
+        self.assertEqual(events, ["allowed"])
 
     def test_shell_and_browser_are_denied(self):
         for tool_name in ("execute_shell_command", "browser_use"):

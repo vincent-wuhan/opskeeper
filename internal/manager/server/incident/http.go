@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strconv"
 
+	"os"
+
 	"github.com/go-chi/chi/v5"
 
 	incidentcontrol "github.com/vincent-wuhan/opskeeper/internal/control/incident"
@@ -140,6 +142,11 @@ func (h *Handler) tenantID(w http.ResponseWriter, r *http.Request) (string, bool
 	if tenantID == "" {
 		writeError(w, http.StatusForbidden, "forbidden", "tenant could not be derived")
 		return "", false
+	}
+	if tenantID == "default" {
+		if configured := os.Getenv("OPSKEEPER_DEFAULT_INCIDENT_TENANT_ID"); configured != "" {
+			tenantID = configured
+		}
 	}
 	return tenantID, true
 }

@@ -69,7 +69,7 @@ def manager_prompt(_agent: Any) -> str:
 
 _SANITIZER_KEYWORDS_ENV = "AGENTTEAMS_OUTPUT_SANITIZE_KEYWORDS"
 _PERMISSION_MODE_ENV = "OPSKEEPER_PERMISSION_MODE"
-_PLUGIN_VERSION = "1.0.38"
+_PLUGIN_VERSION = "1.0.39"
 _READ_ONLY_LOGGER = logging.getLogger("opskeeper-teamharness.readonly")
 _MANAGER_GATE_LOGGER = logging.getLogger("opskeeper-teamharness.manager-gate")
 _MANAGER_GATE_TTL_ENV = "OPSKEEPER_MANAGER_GATE_TTL_SECONDS"
@@ -173,9 +173,54 @@ _READ_ONLY_ALLOWED_TOOLS = frozenset({
     "opskeeper.knowledge.query",
     "opskeeper.state.get",
     "opskeeper.recovery.verify",
+    "opskeeper.incident.record",
     "opskeeper.loop.correlate",
     "opskeeper.loop.investigate",
 })
+
+
+def _is_proposal_bound_recovery_execute(normalized_name: str, arguments: dict[str, Any]) -> bool:
+    if normalized_name != "opskeeper.recovery.execute":
+        return False
+    parameters = arguments.get("parameters")
+    if not isinstance(parameters, dict):
+        parameters = {}
+
+    def required_id(value: Any) -> bool:
+        return isinstance(value, str) and bool(value.strip())
+
+    required_arguments = (
+        arguments.get("incident_id"),
+        arguments.get("proposal_id"),
+        arguments.get("skill_id"),
+        arguments.get("target"),
+        arguments.get("resource_type"),
+    )
+    required_parameters = (
+        parameters.get("command"),
+        parameters.get("reason"),
+    )
+    if not all(required_id(value) for value in required_arguments):
+        return False
+    if not all(required_id(value) for value in required_parameters):
+        return False
+    if parameters.get("skip_audit") is True:
+        return False
+
+    command = parameters.get("command")
+    if command == "resize_pool":
+        return (
+            parameters.get("incident_id") == arguments.get("incident_id")
+            and required_id(parameters.get("pool_manifest_id"))
+        )
+    if command == "kill_process":
+        return (
+            parameters.get("incident_id") == arguments.get("incident_id")
+            and required_id(parameters.get("fixture_manifest_id"))
+        )
+    if command == "restart_service":
+        return bool(parameters.get("device_id")) and required_id(parameters.get("service"))
+    return command == "noop"
 
 
 def _extract_task_markers(message: str) -> tuple[str, ...]:
@@ -665,6 +710,7 @@ def _readonly_enforcement_factory(context: Any, _agent_config: Any):
             if (
                 _permission_mode() == "read_only"
                 and normalized_name not in _READ_ONLY_ALLOWED_TOOLS
+                and not _is_proposal_bound_recovery_execute(normalized_name, arguments)
             ):
                 result = _denied_tool_response(tool_name)
                 _READ_ONLY_LOGGER.warning(

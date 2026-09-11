@@ -104,6 +104,33 @@ test('builds a backend-compatible investigation request', () => {
       source_id: 'pool-fixture',
       device_id: '900001',
       resource_type: 'edge',
+      incident_id: '35',
+      target: '900001',
+    },
+  });
+});
+
+test('propagates PG pool incident bindings into investigation hints', () => {
+  assert.deepEqual(buildInvestigationRequest({
+    id: 36,
+    rule_key: 'pg-pool-exhaustion',
+    labels: {
+      incident_id: 'incident-live-pool-smoke',
+      target: 'pg:pool-fixture',
+      pool_manifest_id: '7f5c60e593e68840f974789166cc3374',
+      fault_family: 'capacity/connection_pool',
+    },
+  }), {
+    incident_id: '36',
+    alert_group: ['pg-pool-exhaustion'],
+    correlation_hints: {
+      incident_id: 'incident-live-pool-smoke',
+      target: 'pg:pool-fixture',
+      pool_manifest_id: '7f5c60e593e68840f974789166cc3374',
+      fault_family: 'capacity/connection_pool',
+      source_id: 'dashboard',
+      device_id: '36',
+      resource_type: 'unknown',
     },
   });
 });

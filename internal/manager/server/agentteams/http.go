@@ -26,7 +26,9 @@ import (
 
 	"github.com/vincent-wuhan/opskeeper/internal/agentteams"
 	incidentcontrol "github.com/vincent-wuhan/opskeeper/internal/control/incident"
+	alertbiz "github.com/vincent-wuhan/opskeeper/internal/manager/biz/alert"
 	knowledgebiz "github.com/vincent-wuhan/opskeeper/internal/manager/biz/knowledge"
+	alertmodel "github.com/vincent-wuhan/opskeeper/internal/manager/model/alert"
 	knowledgemodel "github.com/vincent-wuhan/opskeeper/internal/manager/model/knowledge"
 	mcpauth "github.com/vincent-wuhan/opskeeper/internal/manager/server/mcp/middleware"
 	"github.com/vincent-wuhan/opskeeper/internal/pkg/auth"
@@ -47,6 +49,11 @@ type IncidentRecorder interface {
 	ListIncident(ctx context.Context, tenantID, incidentID string) ([]incidentcontrol.Event, error)
 }
 
+type AlertIncidentResolver interface {
+	ListIncidents(ctx context.Context, filter alertbiz.IncidentFilter) ([]*alertmodel.Incident, error)
+	SystemResolveIncident(ctx context.Context, dedupeKey, reason string, occurredAt time.Time) (bool, error)
+}
+
 // Handler 聚合路由依赖。
 type Handler struct {
 	backend   StateBackend
@@ -54,6 +61,7 @@ type Handler struct {
 	skillDir  string // SKILL.md 文件目录，e.g. plugins/opskeeper-teamharness/skills
 	knowledge KnowledgeWriter
 	incident  IncidentRecorder
+	alerts    AlertIncidentResolver
 }
 
 // NewHandler 构造。
@@ -70,6 +78,10 @@ func (h *Handler) SetKnowledgeWriter(writer KnowledgeWriter) {
 
 func (h *Handler) SetIncidentRecorder(recorder IncidentRecorder) {
 	h.incident = recorder
+}
+
+func (h *Handler) SetAlertIncidentResolver(resolver AlertIncidentResolver) {
+	h.alerts = resolver
 }
 
 // Register 注册路由到 chi.Router。

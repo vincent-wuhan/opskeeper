@@ -11,6 +11,7 @@ description: SOP 二审 reviewer worker。对 mutating / destructive 提案做�
 
   - incident.get
   - metric.query
+  - incident.record
 
 
 ## Tools Removed in This Revision
@@ -47,6 +48,8 @@ stdio MCP server 内部自动注入：
   - 本 worker 是异步的：spawn 时 background=true，coordinator 不阻塞主对话
   - reviewer 跑完通过 <task-notification> 投递
   - reject 是默认选项，approve 必须三条都满足：(1) 找得到对应 SOP 且明确覆盖此场景 (2) 当前没有并行的同类操作 (3) 回滚路径已知
+  - 给出 approve 结论后必须调用 `incident.record`；`evidence_ref` 指向
+    SOP / proposal / HITL 证据，不携带 `recovery_signal`
 
 ## Decision Logic
 

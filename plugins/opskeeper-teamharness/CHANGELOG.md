@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.39 — 2026-09-12
+
+- Keep Worker read-only mode fail-closed while allowing only complete,
+  approved-proposal-bound `recovery.execute` calls through the backend gate.
+- Require stage Workers to append `incident.record` evidence, including repair
+  fingerprints, verifier recovery signals, reporter closure, and linked alert
+  resolution.
+- Send the incident API `page_size` contract and propagate PG pool incident,
+  target, manifest, and fault-family hints into Dashboard RCA requests.
+- Add safe Tempo business attributes for tool, tenant, worker, audit, incident,
+  manifest, and proposal correlation without exposing tool parameters.
+
 ## 1.0.38 — 2026-09-08
 
 - Normalize Dashboard RCA reports from `root_cause_object` and render the

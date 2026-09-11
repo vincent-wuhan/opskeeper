@@ -26,6 +26,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	auditbiz "github.com/vincent-wuhan/opskeeper/internal/manager/biz/audit"
 	loopbiz "github.com/vincent-wuhan/opskeeper/internal/manager/biz/loop"
@@ -383,6 +385,7 @@ func (h *Handler) jsonRPC(w http.ResponseWriter, r *http.Request) {
 		// "auth_failed"/"error" in agentteams_mcp_call_total.
 		toolName, observedRole, callStart := extractMCPCallMetadata(r, request)
 		result, auditLogID, rpcErr := h.callTool(r, request)
+		annotateMCPSpan(r, request, auditLogID)
 		callDur := time.Since(callStart).Seconds()
 		switch {
 		case rpcErr == nil:
@@ -806,4 +809,81 @@ func extractMCPCallMetadata(r *http.Request, request jsonRPCRequest) (string, st
 		}
 	}
 	return toolName, role, time.Now()
+}
+
+func annotateMCPSpan(r *http.Request, request jsonRPCRequest, auditLogID string) {
+	span := trace.SpanFromContext(r.Context())
+	if !span.IsRecording() {
+		return
+	}
+	caller, _ := callerFromRequest(r)
+	attributes := []attribute.KeyValue{
+		attribute.String("opskeeper.tool.name", extractRPCMethodName(request)),
+	}
+	if caller.AgentTeams != nil {
+		attributes = append(attributes,
+			attribute.String("opskeeper.tenant.id", caller.AgentTeams.TenantID),
+			attribute.String("opskeeper.worker.name", caller.AgentTeams.Worker),
+			attribute.String("opskeeper.worker.role", caller.AgentTeams.Role),
+		)
+	}
+	if auditLogID != "" {
+		attributes = append(attributes, attribute.String("opskeeper.audit.id", auditLogID))
+	}
+	attributes = append(attributes, safeMCPArgumentAttributes(request.Params)...)
+	span.SetAttributes(attributes...)
+}
+
+func extractRPCMethodName(request jsonRPCRequest) string {
+	var params struct {
+		Name string `json:"name"`
+	}
+	if json.Unmarshal(request.Params, &params) == nil && params.Name != "" {
+		return params.Name
+	}
+	return "unknown"
+}
+
+func safeMCPArgumentAttributes(params json.RawMessage) []attribute.KeyValue {
+	var call struct {
+		Arguments map[string]any `json:"arguments"`
+	}
+	if err := json.Unmarshal(params, &call); err != nil || call.Arguments == nil {
+		return nil
+	}
+	nested, _ := call.Arguments["parameters"].(map[string]any)
+	ids := make([]attribute.KeyValue, 0, 6)
+	appendID := func(key string, value any) {
+		if text := truncateSpanValue(value); text != "" {
+			ids = append(ids, attribute.String(key, text))
+		}
+	}
+	appendID("opskeeper.incident.id", call.Arguments["incident_id"])
+	appendID("opskeeper.manifest.id", firstNonEmptyMapValue(call.Arguments, "pool_manifest_id", "manifest_id"))
+	appendID("opskeeper.proposal.id", call.Arguments["proposal_id"])
+	if nested != nil {
+		appendID("opskeeper.manifest.id", firstNonEmptyMapValue(nested, "pool_manifest_id", "manifest_id"))
+	}
+	return ids
+}
+
+func firstNonEmptyMapValue(values map[string]any, keys ...string) any {
+	for _, key := range keys {
+		if value := truncateSpanValue(values[key]); value != "" {
+			return values[key]
+		}
+	}
+	return nil
+}
+
+func truncateSpanValue(value any) string {
+	text, ok := value.(string)
+	if !ok {
+		return ""
+	}
+	text = strings.TrimSpace(text)
+	if len(text) > 128 {
+		return text[:128]
+	}
+	return text
 }

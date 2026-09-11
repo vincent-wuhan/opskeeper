@@ -15,6 +15,7 @@ description: 事故复盘 worker。verifier 通过后接管，产出 postmortem.
   - knowledge.write
   - state.put
   - state.get
+  - incident.record
 
 ## Tools Removed in This Revision
 
@@ -45,6 +46,8 @@ stdio MCP server 内部自动注入：
 ## Critical Rules
 
   - 你**只读不写执行**，只写知识库与 state.json；任何 mutating 调用一律禁止
+  - 本 Worker 使用 reporter 服务身份；复盘写入 knowledge vault 后必须调用
+    `incident.record` 触发 `incident.closed`，不携带 `recovery_signal`
   - 必须消费 verifier 产出的 VerifiedDelta + investigator 产出的 RootCauseJSON + repairer 的 action log
   - 行动项必须 owner + due_date + 验证指标，缺一不接受
   - 反哺 knowledge vault 前必须调用 `knowledge.query` 去重，避免重复指纹

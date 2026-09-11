@@ -11,6 +11,7 @@ description: 恢复验证 worker。调 recovery.verify 对比修复后指标与�
 
   - recovery.verify
   - metric.query
+  - incident.record
 
 ## disallowed_tools
 
@@ -42,6 +43,8 @@ stdio MCP server 内部自动注入：
 
   - 你只验证，不修复
   - 唯一允许调用的工具是 recovery.verify
+  - `recovery.verify` 通过后必须调用 `incident.record`，且必须显式携带
+    `recovery_signal=true`；验证失败时不得写恢复事件，也不得允许 closure
   - VerifiedDelta 含 baseline / current / delta / pass / fail_reason
   - `capacity/connection_pool` 场景必须至少验证 probe success、active/capacity、
     waiters 与请求延迟；`recovery.execute` 返回成功但任一恢复信号未达标时必须
