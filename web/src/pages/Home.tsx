@@ -5,12 +5,15 @@ import {
   AlertTriangle,
   Bell,
   Database,
+  ExternalLink,
   FileSearch,
   Flame,
   Gauge,
   HardDrive,
   History,
+  LayoutDashboard,
   ListTree,
+  MessagesSquare,
   Network,
   Search,
   ShieldAlert,
@@ -30,6 +33,13 @@ import { useI18n } from '@/i18n/locale';
 // 偏哲学的（"Production is calm. So are you" / "Reset 之前先 Read"）
 // 撤掉了，节奏不像助理在跟你打招呼。
 type Greeting = { zh: string; en: string };
+type DemoEnvironment = {
+  href: string;
+  title: { zh: string; en: string };
+  description: { zh: string; en: string };
+  icon: typeof ShieldAlert;
+};
+
 const GREETINGS: Greeting[] = [
   { zh: '听候差遣', en: 'At your service.' },
   { zh: '随时待命', en: 'Ready when you are.' },
@@ -47,6 +57,36 @@ const GREETINGS: Greeting[] = [
   { zh: '想看看哪条线索？', en: 'Which lead first?' },
   { zh: '需要我先做些什么？', en: 'Where should I start?' },
   { zh: '随便问，我会给你一个起点', en: "Ask anything — I'll find a starting point." },
+];
+
+const DEMO_ENVIRONMENTS: DemoEnvironment[] = [
+  {
+    href: 'https://opskeeper.yueming.xin',
+    title: { zh: 'OpsKeeper 控制台', en: 'OpsKeeper console' },
+    description: {
+      zh: '事件、审批、审计、Trace 与运行状态一屏直达',
+      en: 'Incidents, approvals, audit, traces, and runtime status',
+    },
+    icon: ShieldAlert,
+  },
+  {
+    href: 'https://teams.yueming.xin/',
+    title: { zh: 'AgentTeams Dashboard', en: 'AgentTeams Dashboard' },
+    description: {
+      zh: '查看任务看板、插件与 Agent 协同过程',
+      en: 'Task board, plugins, and agent collaboration',
+    },
+    icon: LayoutDashboard,
+  },
+  {
+    href: 'https://rooms.yueming.xin',
+    title: { zh: 'AgentTeams Rooms', en: 'AgentTeams Rooms' },
+    description: {
+      zh: '进入协同房间，观察 Manager 与 Worker 的实时回报',
+      en: 'Collaboration rooms with live manager and worker updates',
+    },
+    icon: MessagesSquare,
+  },
 ];
 
 // PROMPT_POOL is the full set of starter prompts; sample 4 each render
@@ -316,6 +356,52 @@ export default function HomePage() {
               </div>
             )}
           </div>
+
+          <section aria-labelledby="demo-environments" className="mt-10">
+            <div className="mb-2.5 flex items-center gap-2">
+              <Flame size={14} className="text-orange-300" />
+              <h2
+                id="demo-environments"
+                className="text-sm font-semibold text-zinc-200"
+              >
+                {tr('决赛演示环境', 'Final demo environments')}
+              </h2>
+            </div>
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+              {DEMO_ENVIRONMENTS.map((environment) => {
+                const Icon = environment.icon;
+                return (
+                  <a
+                    key={environment.href}
+                    href={environment.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="group flex min-h-32 flex-col items-start gap-2 rounded-xl border border-zinc-800/60 bg-zinc-900/40 p-4 text-left transition-colors hover:border-zinc-700 hover:bg-zinc-900/60"
+                  >
+                    <span className="flex w-full items-center gap-2">
+                      <Icon
+                        size={15}
+                        className="text-zinc-400 transition-colors group-hover:text-zinc-200"
+                      />
+                      <span className="text-sm font-semibold text-zinc-100">
+                        {tr(environment.title.zh, environment.title.en)}
+                      </span>
+                    </span>
+                    <span className="flex-1 text-xs leading-relaxed text-zinc-400">
+                      {tr(
+                        environment.description.zh,
+                        environment.description.en,
+                      )}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-300 transition-colors group-hover:text-emerald-200">
+                      {tr('打开入口', 'Open')}
+                      <ExternalLink size={12} />
+                    </span>
+                  </a>
+                );
+              })}
+            </div>
+          </section>
         </div>
       </div>
     </main>
