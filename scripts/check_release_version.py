@@ -18,6 +18,7 @@ METADATA_PATHS = {
     "docs/PROVENANCE.md",
     "NOTICE.md",
     ".github/workflows/release.yml",
+    ".github/workflows/audit-open-source.yml",
 }
 
 
@@ -58,6 +59,14 @@ def main() -> int:
     require(manifest["version"] == expected_version, "manifest version drifted")
     require(manifest["release_tag"] == expected_tag, "manifest release tag drifted")
     require(manifest["release_candidate"] is True, "manifest release candidate flag drifted")
+    require(
+        manifest["release_baseline_ref"] == "main@47f57f77bf5217b6546fb0fd92c86b52d33a8e1c",
+        "manifest main baseline drifted",
+    )
+    require(
+        manifest["release_branch_head_at_signing"] == manifest["backend_commit"],
+        "manifest signing base drifted",
+    )
     require(root_version == expected_tag, "VERSION drifted from the release tag")
     require(re.fullmatch(r"[0-9a-f]{40}", manifest["backend_commit"]) is not None, "backend commit is invalid")
     require(manifest["repository"] == "https://github.com/vincent-wuhan/opskeeper", "manifest repository drifted")

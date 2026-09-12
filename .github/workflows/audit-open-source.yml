@@ -1,0 +1,26 @@
+name: Open source gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - release/20260922
+
+permissions:
+  contents: read
+
+concurrency:
+  group: open-source-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Audit public release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run admission audit
+        run: make audit-open-source
