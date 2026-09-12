@@ -176,6 +176,7 @@ func Start(t *testing.T, opts ...Option) *Env {
 		// need them get marked t.Skip via RequireSecret-style gates.
 		"OPSKEEPER_FRONTIER_DISABLED": "true",
 	}
+	managerEnv["OPSKEEPER_PAGES_DIR"] = filepath.Join(t.TempDir(), "pages")
 	for k, v := range cfg.extraEnv {
 		managerEnv[k] = v
 	}
