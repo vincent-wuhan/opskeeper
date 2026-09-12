@@ -3,7 +3,7 @@ import type { NavLink } from './site';
 export const SITE_ZH = {
   name: 'OpsKeeper',
   shortName: 'OpsKeeper',
-  tagline: '面向多智能体事件响应的可审计运维平台。',
+  tagline: '授权可控、全程可审计的多智能体运维事件响应平台。',
   description:
     'OpsKeeper 把告警接入、证据采集、根因分析、人工审批、窄域授权恢复、独立验证、事后复盘七个环节，串成同一条闭环。',
   url: 'https://opskeeper.dev',

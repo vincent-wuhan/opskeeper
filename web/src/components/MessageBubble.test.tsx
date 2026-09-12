@@ -1,6 +1,6 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MessageBubble, type ConfigDraftResult } from './MessageBubble';
 import type { ChatMessage } from '@/api/chat';
@@ -101,6 +101,10 @@ function toolCardMessage(draft: ConfigDraftResult): ChatMessage {
 }
 
 describe('MessageBubble config draft card', () => {
+  beforeEach(() => {
+    localStorage.setItem('opskeeper-locale', 'zh-CN');
+  });
+
   it('compacts persisted config confirmation user payloads', () => {
     const longConfirmation = [
       '确认应用这个配置草案。',
