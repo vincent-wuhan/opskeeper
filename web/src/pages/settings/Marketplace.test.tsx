@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import SettingsMarketplace from './Marketplace';
 import { SignatureBadge } from '@/components/marketplace/SignatureBadge';
+import { setLocale } from '@/i18n/locale';
 import { server } from '@/test/msw-server';
 import {
   etcdCapabilities,
@@ -34,6 +35,7 @@ const installedItemURL = (id: string) =>
 
 beforeEach(() => {
   mockRole = 'admin';
+  setLocale('zh-CN');
   server.use(http.get(secretsURL, () => HttpResponse.json({ items: [] })));
 });
 
