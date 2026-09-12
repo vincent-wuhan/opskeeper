@@ -173,6 +173,9 @@ export default function HomeZhPage() {
               <Button href="/zh/platform" variant="secondary">
                 查看闭环工作流
               </Button>
+              <Button href="/zh/demo" variant="ghost">
+                体验在线演示
+              </Button>
               <Button href="https://github.com/vincent-wuhan/opskeeper" variant="ghost" external>
                 在 GitHub 上加星
               </Button>
@@ -357,6 +360,9 @@ export default function HomeZhPage() {
             <div className="mt-8">
               <Button href="/zh/docs/getting-started" variant="secondary">
                 跑一遍演示
+              </Button>
+              <Button href="/zh/demo" variant="ghost">
+                进入公网环境
               </Button>
             </div>
           </div>

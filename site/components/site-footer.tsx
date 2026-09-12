@@ -10,6 +10,7 @@ const cols: { title: string; links: { label: string; href: string }[] }[] = [
       { label: 'Platform', href: '/platform' },
       { label: 'Worker roles', href: '/workers' },
       { label: 'Closed loop', href: '/platform#closed-loop' },
+      { label: 'Live demo', href: '/demo' },
       { label: 'Safety boundary', href: '/security' },
       { label: 'Roadmap', href: '/roadmap' },
       { label: 'Changelog', href: '/changelog' },
