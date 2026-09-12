@@ -28,7 +28,7 @@ const stats = [
 ];
 
 const principles = [
-  'The product layer (OpsKeeper) is what users see. The compliance layer (AgentTeams, OnGrid attribution) stays in NOTICE.md / TRADEMARK.md. The evolution layer (compatibility identifiers) is documented without becoming a brand claim.',
+  'The product layer (OpsKeeper) is what users see. Attribution stays in NOTICE.md / TRADEMARK.md. Compatibility identifiers are documented without becoming a brand claim.',
   'Reproducible incident fixtures ship in the repo — no customer data, no production telemetry, no credentials.',
   'The audit ledger, the safety boundary, and the closed-loop orchestrator are all in this repo and tested in CI.',
   'Plugins (agentteams-plugin-installer, opskeeper-teamharness) are first-party open source, not vendored binaries.',

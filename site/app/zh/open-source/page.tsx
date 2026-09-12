@@ -28,7 +28,7 @@ const stats = [
 ];
 
 const principles = [
-  '产品层（OpsKeeper）是用户能看到的；合规层（AgentTeams、OnGrid 归属）只在 NOTICE.md / TRADEMARK.md 中出现；演进层（兼容性标识符）作为文档记录，但不会成为品牌主张。',
+  '产品层（OpsKeeper）是用户能看到的；归属说明只在 NOTICE.md / TRADEMARK.md 中出现；兼容性标识符作为文档记录，但不会成为品牌主张。',
   '可复现的事件 fixture 全部随仓库发布 —— 不含任何客户数据、生产遥测或凭证。',
   '审计账本、安全边界、闭环编排器都在本仓库内，并在 CI 里被测试。',
   '插件（agentteams-plugin-installer、opskeeper-teamharness）是一方开源代码，不是 vendored 二进制。',

@@ -29,7 +29,7 @@ export default function TrademarkPage() {
         <p className="mt-3 text-ink-300">
           Do not use the OpsKeeper wordmark or logo to brand a modified or forked product
           without a separate written agreement. Do not use it in a way that implies
-          endorsement by AgentTeams, AgentTeams Dashboard, or OnGrid.
+          endorsement by any third-party project.
         </p>
 
         <h2 className="mt-10 text-xl font-semibold text-white">Brand assets license</h2>
