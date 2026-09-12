@@ -160,11 +160,14 @@ services:
       - opskeeper_net
 
   # ---------------------------------------------------------------------------
-  # agentteams-controller：占位镜像（ghcr.io/agentteams/controller:dev）
-  # 等官方 publish 后 image: ghcr.io/agentteams/controller:${AGENTTEAMS_CONTROLLER_TAG:-dev}
+  # AgentTeams Controller is optional until a published immutable image is
+  # available. The empty default keeps the default profile valid; enabling the
+  # agentteams profile without AGENTTEAMS_CONTROLLER_IMAGE fails closed.
   # ---------------------------------------------------------------------------
   agentteams-controller:
-    image: ${AGENTTEAMS_CONTROLLER_IMAGE:-ghcr.io/agentteams/controller:dev}
+    profiles:
+      - agentteams
+    image: ${AGENTTEAMS_CONTROLLER_IMAGE:-}
     container_name: agentteams-controller
     restart: unless-stopped
     depends_on:

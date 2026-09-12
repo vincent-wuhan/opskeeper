@@ -1,4 +1,4 @@
-# opskeeper Public Roadmap
+# OpsKeeper Public Roadmap
 
 > **面向社区与生态的公开版路线图。** 内部代号、内部 deadline、敏感商业信息均不在此出现。
 > 完整内部路线图（含 ADR / HLD 引用）见 `ROADMAP.md`（仓库维护者可见）。
@@ -7,11 +7,11 @@ _Last updated: 2026-08-26_
 
 ## 项目定位
 
-opskeeper 是一个面向 SRE / DevOps 团队的 AI Agent 系统：
+OpsKeeper 是一个面向 SRE / DevOps 团队的 AI Agent 系统：
 
 - **多源告警聚合 → 自动根因定位 → 修复建议生成 → 服务恢复验证 → 事故复盘** 全链路
 - 通过 `opskeeper-teamharness` 插件接入 [AgentTeams](https://github.com/agentscope-ai/AgentTeams) 生态
-- 后端 Apache-2.0（核心 opskeeper 二进制）；插件与团队模板同 LICENSE
+- 后端 Apache-2.0（核心 `opskeeper` 二进制）；插件与团队模板同 LICENSE
 
 ## 三大支柱
 
@@ -51,13 +51,13 @@ opskeeper 是一个面向 SRE / DevOps 团队的 AI Agent 系统：
 
 - ☐ 多 LLM 后端支持（vLLM / OpenAI / 阿里云 DashScope / Anthropic 共存）
 - ☐ AgentTeams `awesome-plugins` 生态清单 PR
-- ☐ Kubernetes Operator（CRD 化部署 opskeeper + plugin）
+- ☐ Kubernetes Operator（CRD 化部署 OpsKeeper + plugin）
 - ☐ Skill marketplace 公开版（基于 Nacos Config + Web UI）
 
 ## 不在公开路线图（社区外项目）
 
 - ❌ 内部代号 / 客户代号 / 商业合同相关 timeline
-- ❌ 内部 SRE 值班流程（仅 opskeeper-teamharness 决策表）
+- ❌ 内部 SRE 值班流程（仅 OpsKeeper TeamHarness 决策表）
 - ❌ 内部 SLO 数字 / 商业指标
 
 ## 如何参与

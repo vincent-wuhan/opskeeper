@@ -1,7 +1,11 @@
-# 集成指南：opskeeper × ops-keeper 路径 A 落地
+# 历史集成与迁移指南：opskeeper × ops-keeper 路径 A
 
-> **面向**：opskeeper / ops-keeper 用户、平台运维、SRE / DBA 负责人
-> **变更**：从单一项目升级到统一 AIOps 平台
+> **历史边界**：本文保留 `opskeeper` / `ops-keeper` 历史标识、兼容命令和数据
+> 映射，用于解释路径 A 迁移事实；它们不代表当前产品定位。当前产品是
+> **OpsKeeper**——AgentTeams 原生的多 Agent 事故诊断与安全执行平台。
+>
+> **面向**：opskeeper / ops-keeper 历史用户、平台运维、SRE / DBA 负责人
+> **变更**：历史项目集成（非当前通用 AIOps 演进方向）
 > **基础**：opskeeper（v1.0+）+ 集成 ops-keeper 中间件能力
 > **状态**：P0 文档（Task 3.8）
 > **关联**：

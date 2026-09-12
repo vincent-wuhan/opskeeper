@@ -159,7 +159,8 @@ services:
   # 注释启用即可:
   # ----------------------------------------------------------------------
   # agentteams-controller:
-  #   image: agentscope/agentteams-controller:latest
+  #   Set AGENTTEAMS_CONTROLLER_IMAGE to a verified repo@sha256 digest.
+  #   image: ${AGENTTEAMS_CONTROLLER_IMAGE:?set AGENTTEAMS_CONTROLLER_IMAGE to a verified immutable image}
   #   container_name: agentteams-controller
   #   environment:
   #     CONTROLLER_PORT: "8080"
