@@ -101,6 +101,11 @@ python3 mcp/server.py`}
 
       <h2 id="demos" className="scroll-mt-24">Demos</h2>
       <p>
+        If you want to inspect the hosted environment first, the{' '}
+        <Link href="/demo">live demo page</Link> links the OpsKeeper console, AgentTeams
+        Dashboard, and AgentTeams Element room used for the end-to-end demonstration.
+      </p>
+      <p>
         After seeding, run the verification harness scenarios to confirm the manager, critic, and
         verifier are wired correctly. Each scenario is a self-contained compose stack with a
         runner container:

@@ -95,6 +95,11 @@ python3 mcp/server.py`}
 
       <h2 id="demos" className="scroll-mt-24">演示</h2>
       <p>
+        如果想先体验公网环境，可以从{' '}
+        <Link href="/zh/demo">在线演示</Link> 进入 OpsKeeper 控制台、AgentTeams
+        Dashboard 和 AgentTeams Element 房间，查看端到端演示使用的三个联通入口。
+      </p>
+      <p>
         写入场景后，跑一遍验证 Harness，确认 Manager、critic、verifier 都正确接入。每个场景都是带
         runner 容器的独立 compose 栈：
       </p>
