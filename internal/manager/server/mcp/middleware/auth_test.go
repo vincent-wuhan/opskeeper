@@ -115,7 +115,7 @@ func TestAuthenticator_ResolveAndCache(t *testing.T) {
 func TestAuthenticator_ResolvesAgentTeamsServiceToken(t *testing.T) {
 	signer := auth.NewSigner("test-secret", time.Minute, time.Hour)
 	token, err := signer.SignAgentTeamsService(auth.AgentTeamsServiceClaims{
-		TenantID:     "goai-demo",
+		TenantID:     "open-source-test",
 		Service:      auth.AgentTeamsServiceName,
 		Worker:       auth.AgentTeamsWorkerForRole("investigator"),
 		Role:         "investigator",
@@ -129,7 +129,7 @@ func TestAuthenticator_ResolvesAgentTeamsServiceToken(t *testing.T) {
 	authenticator := NewAuthenticatorWithSigner(higress, nopLogger{}, signer)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/mcp", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("X-Opskeeper-Tenant", "goai-demo")
+	req.Header.Set("X-Opskeeper-Tenant", "open-source-test")
 
 	var resolved ResolvedIdentity
 	var caller tenantctx.Tenant
@@ -161,7 +161,7 @@ func TestAuthenticator_ResolvesAgentTeamsServiceToken(t *testing.T) {
 func TestAuthenticator_RejectsAgentTeamsTenantMismatch(t *testing.T) {
 	signer := auth.NewSigner("test-secret", time.Minute, time.Hour)
 	token, err := signer.SignAgentTeamsService(auth.AgentTeamsServiceClaims{
-		TenantID:     "goai-demo",
+		TenantID:     "open-source-test",
 		Service:      auth.AgentTeamsServiceName,
 		Worker:       auth.AgentTeamsWorkerForRole("investigator"),
 		Role:         "investigator",

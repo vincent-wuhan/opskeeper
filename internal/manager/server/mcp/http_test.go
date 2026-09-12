@@ -127,7 +127,7 @@ func TestAnnotateMCPSpanAddsSafeBusinessAttributes(t *testing.T) {
 	spanContext, span := tracerProvider.Tracer("opskeeper-test").Start(context.Background(), "mcp")
 	request := httptest.NewRequest(http.MethodPost, "/v1/mcp", nil).WithContext(tenantctx.With(spanContext, tenantctx.Tenant{
 		AgentTeams: &tenantctx.AgentTeamsIdentity{
-			TenantID: "goai-demo",
+			TenantID: "open-source-test",
 			Service:  "agentteams",
 			Worker:   "opskeeper-repairer",
 			Role:     "repairer",
@@ -160,7 +160,7 @@ func TestAnnotateMCPSpanAddsSafeBusinessAttributes(t *testing.T) {
 	}
 	for key, want := range map[string]string{
 		"opskeeper.tool.name":   "recovery.execute",
-		"opskeeper.tenant.id":   "goai-demo",
+		"opskeeper.tenant.id":   "open-source-test",
 		"opskeeper.worker.name": "opskeeper-repairer",
 		"opskeeper.worker.role": "repairer",
 		"opskeeper.audit.id":    "audit-889",

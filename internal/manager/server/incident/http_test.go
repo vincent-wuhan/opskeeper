@@ -60,8 +60,8 @@ func TestMetricsUserCannotOverrideTenant(t *testing.T) {
 }
 
 func TestMetricsDefaultTenantCanBeConfigured(t *testing.T) {
-	t.Setenv("OPSKEEPER_DEFAULT_INCIDENT_TENANT_ID", "goai-demo")
-	repository := &stubMetricsRepository{tenantID: "goai-demo"}
+	t.Setenv("OPSKEEPER_DEFAULT_INCIDENT_TENANT_ID", "open-source-test")
+	repository := &stubMetricsRepository{tenantID: "open-source-test"}
 	router := routerWithHandler(NewHandler(repository))
 	request := httptest.NewRequest(http.MethodGet, "/v1/incidents/metrics", nil)
 	request = request.WithContext(tenantctx.With(request.Context(), tenantctx.Tenant{
@@ -74,8 +74,8 @@ func TestMetricsDefaultTenantCanBeConfigured(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", recorder.Code, recorder.Body.String())
 	}
-	if repository.lastTenantID != "goai-demo" {
-		t.Fatalf("tenant = %q, want goai-demo", repository.lastTenantID)
+	if repository.lastTenantID != "open-source-test" {
+		t.Fatalf("tenant = %q, want open-source-test", repository.lastTenantID)
 	}
 }
 

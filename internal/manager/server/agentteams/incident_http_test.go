@@ -20,6 +20,8 @@ type linkedAlertResolver struct {
 	seenLimit int
 }
 
+const testTenantID = "open-source-test"
+
 func (resolver *linkedAlertResolver) ListIncidents(
 	_ context.Context,
 	filter alertbiz.IncidentFilter,
@@ -39,7 +41,7 @@ func (resolver *linkedAlertResolver) SystemResolveIncident(
 }
 
 func TestRecordIncidentEventClosesLinkedAlert(t *testing.T) {
-	t.Setenv("OPSKEEPER_DEFAULT_INCIDENT_TENANT_ID", "goai-demo")
+	t.Setenv("OPSKEEPER_DEFAULT_INCIDENT_TENANT_ID", testTenantID)
 	recorder := &memIncidentRecorder{}
 	resolver := &linkedAlertResolver{
 		incidents: []*alertmodel.Incident{{
@@ -96,8 +98,8 @@ func TestRecordIncidentEventClosesLinkedAlert(t *testing.T) {
 		t.Fatalf("event count = %d, want %d", len(events), len(stages))
 	}
 	for _, event := range events {
-		if event.TenantID != "goai-demo" {
-			t.Fatalf("tenant = %q, want goai-demo", event.TenantID)
+		if event.TenantID != testTenantID {
+			t.Fatalf("tenant = %q, want %s", event.TenantID, testTenantID)
 		}
 	}
 	if len(resolver.resolved) != 1 || resolver.resolved[0] != "pg-pool-exhaustion" {
@@ -118,7 +120,7 @@ func TestRecordIncidentEventRejectsFutureOccurredAt(t *testing.T) {
 	)
 	request := httptest.NewRequest(http.MethodPost, "/v1/incidents/events", bytes.NewReader([]byte(body)))
 	context := mcpauth.WithTraceContext(
-		mcpauth.WithIdentity(request.Context(), mcpauth.ResolvedIdentity{Role: "alerter", TenantID: "goai-demo"}),
+		mcpauth.WithIdentity(request.Context(), mcpauth.ResolvedIdentity{Role: "alerter", TenantID: testTenantID}),
 		mcpauth.TraceContext{TraceID: "0123456789abcdef0123456789abcdef"},
 	)
 	*request = *request.WithContext(context)
@@ -143,7 +145,7 @@ func TestRecordIncidentEventRejectsInvalidRecoverySignal(t *testing.T) {
 	}
 	for _, test := range tests {
 		request := httptest.NewRequest(http.MethodPost, "/v1/incidents/events", bytes.NewReader([]byte(test.body)))
-		identity := mcpauth.ResolvedIdentity{Role: test.role, TenantID: "goai-demo"}
+		identity := mcpauth.ResolvedIdentity{Role: test.role, TenantID: testTenantID}
 		context := mcpauth.WithTraceContext(
 			mcpauth.WithIdentity(request.Context(), identity),
 			mcpauth.TraceContext{TraceID: "0123456789abcdef0123456789abcdef"},
