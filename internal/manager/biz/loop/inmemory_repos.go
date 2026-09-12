@@ -74,7 +74,13 @@ func (r *InMemoryEventRepo) ReadEvents(_ context.Context, tenantID, incidentID s
 		out = append(out, *e)
 	}
 	sort.Slice(out, func(i, j int) bool {
-		return out[i].CreatedAt.Before(out[j].CreatedAt)
+		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
+			return out[i].CreatedAt.Before(out[j].CreatedAt)
+		}
+		if out[i].ID != out[j].ID {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].IdempotencyKey < out[j].IdempotencyKey
 	})
 	return out, nil
 }
