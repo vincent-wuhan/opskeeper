@@ -18,10 +18,14 @@ mkdir -p dist
 OUT_DIR="$PLUGIN_DIR/dist" ruby adapters/qwenpaw/scripts/build-qwenpaw-plugin.rb plugin.yaml
 rm -f "$BASE_PACKAGE"
 rm -f "$DASHBOARD_PACKAGE"
+TAR_OWNER_ARGS=()
+if tar --version 2>/dev/null | grep -q '^tar (GNU'; then
+  TAR_OWNER_ARGS=(--owner=0 --group=0 --numeric-owner)
+else
+  TAR_OWNER_ARGS=(--uname 0 --gname 0 --numeric-owner)
+fi
 tar \
-  --uname 0 \
-  --gname 0 \
-  --numeric-owner \
+  "${TAR_OWNER_ARGS[@]}" \
   --exclude '.DS_Store' \
   --exclude '__pycache__' \
   --exclude '*.pyc' \
