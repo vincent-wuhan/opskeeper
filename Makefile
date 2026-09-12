@@ -47,7 +47,7 @@ help: ## 列出全部 target
 # build
 # ----------------------------------------------------------------------------
 
-.PHONY: build build-opskeeper build-opskeeper-edge build-plugins test-plugins verify-plugins audit-open-source
+.PHONY: build build-opskeeper build-opskeeper-edge build-plugins test-plugins verify-plugins audit-open-source version-check
 build: build-opskeeper build-opskeeper-edge ## 构建 opskeeper 与 opskeeper-edge
 
 build-opskeeper: ## 构建云端 opskeeper
@@ -70,8 +70,12 @@ test-plugins: ## 运行插件测试
 	$(PYTHON) -m pytest plugins/opskeeper-teamharness
 
 verify-plugins: build-plugins test-plugins ## 构建、测试并校验插件发布包
+	$(MAKE) version-check
 	$(PYTHON) scripts/verify_release.py
 	python3 scripts/audit_open_source.py
+
+version-check: ## 校验发布元数据与源码/插件版本一致
+	python3 scripts/check_release_version.py
 
 # ----------------------------------------------------------------------------
 # test

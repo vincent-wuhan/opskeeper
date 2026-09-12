@@ -45,3 +45,9 @@ A release may be tagged only when:
 3. the public repository remains `vincent-wuhan/opskeeper`;
 4. release metadata and acknowledgments are final;
 5. the resulting tag is verified from the public remote before packages are distributed.
+
+## Code-derivation review record (2026-09-12)
+
+The admission audit passed over 1,994 auditable text files at `d659b022bcc6f5d286050fdcc3fd216504779033`. OnGrid references were confined to the six approved compliance and acknowledgment files. The public site and runtime sources contained no private demo tenant, public demo address, private path, hard credential shape, or event-delivery language outside this allowlisted governance record.
+
+The repository remains an independently maintained OpsKeeper implementation. Historical inspiration from OnGrid is acknowledged, but no claim is made that this distribution derives from, redistributes, or is endorsed by OnGrid.
