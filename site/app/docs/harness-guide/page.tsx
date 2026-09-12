@@ -75,7 +75,7 @@ make harness-down`}
 
 import (
   "testing"
-  "github.com/louloulin/opskeeper/harness"
+  "github.com/vincent-wuhan/opskeeper/harness"
 )
 
 func TestRecoveryAppliesOnlyApprovedPayloadHash(t *testing.T) {

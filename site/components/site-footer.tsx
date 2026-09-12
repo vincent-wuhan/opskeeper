@@ -33,8 +33,8 @@ const cols: { title: string; links: { label: string; href: string }[] }[] = [
       { label: 'Brand assets', href: '/brand' },
       { label: 'Security policy', href: '/security' },
       { label: 'Trademark', href: '/trademark' },
-      { label: 'License', href: 'https://github.com/louloulin/opskeeper/blob/main/LICENSE' },
-      { label: 'Code of conduct', href: 'https://github.com/louloulin/opskeeper/blob/main/CODE_OF_CONDUCT.md' },
+      { label: 'License', href: 'https://github.com/vincent-wuhan/opskeeper/blob/main/LICENSE' },
+      { label: 'Code of conduct', href: 'https://github.com/vincent-wuhan/opskeeper/blob/main/CODE_OF_CONDUCT.md' },
     ],
   },
 ];

@@ -109,7 +109,7 @@ const safetyItems = [
 ];
 
 const codeSnippet = `# Clone and bring up the full local stack (repo-root compose)
-git clone https://github.com/louloulin/opskeeper.git
+git clone https://github.com/vincent-wuhan/opskeeper.git
 cd opskeeper
 cp deploy/demo.env.example .env
 docker compose up -d --build
@@ -174,7 +174,7 @@ export default function HomePage() {
               <Button href="/platform" variant="secondary">
                 How the closed loop works
               </Button>
-              <Button href="https://github.com/louloulin/opskeeper" variant="ghost" external>
+              <Button href="https://github.com/vincent-wuhan/opskeeper" variant="ghost" external>
                 Star on GitHub
               </Button>
             </div>
@@ -418,7 +418,7 @@ export default function HomePage() {
             <div className="mt-6 flex flex-wrap gap-3">
               <Button href="/docs/getting-started">Get started</Button>
               <Button href="/use-cases" variant="secondary">See use cases</Button>
-              <Button href="https://github.com/louloulin/opskeeper" variant="ghost" external>
+              <Button href="https://github.com/vincent-wuhan/opskeeper" variant="ghost" external>
                 View on GitHub
               </Button>
             </div>

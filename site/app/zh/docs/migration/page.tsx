@@ -71,7 +71,7 @@ opskeeper-migrate export \\
 
       <h2 id="help">求助</h2>
       <p>
-        在 <a href="https://github.com/louloulin/opskeeper/issues">github.com/louloulin/opskeeper/issues</a>{' '} 上开一个带 <code>migration</code> 标签的 issue，并附上 <code>opskeeper-migrate --help</code> 的输出。
+        在 <a href="https://github.com/vincent-wuhan/opskeeper/issues">github.com/vincent-wuhan/opskeeper/issues</a>{' '} 上开一个带 <code>migration</code> 标签的 issue，并附上 <code>opskeeper-migrate --help</code> 的输出。
       </p>
     </>
   );

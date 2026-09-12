@@ -39,7 +39,7 @@ const contributingTracks = [
     icon: Code2,
     title: '代码',
     desc: 'Bug 修复、新技能、新 Worker 角色、新 MCP 工具。Harness 会验证你的改动没有让闭环退化。',
-    cta: { label: 'CONTRIBUTING.md', href: 'https://github.com/louloulin/opskeeper/blob/main/CONTRIBUTING.md' },
+    cta: { label: 'CONTRIBUTING.md', href: 'https://github.com/vincent-wuhan/opskeeper/blob/main/CONTRIBUTING.md' },
   },
   {
     icon: Sparkles,
@@ -70,7 +70,7 @@ export default function OpenSourceZhPage() {
             OpsKeeper 选择开源，因为可审计的事件响应不该成为专有锁。代码、插件、文档、可复现的事件 fixture 全部公开在 GitHub 仓库里。
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button href="https://github.com/louloulin/opskeeper" external>
+            <Button href="https://github.com/vincent-wuhan/opskeeper" external>
               在 GitHub 上查看
             </Button>
             <Button href="/zh/brand" variant="secondary">

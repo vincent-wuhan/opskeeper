@@ -63,7 +63,7 @@ const groups: { title: string; items: { q: string; a: string }[] }[] = [
     items: [
       {
         q: 'OpsKeeper 是开源的吗？',
-        a: '是的 —— Apache-2.0 协议。源码、插件代码、可复现的事件 fixture 全部公开在 github.com/louloulin/opskeeper。',
+        a: '是的 —— Apache-2.0 协议。源码、插件代码、可复现的事件 fixture 全部公开在 github.com/vincent-wuhan/opskeeper。',
       },
       {
         q: '我能用我自己的品牌跑一个 fork 版吗？',

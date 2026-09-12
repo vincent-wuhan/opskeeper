@@ -190,7 +190,7 @@ export default function UseCasesZhPage() {
             目录里的四个 PG 场景都是这样贡献出来的。
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button href="https://github.com/louloulin/opskeeper/blob/main/CONTRIBUTING.md" external>
+            <Button href="https://github.com/vincent-wuhan/opskeeper/blob/main/CONTRIBUTING.md" external>
               贡献指南
             </Button>
             <Link
