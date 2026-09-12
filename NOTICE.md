@@ -10,4 +10,4 @@ Third-party dependencies and assets remain under their respective licenses. Sour
 
 ## Release v2026.09.13-rc1 provenance
 
-Release identity and source bindings are recorded in `RELEASE_VERSION.json`. The release candidate binds backend source commit `d659b022bcc6f5d286050fdcc3fd216504779033`, TeamHarness `1.0.42`, and the web source tree recorded by Git metadata.
+Release identity and source bindings are recorded in `RELEASE_VERSION.json`. The release candidate binds backend source commit `e96e9a7e0f54aadd2df2f05eff73b6d979aebe08`, TeamHarness `1.0.42`, and the web source tree recorded by Git metadata.
