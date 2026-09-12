@@ -24,7 +24,7 @@ export default function TrademarkZhPage() {
 
         <h2 className="mt-10 text-xl font-semibold text-white">受限使用</h2>
         <p className="mt-3 text-ink-300">
-          未经单独书面同意，不得用 OpsKeeper wordmark 或 logo 为修改版或 fork 版本打品牌。也不得以暗示 AgentTeams / AgentTeams Dashboard / OnGrid 背书的方式使用。
+          未经单独书面同意，不得用 OpsKeeper wordmark 或 logo 为修改版或 fork 版本打品牌。也不得以暗示第三方项目背书的方式使用。
         </p>
 
         <h2 className="mt-10 text-xl font-semibold text-white">品牌资产许可证</h2>

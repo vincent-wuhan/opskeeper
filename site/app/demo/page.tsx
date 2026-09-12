@@ -6,7 +6,7 @@ import { DEMO_URLS } from '@/lib/demos';
 export const metadata = {
   title: 'Live demos',
   description:
-    'Explore the OpsKeeper console, AgentTeams Dashboard, and AgentTeams Element environments used for the end-to-end competition demonstration.',
+    'Explore the OpsKeeper console, AgentTeams Dashboard, and AgentTeams Element environments in an end-to-end operational demonstration.',
 };
 
 const demos = [
@@ -42,7 +42,7 @@ export default function DemoPage() {
       <SectionHeader
         eyebrow="Live demo"
         title="One incident, three connected views."
-        description="These hosted environments are also used for the GOAI Agent Infra final demonstration. Data may be reset between rehearsal runs."
+        description="These hosted environments support guided operational rehearsals. Data may be reset between runs."
       />
       <div className="mt-12 grid gap-4 md:grid-cols-3">
         {demos.map((demo) => (

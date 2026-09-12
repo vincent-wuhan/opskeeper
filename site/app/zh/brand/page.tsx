@@ -29,7 +29,7 @@ const doList = [
 const dontList = [
   '不要重画图标、不要为非 Accent/Ink 组合重新上色、不要拉伸变形。',
   '不要把标志直接放在杂乱的图片上，需要先垫一层纯色蒙版。',
-  '不要以暗示 AgentTeams 或 OnGrid 背书的方式使用 OpsKeeper 名称。',
+  '不要以暗示第三方背书的方式使用 OpsKeeper 名称。',
 ];
 
 export default function BrandZhPage() {

@@ -42,7 +42,7 @@ export default function DemoZhPage() {
       <SectionHeader
         eyebrow="在线演示"
         title="一个事件，三个联通视角。"
-        description="这组公网环境也是 GOAI Agent Infra 决赛演示环境，演练期间数据可能被重置。"
+        description="这组公网环境支持完整演练，演练期间数据可能被重置。"
       />
       <div className="mt-12 grid gap-4 md:grid-cols-3">
         {demos.map((demo) => (

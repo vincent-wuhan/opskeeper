@@ -29,7 +29,7 @@ const doList = [
 const dontList = [
   'Don\'t recreate the icon, recolor it for non-Accent/Ink combinations, or skew it.',
   'Don\'t place the mark on busy imagery without a solid scrim.',
-  'Don\'t use the OpsKeeper name in a way that implies endorsement by AgentTeams or OnGrid.',
+  'Don\'t use the OpsKeeper name in a way that implies third-party endorsement.',
 ];
 
 export default function BrandPage() {

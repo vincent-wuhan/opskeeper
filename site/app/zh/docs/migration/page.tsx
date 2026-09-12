@@ -11,7 +11,7 @@ export default function MigrationZhPage() {
         </div>
         <h1>迁移</h1>
         <p>
-          从更早的 OnGrid 系安装迁移到当前 OpsKeeper。权威指南是 <code>docs/migration/opskeeper-user-transition.md</code>。
+          从更早的旧版本安装迁移到当前 OpsKeeper。权威指南是 <code>docs/migration/opskeeper-user-transition.md</code>。
         </p>
       </header>
 

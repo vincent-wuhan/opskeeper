@@ -11,8 +11,8 @@ export default function MigrationPage() {
         </div>
         <h1>Migration</h1>
         <p>
-          Migrate to current OpsKeeper from earlier OnGrid-lineage installations. The
-          authoritative guide is <code>docs/migration/opskeeper-user-transition.md</code>.
+          Migrate to current OpsKeeper from earlier legacy installations. The authoritative
+          guide is <code>docs/migration/opskeeper-user-transition.md</code>.
         </p>
       </header>
 
