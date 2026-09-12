@@ -10,6 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 METADATA_PATHS = {
+    "CHANGELOG.md",
     "RELEASE_VERSION.json",
     "VERSION",
     "Makefile",
@@ -68,6 +69,10 @@ def main() -> int:
         "manifest signing base drifted",
     )
     require(root_version == expected_tag, "VERSION drifted from the release tag")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    require(f"## {expected_version} — 2026-09-13" in changelog, "release changelog entry is missing")
+    require(manifest["backend_commit"] in changelog, "release changelog backend binding is missing")
+    require(manifest["teamharness_version"] in changelog, "release changelog plugin binding is missing")
     require(re.fullmatch(r"[0-9a-f]{40}", manifest["backend_commit"]) is not None, "backend commit is invalid")
     require(manifest["repository"] == "https://github.com/vincent-wuhan/opskeeper", "manifest repository drifted")
     require(manifest["license"] == "Apache-2.0", "manifest license drifted")
