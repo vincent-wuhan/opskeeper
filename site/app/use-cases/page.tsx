@@ -191,7 +191,7 @@ export default function UseCasesPage() {
             The four PG scenarios in the catalog were all contributed this way.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button href="https://github.com/louloulin/opskeeper/blob/main/CONTRIBUTING.md" external>
+            <Button href="https://github.com/vincent-wuhan/opskeeper/blob/main/CONTRIBUTING.md" external>
               Contributing guide
             </Button>
             <Link

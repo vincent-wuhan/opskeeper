@@ -21,9 +21,9 @@ import { CodeBlock } from '@/components/code-block';
 import { TechMarquee } from '@/components/tech-marquee';
 
 export const metadata = {
-  title: '面向多智能体事件响应的可审计运维平台',
+  title: 'OpsKeeper：授权可控、全程可审计的多智能体运维事件响应平台',
   description:
-    'OpsKeeper 是面向多智能体事件响应的可审计运维平台。闭环式 告警 → 证据 → RCA → 审批 → 恢复 → 验证 → 复盘。',
+    'OpsKeeper 是授权可控、全程可审计的多智能体运维事件响应平台。闭环式 告警 → 证据 → RCA → 提案 → 人工审批 → 窄域授权恢复 → 独立验证 → 审计复盘。',
 };
 
 const phases = [
@@ -109,7 +109,7 @@ const safetyItems = [
 ];
 
 const codeSnippet = `# 克隆仓库，用根目录 compose 拉起整套本地环境
-git clone https://github.com/louloulin/opskeeper.git
+git clone https://github.com/vincent-wuhan/opskeeper.git
 cd opskeeper
 cp deploy/demo.env.example .env
 docker compose up -d --build
@@ -152,9 +152,9 @@ export default function HomeZhPage() {
               v2026.09.03 · Apache-2.0 · 开源
             </div>
             <h1 className="text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl md:text-6xl">
-              让多智能体事件响应{' '}
+              授权可控、全程可审计的{' '}
               <span className="bg-gradient-to-br from-white to-accent-300 bg-clip-text text-transparent">
-                全程可审计
+                多智能体运维事件响应平台
               </span>
             </h1>
             <p className="mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-ink-300">
@@ -173,7 +173,7 @@ export default function HomeZhPage() {
               <Button href="/zh/platform" variant="secondary">
                 查看闭环工作流
               </Button>
-              <Button href="https://github.com/louloulin/opskeeper" variant="ghost" external>
+              <Button href="https://github.com/vincent-wuhan/opskeeper" variant="ghost" external>
                 在 GitHub 上加星
               </Button>
             </div>
@@ -415,7 +415,7 @@ export default function HomeZhPage() {
             <div className="mt-6 flex flex-wrap gap-3">
               <Button href="/zh/docs/getting-started">快速开始</Button>
               <Button href="/zh/use-cases" variant="secondary">查看应用场景</Button>
-              <Button href="https://github.com/louloulin/opskeeper" variant="ghost" external>
+              <Button href="https://github.com/vincent-wuhan/opskeeper" variant="ghost" external>
                 在 GitHub 上查看
               </Button>
             </div>

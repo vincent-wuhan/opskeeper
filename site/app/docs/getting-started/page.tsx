@@ -30,7 +30,7 @@ export default function GettingStartedPage() {
       <h2 id="install">1. Install</h2>
       <p>Clone the repo and bring up the local stack from the repo root:</p>
       <CodeBlock language="bash" title="bootstrap">
-        {`git clone https://github.com/louloulin/opskeeper.git
+        {`git clone https://github.com/vincent-wuhan/opskeeper.git
 cd opskeeper
 cp deploy/demo.env.example .env
 

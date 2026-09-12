@@ -39,7 +39,7 @@ const contributingTracks = [
     icon: Code2,
     title: 'Code',
     desc: 'Bug fixes, new skills, new worker roles, new MCP tools. The harness verifies your change did not regress the closed loop.',
-    cta: { label: 'CONTRIBUTING.md', href: 'https://github.com/louloulin/opskeeper/blob/main/CONTRIBUTING.md' },
+    cta: { label: 'CONTRIBUTING.md', href: 'https://github.com/vincent-wuhan/opskeeper/blob/main/CONTRIBUTING.md' },
   },
   {
     icon: Sparkles,
@@ -72,7 +72,7 @@ export default function OpenSourcePage() {
             incident fixtures all live in the public repo.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Button href="https://github.com/louloulin/opskeeper" external>
+            <Button href="https://github.com/vincent-wuhan/opskeeper" external>
               View on GitHub
             </Button>
             <Button href="/brand" variant="secondary">

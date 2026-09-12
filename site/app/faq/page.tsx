@@ -63,7 +63,7 @@ const groups: { title: string; items: { q: string; a: string }[] }[] = [
     items: [
       {
         q: 'Is OpsKeeper open source?',
-        a: 'Yes — Apache-2.0. Source, plugin code, and reproducible incident fixtures all live in the public repo at github.com/louloulin/opskeeper.',
+        a: 'Yes — Apache-2.0. Source, plugin code, and reproducible incident fixtures all live in the public repo at github.com/vincent-wuhan/opskeeper.',
       },
       {
         q: 'Can I run a forked version under my own brand?',

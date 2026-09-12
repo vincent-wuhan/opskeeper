@@ -28,7 +28,7 @@ export default function GettingStartedZhPage() {
       <h2 id="install">1. 安装</h2>
       <p>克隆仓库，在仓库根目录启动本地环境：</p>
       <CodeBlock language="bash" title="bootstrap">
-        {`git clone https://github.com/louloulin/opskeeper.git
+        {`git clone https://github.com/vincent-wuhan/opskeeper.git
 cd opskeeper
 cp deploy/demo.env.example .env
 

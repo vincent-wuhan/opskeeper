@@ -74,7 +74,7 @@ opskeeper-migrate export \\
 
       <h2 id="help">Help</h2>
       <p>
-        File an issue at <a href="https://github.com/louloulin/opskeeper/issues">github.com/louloulin/opskeeper/issues</a>{' '}
+        File an issue at <a href="https://github.com/vincent-wuhan/opskeeper/issues">github.com/vincent-wuhan/opskeeper/issues</a>{' '}
         with the <code>migration</code> label and the output of <code>opskeeper-migrate --help</code>.
       </p>
     </>

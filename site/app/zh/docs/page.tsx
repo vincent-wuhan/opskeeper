@@ -16,7 +16,7 @@ export default function DocsIntroZhPage() {
         </div>
         <h1>欢迎使用 OpsKeeper</h1>
         <p>
-          OpsKeeper 是面向多智能体事件响应的可审计运维平台。本文档会带你了解如何运行它、如何扩展它，以及闭环是如何把可变更动作关在人工控制范围内的。
+          OpsKeeper 是授权可控、全程可审计的多智能体运维事件响应平台。本文档会带你了解如何运行它、如何扩展它，以及闭环是如何把变更动作关在提案、人工审批和审计留痕范围内的。
         </p>
         <div className="not-prose mt-6 flex flex-wrap gap-3">
           <Link
