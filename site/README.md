@@ -66,7 +66,7 @@ of choice.
 The cleanest path is the Vercel GitHub integration:
 
 1. Push the branch (e.g. `agent/devbox1/3685b1c9c3ad` or a fresh `feat/site`) to GitHub.
-2. In the Vercel dashboard → **Add New Project** → import `louloulin/opskeeper`.
+2. In the Vercel dashboard → **Add New Project** → import `vincent-wuhan/opskeeper`.
 3. Set **Root Directory** to `site` (the repo also contains Go services at the root, so
    Vercel needs to know where the Next.js project lives).
 4. Framework preset auto-detects as **Next.js**. The shipped `site/vercel.json` pins the

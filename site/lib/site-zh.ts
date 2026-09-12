@@ -8,7 +8,7 @@ export const SITE_ZH = {
     'OpsKeeper 把告警接入、证据采集、根因分析、人工审批、窄域授权恢复、独立验证、事后复盘七个环节，串成同一条闭环。',
   url: 'https://opskeeper.dev',
   repo: 'https://github.com/vincent-wuhan/opskeeper',
-  repoShort: 'louloulin/opskeeper',
+  repoShort: 'vincent-wuhan/opskeeper',
   license: 'Apache-2.0',
   version: '0.6.0',
 } as const;
