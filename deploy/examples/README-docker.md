@@ -4,7 +4,7 @@
 
 让运维在**单台 Linux/Mac 机器**上一键拉起:
 
-- opskeeper Manager (opskeeper 二进制) — 提供 `/v1/plugins/*` REST API
+- OpsKeeper Manager (`opskeeper` 二进制) — 提供 `/v1/plugins/*` REST API
 - 2 个 qwenpaw worker (mock FastAPI runtime) — 注册 opskeeper-teamharness 4 个 HTTP 端点
 - (可选) AgentTeams Controller — 切换 `controller-discovery` mode 自动发现 worker
 
@@ -15,7 +15,8 @@
 ### 2.1 启动栈
 
 ```bash
-cd opskeeper-v2
+git clone https://github.com/vincent-wuhan/opskeeper.git opskeeper
+cd opskeeper
 
 # 启动 opskeeper-manager + 2 个 worker
 docker compose -f deploy/docker-compose.agentteams.yml up -d --build

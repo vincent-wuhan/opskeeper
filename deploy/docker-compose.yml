@@ -291,7 +291,7 @@ services:
   # response. Zero API key, zero quota. Only docker-internal port 8080
   # — manager reaches it at http://searxng:8080/search?q=...&format=json.
   searxng:
-    image: searxng/searxng:latest
+    image: ${SEARXNG_IMAGE:?set SEARXNG_IMAGE to a verified immutable image}
     container_name: opskeeper-searxng
     restart: unless-stopped
     environment:
