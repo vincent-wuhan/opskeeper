@@ -165,7 +165,7 @@ func TestHarness_RegressionDetection_15PercentDrop(t *testing.T) {
 	if r.Severity != leaderboard.SeverityBlock {
 		t.Errorf("Severity = %q, want block (15%% drop)", r.Severity)
 	}
-	if !r.DropPercent >= 14.9 || r.DropPercent > 15.1 {
+	if r.DropPercent < 14.9 || r.DropPercent > 15.1 {
 		t.Errorf("DropPercent = %f, want ~15.0", r.DropPercent)
 	}
 }
