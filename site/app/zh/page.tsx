@@ -152,7 +152,7 @@ export default function HomeZhPage() {
               v2026.09.03 · Apache-2.0 · 开源
             </div>
             <h1 className="text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl md:text-6xl">
-              让多智能体事件响应{' '}
+              OpsKeeper 让多智能体运维事件响应{' '}
               <span className="bg-gradient-to-br from-white to-accent-300 bg-clip-text text-transparent">
                 全程可审计
               </span>
