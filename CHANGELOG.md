@@ -4,9 +4,12 @@
 
 ## 2026.09.13-rc1 — 2026-09-13
 
-- Bind the release candidate to backend source `e96e9a7e0f54aadd2df2f05eff73b6d979aebe08`, TeamHarness `1.0.42`, installer plugin `1.4.2`, and the web source tree recorded in `RELEASE_VERSION.json`.
+- Bind the release candidate to backend source `807b987e3c5134bd796802bf53dbba825e705d48`, TeamHarness `1.0.42`, installer plugin `1.4.2`, and the web source tree recorded in `RELEASE_VERSION.json`.
 - Add `make version-check` to verify release, VERSION, plugin, web, TeamHarness, and backend source bindings before package verification.
 - Make in-memory loop event ordering deterministic when events share a timestamp.
+- Fix E2E regression drop accounting and isolate the hosted-pages directory between runs.
+- Add an opt-in live AgentTeams E2E validation runner for endpoint-backed validation.
+- Harden public Docker quickstart reproducibility with versioned local images and current repository naming.
 - Add a dedicated open-source gate workflow for pull requests, `main`, and `release/20260922`.
 - Complete the TeamHarness 1.0.39–1.0.42 hardening path: proposal-bound recovery, incident evidence recording, safe Tempo business attributes, unified read-only allowlists, reporter knowledge persistence, and reporter incident closure.
 - Remove public-site legacy naming, private demo identifiers, and environment-specific screenshot helper paths from the open-source release.

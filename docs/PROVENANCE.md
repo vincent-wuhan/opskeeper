@@ -18,4 +18,4 @@ Every public release records its source scope in `RELEASE_VERSION.json` and iden
 
 ## Release v2026.09.13-rc1 provenance
 
-`RELEASE_VERSION.json` binds the release candidate to backend source commit `e96e9a7e0f54aadd2df2f05eff73b6d979aebe08`, TeamHarness `1.0.42`, installer plugin `1.4.2`, and web Git tree `fdf7d7332162fe240c608087d63eb1b4ac9b0e4a`. The tagged release commit may add only release metadata, documentation, or release verification tooling and must descend from that backend source commit.
+`RELEASE_VERSION.json` binds the release candidate to backend source commit `807b987e3c5134bd796802bf53dbba825e705d48`, TeamHarness `1.0.42`, installer plugin `1.4.2`, and web Git tree `fdf7d7332162fe240c608087d63eb1b4ac9b0e4a`. The tagged release commit may add only release metadata, documentation, or release verification tooling and must descend from that backend source commit.
