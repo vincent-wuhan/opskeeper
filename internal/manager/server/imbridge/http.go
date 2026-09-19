@@ -23,9 +23,7 @@ import (
 	"log/slog"
 )
 
-// requireAdmin gates all /v1/im/apps routes — IM app config is
-// platform-wide and exposes app_secret / encryption keys, so even read
-// access is admin-only. Returns false after writing the error.
+// requireAdmin gates mutating /v1/im/apps routes and secret reveal.
 func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	t, ok := tenantctx.From(r.Context())
 	if !ok {
@@ -34,6 +32,15 @@ func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	}
 	if t.Role != iammodel.RoleAdmin {
 		http.Error(w, errs.ErrForbidden.Error(), errs.HTTPStatus(errs.ErrForbidden))
+		return false
+	}
+	return true
+}
+
+func requireAuthenticated(w http.ResponseWriter, r *http.Request) bool {
+	_, ok := tenantctx.From(r.Context())
+	if !ok {
+		http.Error(w, errs.ErrUnauthorized.Error(), errs.HTTPStatus(errs.ErrUnauthorized))
 		return false
 	}
 	return true
@@ -367,7 +374,7 @@ func (p appPayload) toInput() bizbridge.AppInput {
 }
 
 func (h *Handler) listApps(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requireAuthenticated(w, r) {
 		return
 	}
 	provider := r.URL.Query().Get("provider")
@@ -384,7 +391,7 @@ func (h *Handler) listApps(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getApp(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requireAuthenticated(w, r) {
 		return
 	}
 	id, ok := parseIDFromURL(r)

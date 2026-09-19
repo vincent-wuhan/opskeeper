@@ -24,7 +24,7 @@ const notoSC = Noto_Sans_SC({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://opskeeper.dev'),
+  metadataBase: new URL('https://opskeeper.yueming.xin'),
   title: {
     default: 'OpsKeeper — Auditable multi-agent incident response',
     template: '%s · OpsKeeper',
@@ -46,7 +46,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     locale: 'en_US',
-    url: 'https://opskeeper.dev',
+    url: 'https://opskeeper.yueming.xin',
     siteName: 'OpsKeeper',
     title: 'OpsKeeper — Auditable multi-agent incident response',
     description:
@@ -56,13 +56,6 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     title: 'OpsKeeper — Auditable multi-agent incident response',
     description: 'Closed-loop incident response with a safety boundary.',
-  },
-  alternates: {
-    canonical: '/',
-    languages: {
-      en: '/',
-      'zh-CN': '/zh',
-    },
   },
   category: 'technology',
 };

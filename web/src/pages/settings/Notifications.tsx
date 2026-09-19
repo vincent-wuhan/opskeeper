@@ -26,6 +26,7 @@ import {
 import { ApiError } from '@/api/client';
 import type { IconType } from '@/lib/icon';
 import { useI18n } from '@/i18n/locale';
+import { usePermissions } from '@/store/me';
 
 // One IM type ↔ one card. Order = display order on the page.
 //
@@ -127,6 +128,7 @@ type Toast = { kind: 'ok' | 'err'; text: string } | null;
 
 export default function SettingsNotifications() {
   const { tr, locale } = useI18n();
+  const { isAdmin } = usePermissions();
   const orderedCards = useMemo(() => orderCardsByLocale(locale), [locale]);
   const [items, setItems] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
@@ -237,6 +239,7 @@ export default function SettingsNotifications() {
               channels={grouped.get(meta.type) ?? []}
               testingId={testingId}
               testResult={testResult}
+              canManage={isAdmin}
               onAdd={() => setEditing({ mode: 'create', type: meta.type })}
               onTest={(ch) => handleTest(ch)}
               onEdit={(ch) => setEditing({ mode: 'edit', type: ch.type as ChannelType, channel: ch })}
@@ -318,6 +321,7 @@ function TypeCard({
   channels,
   testingId,
   testResult,
+  canManage,
   onAdd,
   onTest,
   onEdit,
@@ -327,6 +331,7 @@ function TypeCard({
   channels: Channel[];
   testingId: number | null;
   testResult: { id: number; result: ChannelTestResult } | null;
+  canManage: boolean;
   onAdd(): void;
   onTest(ch: Channel): void;
   onEdit(ch: Channel): void;
@@ -377,16 +382,16 @@ function TypeCard({
                   >
                     {testingId === ch.id ? tr('投递中…', 'Sending…') : tr('测试', 'Test')}
                   </Button>
-                  <Button onClick={() => onEdit(ch)} variant="ghost">
+                  {canManage && <Button onClick={() => onEdit(ch)} variant="ghost">
                     {tr('编辑', 'Edit')}
-                  </Button>
-                  <Button
+                  </Button>}
+                  {canManage && <Button
                     onClick={() => onDelete(ch)}
                     aria-label={tr('删除', 'Delete')}
                     variant="danger"
                   >
                     <Trash2 size={11} />
-                  </Button>
+                  </Button>}
                 </div>
               </div>
             </li>
@@ -395,10 +400,10 @@ function TypeCard({
       )}
 
       <div className="mt-5 flex flex-wrap items-center gap-3">
-        <Button onClick={onAdd} variant="primary">
+        {canManage && <Button onClick={onAdd} variant="primary">
           <Plus size={14} />
           <span>{tr('新建', 'New')}</span>
-        </Button>
+        </Button>}
         <span className="text-xs text-zinc-500">
           {channels.length === 0
             ? tr('未配置', 'Not configured')

@@ -33,31 +33,76 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
   const base = SITE.url;
 
-  const enEntries: MetadataRoute.Sitemap = EN_PATHS.map((p) => ({
-    url: `${base}${p}`,
+  const liveIncidentEntries: MetadataRoute.Sitemap = ['/live-incident', '/en/live-incident'].map((path) => ({
+    url: `${base}${path}`,
     lastModified: now,
     changeFrequency: 'weekly',
-    priority: p === '/' ? 1 : 0.7,
+    priority: 0.9,
     alternates: {
       languages: {
-        en: `${base}${p}`,
-        'zh-CN': `${base}/zh${p === '/' ? '' : p}`,
+        en: `${base}/en/live-incident`,
+        'zh-CN': `${base}/live-incident`,
       },
     },
   }));
 
-  const zhEntries: MetadataRoute.Sitemap = EN_PATHS.map((p) => ({
-    url: `${base}/zh${p === '/' ? '' : p}`,
-    lastModified: now,
-    changeFrequency: 'weekly',
-    priority: p === '/' ? 0.9 : 0.6,
-    alternates: {
-      languages: {
-        en: `${base}${p}`,
-        'zh-CN': `${base}/zh${p === '/' ? '' : p}`,
-      },
-    },
-  }));
+  const localeEntries: MetadataRoute.Sitemap = EN_PATHS.flatMap((p) => {
+    if (p === '/') {
+      return [
+        {
+          url: base,
+          lastModified: now,
+          changeFrequency: 'weekly',
+          priority: 1,
+          alternates: {
+            languages: {
+              en: `${base}/en`,
+              'zh-CN': base,
+            },
+          },
+        },
+        {
+          url: `${base}/en`,
+          lastModified: now,
+          changeFrequency: 'weekly',
+          priority: 0.9,
+          alternates: {
+            languages: {
+              en: `${base}/en`,
+              'zh-CN': base,
+            },
+          },
+        },
+      ];
+    }
 
-  return [...enEntries, ...zhEntries];
+    return [
+      {
+        url: `${base}${p}`,
+        lastModified: now,
+        changeFrequency: 'weekly',
+        priority: 0.7,
+        alternates: {
+          languages: {
+            en: `${base}${p}`,
+            'zh-CN': `${base}/zh${p}`,
+          },
+        },
+      },
+      {
+        url: `${base}/zh${p}`,
+        lastModified: now,
+        changeFrequency: 'weekly',
+        priority: 0.6,
+        alternates: {
+          languages: {
+            en: `${base}${p}`,
+            'zh-CN': `${base}/zh${p}`,
+          },
+        },
+      },
+    ];
+  });
+
+  return [...localeEntries, ...liveIncidentEntries];
 }

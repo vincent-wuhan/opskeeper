@@ -17,11 +17,11 @@ ASSETS = next(path for path in ASSET_CANDIDATES if (path / "monitor.png").exists
 EXTERNAL_LINKS = """
 <div class="entry-grid">
   <a href="https://github.com/vincent-wuhan/opskeeper" target="_blank" rel="noopener noreferrer">GitHub 源码</a>
-  <a href="https://opskeeper.yueming.xin/home" target="_blank" rel="noopener noreferrer">产品官网</a>
+  <a href="https://opskeeper.yueming.xin" target="_blank" rel="noopener noreferrer">产品官网</a>
   <a href="https://opskeeper.yueming.xin" target="_blank" rel="noopener noreferrer">OpsKeeper 服务</a>
   <a href="https://rooms.yueming.xin" target="_blank" rel="noopener noreferrer">AgentTeams Rooms</a>
   <a href="https://teams.yueming.xin" target="_blank" rel="noopener noreferrer">AgentTeams Dashboard</a>
-  <a href="https://home.yueming.xin" target="_blank" rel="noopener noreferrer">路演全流程控制台</a>
+  <a href="https://opskeeper.yueming.xin/live-incident" target="_blank" rel="noopener noreferrer">路演全流程控制台</a>
 </div>
 """
 

@@ -13,7 +13,7 @@
 
 | 用途 | 地址 | 必须状态 |
 |---|---|---|
-| 业务控制台 | `https://home.yueming.xin/live-incident` | HTTP 200，三张卡片 baseline 200 |
+| 业务控制台 | `https://opskeeper.yueming.xin/live-incident` | HTTP 200，三张卡片 baseline 200 |
 | Manager / Archive | `https://opskeeper.yueming.xin` | HTTP 200，`/readyz` 200 |
 | AgentTeams Dashboard | `https://teams.yueming.xin` | HTTP 200，插件版本一致 |
 | TeamHarness 工作台 | `https://teams.yueming.xin/#plugin-route:opskeeper-teamharness/home` | HTTP 200，Archive 可读 |

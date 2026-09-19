@@ -1,5 +1,5 @@
-import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState, type FormEvent } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { login } from '@/api/auth';
 import { useAuth } from '@/store/auth';
@@ -10,11 +10,22 @@ import { useI18n } from '@/i18n/locale';
 export default function LoginPage() {
   const navigate = useNavigate();
   const setSession = useAuth((s) => s.setSession);
+  const logout = useAuth((s) => s.logout);
+  const token = useAuth((s) => s.token);
+  const [searchParams] = useSearchParams();
   const { tr } = useI18n();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [signedOutEmail, setSignedOutEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (searchParams.get('account') !== 'switch' || !token) return;
+    const currentEmail = useAuth.getState().email;
+    logout();
+    setSignedOutEmail(currentEmail);
+  }, [logout, searchParams, token]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -28,7 +39,7 @@ export default function LoginPage() {
         role: res.user?.role ?? res.role ?? 'user',
         email: res.user?.email ?? res.email ?? email.trim(),
       });
-      navigate('/', { replace: true });
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setError(tr('邮箱或密码错误', 'Invalid email or password'));
@@ -67,6 +78,15 @@ export default function LoginPage() {
         </div>
 
         <form onSubmit={onSubmit} className="space-y-3" noValidate>
+          {signedOutEmail && (
+            <div className="rounded-lg border border-zinc-700/60 bg-zinc-800/40 px-3 py-2 text-xs text-zinc-300">
+              {tr(
+                `已退出 ${signedOutEmail}。请使用演示普通用户登录。`,
+                `Signed out ${signedOutEmail}. Sign in with the standard demo user.`,
+              )}
+            </div>
+          )}
+
           <div>
             <label htmlFor="email" className="mb-1 block text-xs text-zinc-400">
               {tr('邮箱', 'Email')}

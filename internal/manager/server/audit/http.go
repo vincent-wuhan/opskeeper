@@ -1,4 +1,4 @@
-// Package audit serves /v1/admin/audit-logs — admin-only paginated
+// Package audit serves /v1/admin/audit-logs — authenticated paginated
 // read of the HLD-010 audit trail. Reads no longer self-audit
 // (2026-05-21: operator dropped audit_view because per-refresh rows
 // drowned out the create/update/delete signal).
@@ -28,7 +28,8 @@ type Handler struct {
 func NewHandler(uc *bizaudit.Usecase) *Handler { return &Handler{uc: uc} }
 
 // Register attaches /v1/admin/audit-logs under the protected (auth)
-// group. The handler enforces admin role on every call.
+// group. The handler enforces authentication; ordinary operators can
+// review governance evidence while mutations remain admin-only.
 func (h *Handler) Register(r chi.Router) {
 	r.Get("/v1/admin/audit-logs", h.list)
 }
@@ -58,20 +59,10 @@ type listResp struct {
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	t, ok := tenantctx.From(r.Context())
-	if !ok {
+	if _, ok := tenantctx.From(r.Context()); !ok {
 		writeErr(w, errs.ErrUnauthorized)
 		return
 	}
-	if t.Role != "admin" && !t.IsSuperuser {
-		// Denied access stays unaudited — the read-only audit_view
-		// action class was dropped 2026-05-21 (operator: 'read-only
-		// actions are too noisy'). The 403 itself is visible in
-		// nginx/manager request logs, which is enough trail.
-		writeErr(w, errs.ErrForbidden)
-		return
-	}
-
 	q := r.URL.Query()
 	f := bizaudit.ListFilters{
 		UserEmail:    q.Get("user_email"),

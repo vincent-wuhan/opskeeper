@@ -27,11 +27,11 @@ import SpotlightCard from '@/components/react-bits/spotlight-card';
 import AnimatedContent from '@/components/react-bits/animated-content';
 
 export const metadata = {
-  title: 'OpsKeeper：授权可控、全程可审计的多智能体运维事件响应平台',
+  title: 'Auditable operations for multi-agent incident response',
   description:
-    'OpsKeeper 是授权可控、全程可审计的多智能体运维事件响应平台。闭环式 告警 → 证据 → RCA → 提案 → 人工审批 → 窄域授权恢复 → 独立验证 → 审计复盘。',
+    'OpsKeeper is the auditable operations platform for multi-agent incident response. Closed-loop alert → evidence → RCA → approval → recovery → verification → learning.',
   alternates: {
-    canonical: '/',
+    canonical: '/en',
     languages: {
       en: '/en',
       'zh-CN': '/',
@@ -40,117 +40,118 @@ export const metadata = {
 };
 
 const phases = [
-  { key: 'detected', label: '检测', desc: '多源告警接入 + 语义去重', icon: Radio },
-  { key: 'correlated', label: '关联', desc: '跨源事件分组与去重', icon: GitMerge },
-  { key: 'investigated', label: '调查', desc: '只读因果链根因追踪', icon: Eye },
-  { key: 'critiqued', label: '评审', desc: '对 RCA 证据链的同行审计', icon: ShieldCheck },
-  { key: 'approved', label: '审批', desc: '对挂起提案的人工审批', icon: CheckCircle2 },
-  { key: 'recovered', label: '恢复', desc: '窄域授权的可变更动作', icon: TerminalSquare },
-  { key: 'verified', label: '验证', desc: '基于 4 项指标白名单的独立验证', icon: Gauge },
-  { key: 'postmortem', label: '复盘', desc: '由预计算事实生成的 8 段报告', icon: GitBranch },
+  { key: 'detected', label: 'Detected', desc: 'Multi-source alert intake + semantic dedup', icon: Radio },
+  { key: 'correlated', label: 'Correlated', desc: 'Cross-source grouping and de-duplication', icon: GitMerge },
+  { key: 'investigated', label: 'Investigated', desc: 'Read-only causal-chain root-cause tracing', icon: Eye },
+  { key: 'critiqued', label: 'Critiqued', desc: 'Peer audit of the RCA evidence chain', icon: ShieldCheck },
+  { key: 'approved', label: 'Approved', desc: 'Human-in-the-loop on a pending proposal', icon: CheckCircle2 },
+  { key: 'recovered', label: 'Recovered', desc: 'Narrowly authorized mutating action', icon: TerminalSquare },
+  { key: 'verified', label: 'Verified', desc: 'Independent verification via 4-metric allowlist', icon: Gauge },
+  { key: 'postmortem', label: 'Postmortem', desc: '8-section report from pre-computed facts', icon: GitBranch },
 ];
 
 const workers = [
   {
     name: 'alerter',
-    role: '接入',
-    desc: '聚合来自 Prometheus / Loki / Tempo 以及外部通道的告警。通过静态规则和 LLM 语义去重，配合熔断器。',
+    role: 'Intake',
+    desc: 'Aggregates alerts from Prometheus, Loki, Tempo, and external channels. Deduplicates via static rules and LLM semantic dedup with circuit breaker.',
     icon: Radio,
   },
   {
     name: 'investigator',
-    role: '根因',
-    desc: '跨指标、日志、追踪、代码、主机、拓扑的只读因果链追踪器，附带置信度返回证据。',
+    role: 'RCA',
+    desc: 'Read-only causal-chain tracer across metrics, logs, traces, git, hosts, and topology. Returns evidence with confidence.',
     icon: Eye,
   },
   {
     name: 'critic',
-    role: '审计',
-    desc: '在关键严重度下检查证据链的同行审计员。只发出 needs_correction 标记，不发明问题。',
+    role: 'Audit',
+    desc: 'Peer auditor that checks the evidence chain on critical severities. Emits a needs_correction flag without inventing issues.',
     icon: ShieldCheck,
   },
   {
     name: 'reviewer',
-    role: '预审',
-    desc: '每一个可变更动作的第二双眼睛。仅批准最小必要的爆炸半径。',
+    role: 'Pre-flight',
+    desc: 'Second pair of eyes on every mutating action. Approves only the minimum-necessary blast radius.',
     icon: CheckCircle2,
   },
   {
     name: 'repairer',
-    role: '修复',
-    desc: '窄域变更执行器。动作必须精确匹配一个已审批的事件、清单、资源、命令与 payload 哈希。',
+    role: 'Repair',
+    desc: 'Narrow-scope mutator. Actions must match one approved incident, manifest, resource, command, and payload hash.',
     icon: TerminalSquare,
   },
   {
     name: 'verifier',
-    role: '验证',
-    desc: '只调用 recovery.verify。4 项指标白名单，3 级告警分级，向管理器返回 VerifiedDelta。',
+    role: 'Verify',
+    desc: 'Calls recovery.verify only. 4-metric allowlist, 3 warning tiers, returns a VerifiedDelta for the manager.',
     icon: Gauge,
   },
   {
     name: 'reporter',
-    role: '复盘',
-    desc: '基于预计算的 ReportFacts 撰写结构化周期报告。资源趋势、监控覆盖、变更 —— 绝不杜撰。',
+    role: 'Postmortem',
+    desc: 'Writes structured period reports from pre-computed ReportFacts. Resource trends, monitoring coverage, changes — never fabricated.',
     icon: GitBranch,
   },
 ];
 
 const pillars = [
   {
-    title: '智能体协作框架',
-    desc: 'Manager 风格的派发器，显式安全级别（L0–L3），7 个工作流角色，append-only 账本支撑的 7 阶段闭环。',
+    title: 'Agent collaboration framework',
+    desc: 'Manager-style dispatch with explicit safety levels (L0–L3), 7 worker roles, and a 7-phase closed loop backed by append-only ledger tables.',
     icon: Cpu,
   },
   {
-    title: '技能生态',
-    desc: '由 Nacos 支撑的技能注册中心，支持热加载，HTTP 2.x Config API，本地降级，并为 OpsKeeper Worker 插件提供 stdio MCP 服务。',
+    title: 'Skill ecosystem',
+    desc: 'Nacos-backed Skill Registry with hot reload, HTTP 2.x Config API, local fallback, and a stdio MCP server for the OpsKeeper Worker plugin.',
     icon: Database,
   },
   {
-    title: '可观测与审计',
-    desc: 'OpenTelemetry 追踪上下文、Prometheus 指标、Loki 日志、Tempo 追踪、Grafana 仪表盘 —— 外加 append-only 事件日志与 SHA256 链式提案审计。',
+    title: 'Observability & audit',
+    desc: 'OpenTelemetry trace context, Prometheus metrics, Loki logs, Tempo traces, Grafana dashboards — plus an append-only event log and a SHA256-chained proposal audit.',
     icon: Activity,
   },
 ];
 
 const safetyItems = [
-  '诊断工具默认只读 —— 可变更动作必须先有挂起的提案。',
-  '在派发任何恢复命令前，必须经过显式的人工审批。',
-  '对资源、命令、payload 哈希进行精确目标匹配 —— 未知工具和跨资源目标默认拒绝。',
-  'loop_event_log 由数据库触发器强制 append-only；每个变更提案的跃迁都做 SHA256 链式记录。',
-  '独立验证器把"行动者"和"裁判者"分开，保证每一次恢复都有独立判定。',
+  'Diagnosis tools are read-only by default — mutating actions require a pending proposal.',
+  'Explicit human-in-the-loop approval before any recovery command is dispatched.',
+  'Exact target matching on resource, command, and payload hash — unknown tools and cross-resource targets fail closed.',
+  'Append-only loop_event_log enforced by a DB trigger; every mutating-proposal transition is chained with SHA256.',
+  'Independent verifier separates the actor from the judge on every recovery.',
 ];
 
-const codeSnippet = `# 克隆仓库，用根目录 compose 拉起整套本地环境
+const codeSnippet = `# Clone and bring up the full local stack (repo-root compose)
 git clone https://github.com/vincent-wuhan/opskeeper.git
 cd opskeeper
 cp deploy/demo.env.example .env
 docker compose up -d --build
 
-# 把 4 个可复现 PostgreSQL 场景写入事件记忆库
+# Seed the 4 reproducible PostgreSQL scenarios into incident memory
 go run ./cmd/incident-seed \\
   -dsn "postgres://opskeeper:opskeeper@localhost:5432/opskeeper?sslmode=disable" \\
   -dir deploy/incident-events
 
-# 在 Web 控制台检视 timeline、证据、提案与审计
-# → API + Swagger UI 见 http://localhost:8080`;
+# Inspect timelines, evidence, proposals, and audit in the web console
+# → API + Swagger UI at http://localhost:8080`;
 
-const installSnippet = `# Worker 插件 —— 从 AgentTeams Dashboard 安装
-# （热部署：qwenpaw plugin install <path> --force）
+const installSnippet = `# Worker plugin — install from the AgentTeams Dashboard
+# (hot-deploy: qwenpaw plugin install <path> --force)
 
-# 或直接为任何 Worker 启动 stdio MCP 代理
+# Or run the stdio MCP proxy directly for any worker
 cd plugins/opskeeper-teamharness
 OPSKEEPER_BACKEND_URL=http://localhost:8080 \\
 OPSKEEPER_GATEWAY_KEY="$GATEWAY_KEY" \\
 python3 mcp/server.py`;
 
-export default function HomeZhPage() {
+export default function HomePage() {
   return (
     <>
       {/* Hero */}
       <Section className="relative pt-20 pb-24 md:pt-28 md:pb-32">
-        {/* React Bits Aurora — 动态 WebGL 背景 */}
+        {/* React Bits Aurora — animated WebGL background */}
         <Aurora className="absolute inset-x-0 -top-24 -z-10 h-[640px] opacity-60" />
+        {/* grain overlay */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 -z-10 opacity-[0.035] mix-blend-overlay"
@@ -164,60 +165,60 @@ export default function HomeZhPage() {
           <div className="lg:col-span-7">
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-ink-200">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-accent-400 animate-pulse" />
-              <ShinyText speed={5}>v2026.09.03 · Apache-2.0 · 开源</ShinyText>
+              <ShinyText speed={5}>v2026.09.03 · Apache-2.0 · open source</ShinyText>
             </div>
             <h1 className="text-balance text-4xl font-semibold tracking-tight text-white sm:text-5xl md:text-6xl">
-              <BlurText text="授权可控、全程可审计的" />{' '}
+              <BlurText text="Auditable operations for" />{' '}
               <span className="bg-gradient-to-br from-white to-accent-300 bg-clip-text text-transparent">
-                <BlurText text="多智能体运维事件响应平台" delay={220} />
+                <BlurText text="multi-agent incident response" delay={200} />
               </span>
             </h1>
             <p className="mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-ink-300">
-              OpsKeeper 把<strong className="text-white">告警</strong>、
-              <strong className="text-white">证据</strong>、
-              <strong className="text-white">根因分析</strong>、
-              <strong className="text-white">人工审批</strong>、
-              <strong className="text-white">窄域授权恢复</strong>、
-              <strong className="text-white">独立验证</strong>和
-              <strong className="text-white">事后复盘</strong>
-              串成同一条闭环。
-              没有提案、人工审批、审计记录这三件套，任何变更动作都不会被执行。
+              OpsKeeper closes the loop between <strong className="text-white">alert</strong>,{' '}
+              <strong className="text-white">evidence</strong>,{' '}
+              <strong className="text-white">root-cause analysis</strong>,{' '}
+              <strong className="text-white">human approval</strong>,{' '}
+              <strong className="text-white">narrowly authorized recovery</strong>,{' '}
+              <strong className="text-white">independent verification</strong>, and{' '}
+              <strong className="text-white">post-incident learning</strong>.
+              Mutating actions never run without a proposal, a human approver, and an
+              audit record.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Button href="/zh/docs/getting-started">快速开始</Button>
-              <Button href="/zh/platform" variant="secondary">
-                查看闭环工作流
+              <Button href="/docs/getting-started">Get started</Button>
+              <Button href="/platform" variant="secondary">
+                How the closed loop works
               </Button>
-              <Button href="/live-incident" variant="ghost">
-                体验在线演示
+              <Button href="/en/live-incident" variant="ghost">
+                Try the live demo
               </Button>
               <Button href="https://github.com/vincent-wuhan/opskeeper" variant="ghost" external>
-                在 GitHub 上加星
+                Star on GitHub
               </Button>
             </div>
             <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-ink-400">
-              <span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5 text-accent-400" /> 默认安全</span>
-              <span className="inline-flex items-center gap-1.5"><Lock className="h-3.5 w-3.5 text-accent-400" /> 哈希链式审计</span>
+              <span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5 text-accent-400" /> Safety by default</span>
+              <span className="inline-flex items-center gap-1.5"><Lock className="h-3.5 w-3.5 text-accent-400" /> Hash-chained audit</span>
               <span className="inline-flex items-center gap-1.5"><Database className="h-3.5 w-3.5 text-accent-400" /> Postgres + Qdrant</span>
-              <span className="inline-flex items-center gap-1.5"><Cpu className="h-3.5 w-3.5 text-accent-400" /> 7 个工作流角色</span>
+              <span className="inline-flex items-center gap-1.5"><Cpu className="h-3.5 w-3.5 text-accent-400" /> 7 worker roles</span>
             </div>
           </div>
           <div className="lg:col-span-5">
-            <CodeBlock language="bash" title="安装 · 本地环境">
+            <CodeBlock language="bash" title="install · local stack">
               {installSnippet}
             </CodeBlock>
           </div>
         </div>
       </Section>
 
-      {/* 信任带 */}
+      {/* Trust strip */}
       <Section className="py-10">
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           {[
-            { k: 7, l: 'Operational Worker 角色' },
-            { k: 8, l: '闭环阶段' },
-            { k: 4, l: '可复现事件场景' },
-            { k: 100, suffix: '%', l: '审计重放覆盖' },
+            { k: 7, l: 'Operational worker roles' },
+            { k: 8, l: 'Closed-loop phases' },
+            { k: 4, l: 'Reproducible incident scenarios' },
+            { k: 100, suffix: '%', l: 'Audit replay coverage' },
           ].map((s) => (
             <div
               key={s.l}
@@ -232,12 +233,13 @@ export default function HomeZhPage() {
         </div>
       </Section>
 
-      <TechMarquee label="基于你已经跑的开源技术栈搭建" />
+      {/* The closed loop */}
+      <TechMarquee label="Built on the open-source stack you already run" />
       <Section id="closed-loop" className="py-20 md:py-28">
         <SectionHeader
-          eyebrow="闭环"
-          title="八个阶段，每一次跃迁都可追溯。"
-          description="OpsKeeper 用显式的状态机驱动事件流转。每个阶段都是 append-only 账本上的一笔事件，每次跃迁都有明确的护栏，整条闭环都能从零重放。"
+          eyebrow="The closed loop"
+          title="Eight phases. Every transition is durable."
+          description="OpsKeeper runs incidents through an explicit state machine. Each phase is an append-only ledger event, each transition has a defined guard, and the loop is replayable from scratch."
         />
         <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {phases.map((p, i) => (
@@ -256,12 +258,12 @@ export default function HomeZhPage() {
         </div>
       </Section>
 
-      {/* Worker roles */}
+      {/* Workers */}
       <Section className="py-20 md:py-28">
         <SectionHeader
-          eyebrow="Worker 角色"
-          title="专业分工，统一调度。"
-          description="七个 Operational 角色由 Manager 风格的派发器统一协调。每个角色都有明确的工具白名单和契约，闭环不依赖任何单一 Agent 耍小聪明。"
+          eyebrow="Worker roles"
+          title="Specialized agents. One manager."
+          description="Seven operational roles coordinate through a manager-style dispatcher. Each role has a narrow tool allowlist and a clear contract — the loop never depends on a single agent being clever."
         />
         <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {workers.map((w) => (
@@ -284,21 +286,21 @@ export default function HomeZhPage() {
             </div>
           ))}
           <div className="rounded-xl border border-dashed border-white/10 p-6 flex flex-col justify-center">
-            <div className="text-sm font-medium text-white">还有专家技能</div>
+            <div className="text-sm font-medium text-white">Plus specialist skills</div>
             <p className="mt-2 text-sm text-ink-300">
-              <code className="font-mono text-xs text-accent-300">specialist-sre</code>、
-              <code className="font-mono text-xs text-accent-300">specialist-network</code>、
-              <code className="font-mono text-xs text-accent-300">specialist-compute</code>、
-              <code className="font-mono text-xs text-accent-300">specialist-disk</code> 和
-              <code className="font-mono text-xs text-accent-300">specialist-ops</code> 随仓库
-              <code className="font-mono text-xs text-accent-300"> agents/</code> 目录一起发布，
-              会按路由规则挂载到对应事件上。
+              <code className="font-mono text-xs text-accent-300">specialist-sre</code>,{' '}
+              <code className="font-mono text-xs text-accent-300">specialist-network</code>,{' '}
+              <code className="font-mono text-xs text-accent-300">specialist-compute</code>,{' '}
+              <code className="font-mono text-xs text-accent-300">specialist-disk</code>, and{' '}
+              <code className="font-mono text-xs text-accent-300">specialist-ops</code> ship in the
+              <code className="font-mono text-xs text-accent-300"> agents/</code> directory and
+              attach to incidents based on routing rules.
             </p>
             <Link
-              href="/zh/workers"
+              href="/workers"
               className="mt-4 inline-flex items-center gap-1.5 text-sm text-accent-300 hover:text-accent-200"
             >
-              查看 Worker 契约 <ArrowRight className="h-3.5 w-3.5" />
+              Read the worker contracts <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </div>
         </div>
@@ -309,13 +311,13 @@ export default function HomeZhPage() {
         <div className="grid gap-12 lg:grid-cols-12 lg:items-center">
           <div className="lg:col-span-5">
             <SectionHeader
-              eyebrow="安全边界"
-              title="诊断只读，恢复写入 —— 而且必须有人点头。"
-              description="OpsKeeper 在编排层把读和写分开。读工具始终可用，写工具必须先有提案、明确的人工审批人，以及精确的资源 / 命令 / payload 哈希匹配。"
+              eyebrow="Safety boundary"
+              title="Diagnosis reads. Recovery writes. Only with a human."
+              description="OpsKeeper separates read from write at the orchestrator. Read-only tools are always available; mutating tools require a proposal, an explicit human approver, and exact resource / command / payload hash match."
             />
             <div className="mt-8">
-              <Button href="/zh/security" variant="secondary">
-                阅读安全模型
+              <Button href="/security" variant="secondary">
+                Read the security model
               </Button>
             </div>
           </div>
@@ -339,12 +341,12 @@ export default function HomeZhPage() {
       {/* Pillars */}
       <Section className="py-20 md:py-28">
         <SectionHeader
-          eyebrow="三大支柱"
-          title="开箱即用。"
-          description="OpsKeeper 是一个平台，三套紧耦合的子系统。每一套单独拿出来都可用、可观测。"
+          eyebrow="Three pillars"
+          title="What ships in the box."
+          description="OpsKeeper is one platform, three tightly integrated subsystems. Each one is independently useful and observable."
         />
         <div className="mt-12 grid gap-4 md:grid-cols-3">
-          {pillars.map((p) => (
+          {pillars.map((p, i) => (
             <SpotlightCard
               key={p.title}
               className="rounded-2xl border border-white/10 bg-gradient-to-b from-white/[0.04] to-transparent p-6"
@@ -364,9 +366,9 @@ export default function HomeZhPage() {
         <div className="grid gap-10 lg:grid-cols-12 lg:items-start">
           <div className="lg:col-span-5">
             <SectionHeader
-              eyebrow="演示"
-              title="把一个真实事件端到端写入闭环。"
-              description="deploy/incident-events/ 内置 4 个可复现的 PostgreSQL 场景。选一个写入事件记忆库，然后在 Web Console 里看闭环从检测到复盘跑完全程。"
+              eyebrow="Demo"
+              title="Seed a real incident end-to-end."
+              description="Four reproducible PostgreSQL scenarios ship in deploy/incident-events/. Seed one into incident memory and watch the closed loop run from detection to postmortem in the web console."
             />
             <ul className="mt-6 space-y-2 text-sm text-ink-300">
               <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-accent-400" /> pg-connection-pool-exhaustion</li>
@@ -375,11 +377,11 @@ export default function HomeZhPage() {
               <li className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-accent-400" /> pg-replica-replay-lag</li>
             </ul>
             <div className="mt-8">
-              <Button href="/live-incident" variant="secondary">
-                跑一遍演示
+              <Button href="/en/live-incident" variant="secondary">
+                Run the demos
               </Button>
-              <Button href="/zh/demo" variant="ghost">
-                进入公网环境
+              <Button href="/demo" variant="ghost">
+                Open hosted environments
               </Button>
             </div>
           </div>
@@ -394,20 +396,20 @@ export default function HomeZhPage() {
       {/* Integrations */}
       <Section className="py-20 md:py-28">
         <SectionHeader
-          eyebrow="集成"
-          title="和你已有的栈天然合得来。"
-          description="OpsKeeper 自带 AgentTeams Dashboard 一方插件和标准可观测后端。MCP 服务同时支持 stdio 和 Streamable HTTP，任何 Worker 都能加入。"
+          eyebrow="Integrations"
+          title="Plays well with the rest of your stack."
+          description="OpsKeeper ships first-party plugins for the AgentTeams Dashboard and the standard observability backend. The MCP server is stdio and Streamable HTTP, so any worker can join."
         />
         <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { t: 'AgentTeams Dashboard', d: '插件安装器 —— 侧边栏、路由、看板组件、详情面板、工具栏。' },
-            { t: 'OpsKeeper TeamHarness', d: 'Worker/Manager 插件 + stdio MCP 代理（17 个工具，Bearer + HMAC + W3C traceparent）。' },
-            { t: 'Prometheus + Loki + Tempo', d: '原生抓取配置，按 trace_id 关联日志 / 指标 / 追踪。' },
-            { t: 'Grafana 仪表盘', d: '为闭环、审计账本、技能健康度预置仪表盘。' },
-            { t: 'PostgreSQL', d: '事件记忆、append-only 账本、MySQL GET_LOCK 风格的咨询锁。' },
-            { t: 'Qdrant', d: '向量检索 + 关键词召回 + RRF 融合排序，保留候选决策证据。' },
-            { t: 'Nacos Config', d: '技能注册中心，30 秒轮询热加载，本地降级。' },
-            { t: 'OpenTelemetry', d: '端到端 W3C traceparent 传递，覆盖 Worker → MCP → 控制平面。' },
+            { t: 'AgentTeams Dashboard', d: 'Plugin installer — sidebar, route, dashboard widget, detail panel, toolbar.' },
+            { t: 'OpsKeeper TeamHarness', d: 'Worker/Manager plugin + stdio MCP proxy (17 tools, Bearer + HMAC + W3C traceparent).' },
+            { t: 'Prometheus + Loki + Tempo', d: 'Native scrape config, log/metric/trace correlation by trace_id.' },
+            { t: 'Grafana dashboards', d: 'Provisioned dashboards for the closed loop, audit ledger, and skill health.' },
+            { t: 'PostgreSQL', d: 'Incident memory, append-only ledger, MySQL GET_LOCK advisory locks.' },
+            { t: 'Qdrant', d: 'Vector retrieval, keyword recall, RRF ranking, retained candidate-decision evidence.' },
+            { t: 'Nacos Config', d: 'Skill registry with 30s polling hot-reload and local fallback.' },
+            { t: 'OpenTelemetry', d: 'W3C traceparent propagation end-to-end across worker → MCP → control plane.' },
           ].map((i) => (
             <div
               key={i.t}
@@ -428,19 +430,20 @@ export default function HomeZhPage() {
           <div className="relative">
             <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wider text-accent-200">
               <Bot className="h-4 w-4" />
-              开源 · Apache-2.0
+              Open source · Apache-2.0
             </div>
             <h2 className="mt-3 max-w-2xl text-balance text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-              把审计能力带进你的事件响应流程。
+              Bring the audit trail to your incident response.
             </h2>
             <p className="mt-3 max-w-xl text-pretty text-base text-ink-200">
-              五分钟内本地跑起闭环，然后把真实的告警流指过去。
+              Run the closed loop locally in under five minutes. Then point it at your real
+              incident stream.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Button href="/zh/docs/getting-started">快速开始</Button>
-              <Button href="/zh/use-cases" variant="secondary">查看应用场景</Button>
+              <Button href="/docs/getting-started">Get started</Button>
+              <Button href="/use-cases" variant="secondary">See use cases</Button>
               <Button href="https://github.com/vincent-wuhan/opskeeper" variant="ghost" external>
-                在 GitHub 上查看
+                View on GitHub
               </Button>
             </div>
           </div>

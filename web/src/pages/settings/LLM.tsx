@@ -5,12 +5,11 @@
 // integrations 里以 LLMCard 形式存在。这次拆出来，让 /settings/llm
 // 直接进多 provider 配置（更对应它的菜单名字）。
 import { useCallback, useEffect, useState } from 'react';
-import { Check, Eye, EyeOff, Loader2, Plus, Save, Sparkles, Star, Trash2 } from 'lucide-react';
+import { Check, Loader2, Plus, Save, Sparkles, Star, Trash2 } from 'lucide-react';
 import { ApiError } from '@/api/client';
 import {
   invalidateLLMRouter,
   listSettings,
-  revealSetting,
   setSetting,
   type SystemSetting,
 } from '@/api/settings';
@@ -18,6 +17,7 @@ import { Button, Card, Chip } from '@/components/ui';
 import { ProviderIcon } from '@/components/icons/Provider';
 import { cn } from '@/lib/cn';
 import { useI18n } from '@/i18n/locale';
+import { usePermissions } from '@/store/me';
 
 type LLMProviderID = 'openai' | 'anthropic' | 'zhipu' | 'gemini' | 'deepseek' | 'kimi' | 'custom';
 
@@ -209,9 +209,10 @@ export default function SettingsLLM() {
 
 function LLMProviderCard({ meta }: { meta: LLMProviderMeta }) {
   const { tr } = useI18n();
+  const { isAdmin } = usePermissions();
   const [server, setServer] = useState<LLMProviderForm>(emptyLLMForm);
   const [draft, setDraft] = useState<LLMProviderForm>(emptyLLMForm);
-  const [revealed, setRevealed] = useState(false);
+  const [keyConfigured, setKeyConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedOk, setSavedOk] = useState(false);
@@ -239,17 +240,10 @@ function LLMProviderCard({ meta }: { meta: LLMProviderMeta }) {
         }
       }
       const apiRow = (r.items as SystemSetting[]).find((it) => it.key === meta.keyAPIKey);
-      if (apiRow && (apiRow.value ?? '') !== '') {
-        try {
-          const real = await revealSetting('llm', meta.keyAPIKey);
-          next.api_key = real.value ?? '';
-        } catch {
-          /* leave empty so user can paste a fresh key */
-        }
-      }
+      const hasAPIKey = !!apiRow && (apiRow.value ?? '') !== '';
       setServer(next);
       setDraft(next);
-      setRevealed(false);
+      setKeyConfigured(hasAPIKey);
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : (e as Error).message);
     } finally {
@@ -262,7 +256,7 @@ function LLMProviderCard({ meta }: { meta: LLMProviderMeta }) {
   }, [refresh]);
 
   const dirty =
-    draft.api_key !== server.api_key ||
+    draft.api_key !== '' ||
     draft.base_url !== server.base_url ||
     draft.default_model !== server.default_model ||
     JSON.stringify(draft.models) !== JSON.stringify(server.models);
@@ -308,7 +302,7 @@ function LLMProviderCard({ meta }: { meta: LLMProviderMeta }) {
     setSaving(true);
     setErr(null);
     try {
-      if (draft.api_key !== server.api_key) {
+      if (draft.api_key !== '') {
         await setSetting('llm', meta.keyAPIKey, draft.api_key, true);
       }
       if (draft.base_url !== server.base_url) {
@@ -336,7 +330,7 @@ function LLMProviderCard({ meta }: { meta: LLMProviderMeta }) {
 
   // A custom provider also needs a base URL to be reachable; the named
   // providers have a working default endpoint, so a key alone suffices.
-  const configured = server.api_key.trim() !== '' && (!meta.custom || server.base_url.trim() !== '');
+  const configured = keyConfigured && (!meta.custom || server.base_url.trim() !== '');
 
   return (
     <Card className="p-5">
@@ -358,15 +352,16 @@ function LLMProviderCard({ meta }: { meta: LLMProviderMeta }) {
               label="API Key"
               hint={
                 meta.custom
-                  ? tr('无需鉴权的本地服务填任意占位值', 'For keyless local servers, any placeholder works')
-                  : tr('留空 = 该提供商不出现在聊天页下拉里', 'Leave empty to hide this provider from the chat dropdown')
+                  ? tr('无需鉴权的本地服务填任意占位值；已保存的 Key 不会回显', 'For keyless local servers, any placeholder works; saved keys are never read back')
+                  : keyConfigured
+                    ? tr('已配置；输入新值即轮换，明文不会回显', 'Configured; enter a new value to rotate. Cleartext is never read back')
+                    : tr('留空 = 该提供商不出现在聊天页下拉里', 'Leave empty to hide this provider from the chat dropdown')
               }
               sensitive
-              revealed={revealed}
-              onToggleReveal={() => setRevealed((v) => !v)}
               value={draft.api_key}
               onChange={(v) => update('api_key', v)}
-              placeholder="sk-... / tvly-... / glsa-..."
+              disabled={!isAdmin}
+              placeholder={keyConfigured ? tr('输入新 Key 以轮换…', 'Enter a new key to rotate…') : 'sk-... / tvly-... / glsa-...'}
             />
             {meta.custom && (
               <FieldRow
@@ -374,6 +369,7 @@ function LLMProviderCard({ meta }: { meta: LLMProviderMeta }) {
                 hint={tr('你的 OpenAI 兼容端点', 'Your OpenAI-compatible endpoint')}
                 value={draft.base_url}
                 onChange={(v) => update('base_url', v)}
+                disabled={!isAdmin}
                 placeholder={tr(meta.baseURLPlaceholderZh, meta.baseURLPlaceholderEn)}
               />
             )}
@@ -393,6 +389,7 @@ function LLMProviderCard({ meta }: { meta: LLMProviderMeta }) {
                   hint={tr('留空 = 用厂商官方端点；仅在走代理 / 网关时填', 'Leave empty for the vendor endpoint; set only when routing through a proxy / gateway')}
                   value={draft.base_url}
                   onChange={(v) => update('base_url', v)}
+                  disabled={!isAdmin}
                   placeholder={tr(meta.baseURLPlaceholderZh, meta.baseURLPlaceholderEn)}
                 />
               </div>
@@ -421,7 +418,7 @@ function LLMProviderCard({ meta }: { meta: LLMProviderMeta }) {
                         </span>
                       )}
                       <span className="ml-auto flex items-center gap-1">
-                        {!isDefault && (
+                        {isAdmin && !isDefault && (
                           <button
                             type="button"
                             onClick={() => setDefault(m)}
@@ -430,21 +427,21 @@ function LLMProviderCard({ meta }: { meta: LLMProviderMeta }) {
                             {tr('设为默认', 'Set default')}
                           </button>
                         )}
-                        <button
+                        {isAdmin && <button
                           type="button"
                           onClick={() => removeModel(m)}
                           aria-label={tr(`移除 ${m}`, `Remove ${m}`)}
                           className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-red-300"
                         >
                           <Trash2 size={11} />
-                        </button>
+                        </button>}
                       </span>
                     </li>
                   );
                 })}
               </ul>
             )}
-            <div className="mt-2 flex items-center gap-2">
+            {isAdmin && <div className="mt-2 flex items-center gap-2">
               <input
                 type="text"
                 value={newModel}
@@ -467,16 +464,16 @@ function LLMProviderCard({ meta }: { meta: LLMProviderMeta }) {
                 <Plus size={12} />
                 {tr('添加', 'Add')}
               </button>
-            </div>
+            </div>}
           </div>
         </div>
       )}
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Button onClick={submit} disabled={!dirty || saving} variant="subtle">
+        {isAdmin && <Button onClick={submit} disabled={!dirty || saving} variant="subtle">
           {savedOk && !dirty ? <Check size={14} /> : <Save size={14} />}
           <span>{saving ? tr('保存中…', 'Saving…') : savedOk && !dirty ? tr('已保存', 'Saved') : tr('保存', 'Save')}</span>
-        </Button>
+        </Button>}
         <span className="text-xs text-zinc-500">
           {dirty
             ? tr('有未保存修改', 'Unsaved changes')
@@ -499,8 +496,7 @@ function FieldRow({
   onChange,
   placeholder,
   sensitive,
-  revealed,
-  onToggleReveal,
+  disabled,
 }: {
   label: string;
   hint?: string;
@@ -508,10 +504,9 @@ function FieldRow({
   onChange(v: string): void;
   placeholder?: string;
   sensitive?: boolean;
-  revealed?: boolean;
-  onToggleReveal?: () => void;
+  disabled?: boolean;
 }) {
-  const inputType = sensitive ? (revealed ? 'text' : 'password') : 'text';
+  const inputType = sensitive ? 'password' : 'text';
   return (
     <label className="block">
       <span className="mb-1 flex items-center gap-1.5 text-xs text-zinc-400">
@@ -528,23 +523,14 @@ function FieldRow({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
+          disabled={disabled}
           className={cn(
             'w-full rounded-lg border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-zinc-600 focus:outline-none',
             sensitive && 'pr-9',
+            disabled && 'cursor-not-allowed opacity-70',
           )}
           autoComplete="off"
         />
-        {sensitive && onToggleReveal && (
-          <button
-            type="button"
-            onClick={onToggleReveal}
-            tabIndex={-1}
-            aria-label={revealed ? 'Hide' : 'Show'}
-            className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
-          >
-            {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
-          </button>
-        )}
       </div>
       {hint && <span className="mt-1 block text-[11px] text-zinc-500">{hint}</span>}
     </label>

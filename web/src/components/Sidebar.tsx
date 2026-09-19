@@ -112,7 +112,7 @@ export function Sidebar() {
       // /chat (the new-session entry point) so they're not stuck on a
       // 404 thread.
       if (location.pathname === `/chat/${target.id}`) {
-        navigate('/');
+      navigate('/dashboard');
       }
     } finally {
       setDeletingId(null);
@@ -257,7 +257,7 @@ export function Sidebar() {
           <PanelLeftOpen size={16} />
         </button>
         <Link
-          to="/"
+          to="/dashboard"
           aria-label={tr('首页', 'Home')}
           className="rounded-lg p-2 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
         >
@@ -338,7 +338,7 @@ export function Sidebar() {
           goes home. */}
       <div className="flex items-center gap-1.5 border-b border-zinc-800/60 px-3 py-3">
         <Link
-          to="/"
+          to="/dashboard"
           aria-label={tr('OpsKeeper 首页', 'OpsKeeper home')}
           className="flex min-w-0 items-center gap-1.5 rounded-lg px-1 py-1 -ml-1 hover:bg-zinc-800/40"
         >
@@ -406,7 +406,7 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-2 pb-3">
         {/* L1 顶级入口 — 不缩进，直接可点 */}
         <div className="mt-1 space-y-0.5">
-          <SidebarNavItem to="/" icon={Home} label={tr('首页', 'Home')} exact level={1} />
+          <SidebarNavItem to="/dashboard" icon={Home} label={tr('首页', 'Home')} exact level={1} />
           <SidebarNavItem to="/dashboard" icon={LayoutDashboard} label={tr('仪表盘', 'Dashboard')} level={1} />
         </div>
 
@@ -482,16 +482,13 @@ export function Sidebar() {
         </div>
       </nav>
 
-      {/* admin / settings entries 仅 admin 可见。user / viewer
-          看不到这两个入口，避免误点之后再被 EmptyState 兜底 — 直接在
-          导航层隔离更干净。后端兜底依然在（requireAdmin），UI 这层只
-          是把入口藏起来。 */}
-      {isAdmin && (
-        <div className="mb-4 border-t border-zinc-800/60 p-2">
+      <div className="mb-4 border-t border-zinc-800/60 p-2">
+        {isAdmin && (
           <SidebarNavItem to="/admin/users" icon={UsersRound} label={tr('用户管理', 'Users & Orgs')} level={2} />
-          <SidebarNavItem to="/settings/health" icon={Settings} label={tr('设置', 'Settings')} level={2} />
-        </div>
-      )}
+        )}
+        <SidebarNavItem to="/admin/audit" icon={UsersRound} label={tr('审计日志', 'Audit log')} level={2} />
+        <SidebarNavItem to="/settings/health" icon={Settings} label={tr('设置', 'Settings')} level={2} />
+      </div>
 
       {deleteTarget && (
         <DeleteSessionModal

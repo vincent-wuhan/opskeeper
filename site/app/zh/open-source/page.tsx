@@ -38,12 +38,12 @@ const acknowledgedProjects = [
   {
     name: 'OpenBuddy',
     href: 'https://github.com/louloulin/OpenBuddy',
-    description: '决赛 PPT 准备阶段的表达与结构打磨带来了实际帮助，感谢作者开放这份工作。',
+    description: '开源桌面 AI 工作区与 WorkBuddy 替代方案，面向办公提效，提供计划模式、本地文件、技能、MCP 连接器与多智能体协作。',
   },
   {
     name: 'upup',
     href: 'https://github.com/louloulin/upup',
-    description: '一个很有意思的开源项目，推荐给关注工程效率与自动化的朋友。',
+    description: '基于 Pi runtime 的中文 AI 投研助手，覆盖 A股 / 港股 / 美股行情、基本面、公告、估值、风险与回测；定位为研究工具。',
   },
 ];
 
@@ -182,8 +182,12 @@ export default function OpenSourceZhPage() {
                     <Github className="h-3.5 w-3.5" />
                     louloulin
                   </a>
-                  <span className="text-ink-300">对 OpsKeeper 的开源贡献与支持。</span>
+                  <span className="text-ink-300">及其所属的 Lumos 组织。</span>
                 </div>
+                <p className="mt-3 text-sm leading-6 text-ink-300">
+                  Lumos 是一个由 AI Native 爱好者组成的非正式群体，喜欢研究 AI、多智能体等方向，
+                  并把研究过程中沉淀出的成熟产品开放出来。下面是 louloulin 一些有趣的开源成果，欢迎关注了解。
+                </p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   {acknowledgedProjects.map((project) => (
                     <a

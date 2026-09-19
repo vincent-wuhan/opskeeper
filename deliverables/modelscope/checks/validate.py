@@ -31,7 +31,7 @@ REQUIRED_ENTRY_IDS = {
 }
 AUTHORITATIVE_ENTRIES = {
     "official_website": {
-        "url": "https://opskeeper.yueming.xin/home",
+        "url": "https://opskeeper.yueming.xin",
         "role": "Product official website",
         "auth_expected": False,
         "required_for_public": True,
@@ -55,7 +55,7 @@ AUTHORITATIVE_ENTRIES = {
         "required_for_public": True,
     },
     "roadshow_console": {
-        "url": "https://home.yueming.xin",
+        "url": "https://opskeeper.yueming.xin/live-incident",
         "role": "Full-flow roadshow console",
         "auth_expected": True,
         "required_for_public": True,

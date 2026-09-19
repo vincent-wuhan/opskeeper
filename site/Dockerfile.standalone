@@ -1,0 +1,12 @@
+FROM node:22-slim
+
+ENV NODE_ENV=production \
+    PORT=13003 \
+    HOSTNAME=0.0.0.0
+
+WORKDIR /app
+COPY .next/standalone ./
+COPY .next/static ./.next/static
+
+EXPOSE 13003
+CMD ["node", "server.js"]

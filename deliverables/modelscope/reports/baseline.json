@@ -1,14 +1,14 @@
 {
   "schema_version": 1,
   "generated_at": {
-    "utc": "2026-09-19T05:24:59Z",
-    "asia_shanghai": "2026-09-19T13:24:59+08:00"
+    "utc": "2026-09-19T12:32:05Z",
+    "asia_shanghai": "2026-09-19T20:32:05+08:00"
   },
   "source": {
     "github_repository": "https://github.com/vincent-wuhan/opskeeper",
     "default_branch": "main",
-    "head_commit": "0af4ffa3bb32c5898b67234866549b31e96111dd",
-    "origin_main": "be44e36c7f1dd987e863a8732965db25aea1db28",
+    "head_commit": "0964a170d7748b8f7c256930590693971b2bbf2e",
+    "origin_main": "fadeafa9bec297096bb8f712d03a1c55a3e6a6ca",
     "origin_main_available": true
   },
   "probe": {
@@ -20,7 +20,7 @@
   "entries": [
     {
       "id": "official_website",
-      "url": "https://opskeeper.yueming.xin/home",
+      "url": "https://opskeeper.yueming.xin",
       "role": "Product official website",
       "required_for_public": true,
       "auth_expected": false,
@@ -96,7 +96,7 @@
     },
     {
       "id": "roadshow_console",
-      "url": "https://home.yueming.xin",
+      "url": "https://opskeeper.yueming.xin/live-incident",
       "role": "Full-flow roadshow console",
       "required_for_public": true,
       "auth_expected": true,
@@ -106,7 +106,7 @@
       "attempts": [
         {
           "method": "HEAD",
-          "status": 302,
+          "status": 200,
           "error": null,
           "outcome": "pass",
           "reachable": true

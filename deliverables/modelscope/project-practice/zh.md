@@ -6,4 +6,4 @@ OpsKeeper 以 `opskeeper-teamharness` 插件接入 AgentTeams，保留 OpsKeeper
 
 团队协作与审批过程沉淀为事故档案，可回看告警上下文、诊断查询、候选方案、审批记录、执行结果与验证结论。这样既减少告警风暴下的上下文切换，也让复盘可以回答何时发生、依据什么判断、谁批准操作、修复是否有效。
 
-实践入口：官网 `https://opskeeper.yueming.xin/home`；OpsKeeper 服务 `https://opskeeper.yueming.xin`；AgentTeams Rooms `https://rooms.yueming.xin`；AgentTeams Dashboard `https://teams.yueming.xin`；路演全流程控制台 `https://home.yueming.xin`。
+实践入口：官网 `https://opskeeper.yueming.xin`；AgentTeams Rooms `https://rooms.yueming.xin`；AgentTeams Dashboard `https://teams.yueming.xin`；路演全流程控制台 `https://opskeeper.yueming.xin/live-incident`。

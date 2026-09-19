@@ -39,13 +39,13 @@ const acknowledgedProjects = [
     name: 'OpenBuddy',
     href: 'https://github.com/louloulin/OpenBuddy',
     description:
-      'Practical help with expression and structure while the final presentation was being prepared. Thank you for keeping this work open.',
+      'An open-source desktop AI workspace and WorkBuddy alternative for office productivity, with plan mode, local files, skills, MCP connectors, and multi-agent collaboration.',
   },
   {
     name: 'upup',
     href: 'https://github.com/louloulin/upup',
     description:
-      'An interesting open-source project recommended for engineers who care about automation and productivity.',
+      'A Pi-native Chinese AI investment-research assistant covering market data, fundamentals, filings, valuation, risk, and backtesting for A-shares, Hong Kong, and US-listed stocks.',
   },
 ];
 
@@ -188,8 +188,13 @@ export default function OpenSourcePage() {
                     <Github className="h-3.5 w-3.5" />
                     louloulin
                   </a>
-                  <span className="text-ink-300">for open-source contributions and support for OpsKeeper.</span>
+                  <span className="text-ink-300">and the Lumos group they belong to.</span>
                 </div>
+                <p className="mt-3 text-sm leading-6 text-ink-300">
+                  Lumos is an informal group of AI-native enthusiasts who enjoy researching AI,
+                  multi-agent systems, and related topics, then open-sourcing mature products from
+                  their work. Here are some interesting projects from louloulin worth exploring.
+                </p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   {acknowledgedProjects.map((project) => (
                     <a

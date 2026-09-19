@@ -1,5 +1,5 @@
 import { lazy, type ReactNode } from 'react';
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { Layout } from '@/components/Layout';
 import { useAuth } from '@/store/auth';
 
@@ -69,19 +69,22 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function PublicOnly({ children }: { children: ReactNode }) {
+function PublicOnly({ children, forceLoginForm = false }: { children: ReactNode; forceLoginForm?: boolean }) {
   const token = useAuth((s) => s.token);
-  if (token) return <Navigate to="/" replace />;
+  if (token && !forceLoginForm) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
 export default function App() {
+  const [searchParams] = useSearchParams();
+  const forceLoginForm = searchParams.get('account') === 'switch';
+
   return (
     <Routes>
       <Route
         path="/login"
         element={
-          <PublicOnly>
+          <PublicOnly forceLoginForm={forceLoginForm}>
             <LoginPage />
           </PublicOnly>
         }
@@ -93,7 +96,7 @@ export default function App() {
           </RequireAuth>
         }
       >
-        <Route path="/" element={<HomePage />} />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/chat/:sessionId" element={<ChatThreadPage />} />
         {/* /edges is the legacy route, kept as an alias to /devices for
@@ -206,7 +209,7 @@ export default function App() {
           </RequireAuth>
         }
       />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   );
 }

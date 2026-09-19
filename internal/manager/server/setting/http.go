@@ -2,10 +2,8 @@
 // runtime configuration store. Reads are open to any authenticated user
 // (sensitive values are always masked); writes require admin role.
 //
-// There is no reveal endpoint by design: a UI that wants to show the
-// cleartext API key would have to fetch it from the LLM resolver path,
-// and we'd rather not expose that. Operators with shell access can read
-// the DB directly if they need to verify the value.
+// LLM API keys are write-only: they may be replaced through the settings
+// API but are never returned to a browser, even to an administrator.
 package setting
 
 import (
@@ -136,10 +134,9 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, bizsetting.SettingDTO{Category: category, Key: key, Sensitive: sensitive})
 }
 
-// reveal returns the cleartext value for a single (category, key) row.
-// Admin-only — Service.List returns sensitive values masked, but admins
-// who can already see/rotate the key in the same UI can read it back
-// here so we can render an eye-toggle without lying about field state.
+// reveal returns the cleartext value for a single non-LLM credential row.
+// Admin-only. LLM API keys are rejected before the service lookup so no
+// browser session can retrieve a model provider key.
 //
 // We return the value alone (not the row) so the response is small and
 // the caller can keep the masked DTO from /v1/system-settings as the
@@ -152,6 +149,10 @@ func (h *Handler) reveal(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "key")
 	if category == "" || key == "" {
 		writeErr(w, errs.ErrInvalid)
+		return
+	}
+	if category == "llm" && isSensitiveKey(category, key) {
+		writeErr(w, errs.ErrForbidden)
 		return
 	}
 	v, found, err := h.svc.Get(r.Context(), category, key)

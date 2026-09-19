@@ -1,11 +1,11 @@
 # ModelScope Source and Route Baseline
 
-- Generated (UTC): `2026-09-19T05:24:59Z`
-- Generated (Asia/Shanghai): `2026-09-19T13:24:59+08:00`
+- Generated (UTC): `2026-09-19T12:32:05Z`
+- Generated (Asia/Shanghai): `2026-09-19T20:32:05+08:00`
 - GitHub repository: https://github.com/vincent-wuhan/opskeeper
 - Default branch: `main`
-- Current HEAD: `0af4ffa3bb32c5898b67234866549b31e96111dd`
-- `origin/main`: `be44e36c7f1dd987e863a8732965db25aea1db28`
+- Current HEAD: `0964a170d7748b8f7c256930590693971b2bbf2e`
+- `origin/main`: `fadeafa9bec297096bb8f712d03a1c55a3e6a6ca`
 
 ## Route Preflight
 
@@ -13,11 +13,11 @@ HEAD is used first. GET is the fallback when HEAD is unreachable or returns a fa
 
 | Entry | Result | Reachable | Effective method | Probe | Route |
 |---|---|---:|---|---|---|
-| official_website | PASS | yes | HEAD | HEAD 200 | https://opskeeper.yueming.xin/home |
+| official_website | PASS | yes | HEAD | HEAD 200 | https://opskeeper.yueming.xin |
 | opskeeper_service | PASS | yes | HEAD | HEAD 200 | https://opskeeper.yueming.xin |
 | agentteams_rooms | PASS | yes | HEAD | HEAD 200 | https://rooms.yueming.xin |
 | agentteams_dashboard | PASS | yes | HEAD | HEAD 200 | https://teams.yueming.xin |
-| roadshow_console | PASS | yes | HEAD | HEAD 302 | https://home.yueming.xin |
+| roadshow_console | PASS | yes | HEAD | HEAD 200 | https://opskeeper.yueming.xin/live-incident |
 
 ## Summary
 

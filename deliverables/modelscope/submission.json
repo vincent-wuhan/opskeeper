@@ -18,7 +18,7 @@
   "entries": [
     {
       "id": "official_website",
-      "url": "https://opskeeper.yueming.xin/home",
+      "url": "https://opskeeper.yueming.xin",
       "role": "Product official website",
       "required_for_public": true,
       "auth_expected": false,
@@ -50,7 +50,7 @@
     },
     {
       "id": "roadshow_console",
-      "url": "https://home.yueming.xin",
+      "url": "https://opskeeper.yueming.xin/live-incident",
       "role": "Full-flow roadshow console",
       "required_for_public": true,
       "auth_expected": true,

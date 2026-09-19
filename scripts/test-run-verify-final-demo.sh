@@ -243,7 +243,7 @@ pass_test "wrapper passes MANAGER_AUTH_TOKEN, DEMO_API_TOKEN, PLUGIN_HEALTH_TOKE
 # ---------------------------------------------------------------------------
 expected_order=(
   "MANAGER_URL=https://opskeeper.yueming.xin"
-  "HOME_URL=https://home.yueming.xin"
+  "HOME_URL=https://opskeeper.yueming.xin/live-incident"
   "TEAMS_URL=https://teams.yueming.xin"
   "ROOMS_URL=https://rooms.yueming.xin"
   "OPSKEEPER_URL=https://opskeeper.yueming.xin"

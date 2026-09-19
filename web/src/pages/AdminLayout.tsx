@@ -27,12 +27,11 @@ import {
   Loader2,
   ScrollText,
   Server,
-  Shield,
   Users as UsersIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import type { IconType } from '@/lib/icon';
-import { Card, EmptyState, PageHeader } from '@/components/ui';
+import { PageHeader } from '@/components/ui';
 import { tr } from '@/i18n/locale';
 import { usePermissions } from '@/store/me';
 
@@ -57,28 +56,14 @@ function railItems(): RailItem[] {
 }
 
 export default function AdminLayout() {
-  const items = railItems();
   const { isAdmin } = usePermissions();
-  // route-level gate. The sidebar already hides /admin/* for
-  // non-admins, but a stale deep-link / typed URL still lands here —
-  // show an EmptyState rather than rendering the rail + outlet (which
-  // would just stack child EmptyStates and look weird).
-  if (!isAdmin) {
-    return (
-      <main className="anim-fade flex flex-1 flex-col overflow-hidden p-6">
-        <Card className="p-6">
-          <EmptyState
-            icon={Shield}
-            title={tr('需要管理员权限', 'Admin permission required')}
-            hint={tr('只有管理员（admin）才能访问用户管理。请联系管理员授予权限。', 'Only admins can access user management. Ask an admin to grant permission.')}
-          />
-        </Card>
-      </main>
-    );
-  }
+  const items = railItems().filter((item) => isAdmin || item.to === 'audit' || item.to === 'runtime');
   return (
     <main className="anim-fade flex flex-1 flex-col overflow-hidden">
-      <PageHeader title={tr('用户管理', 'Admin')} subtitle={tr('用户 / 组织 / 审计；platform governance', 'Users / orgs / audit — platform governance')} />
+      <PageHeader
+        title={tr('用户管理', 'Admin')}
+        subtitle={isAdmin ? tr('用户 / 组织 / 审计；platform governance', 'Users / orgs / audit — platform governance') : tr('审计与运行时只读视图', 'Audit and runtime read-only view')}
+      />
 
       <div className="flex-1 overflow-hidden">
         <div className="grid h-full grid-cols-1 lg:grid-cols-[240px_1fr]">

@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import type { IconType } from '@/lib/icon';
-import { Card, EmptyState, PageHeader } from '@/components/ui';
+import { PageHeader } from '@/components/ui';
 import { useI18n } from '@/i18n/locale';
 import { usePermissions } from '@/store/me';
 
@@ -55,26 +55,13 @@ const RAIL_ITEMS: RailItem[] = [
 export default function SettingsLayout() {
   const { tr } = useI18n();
   const { isAdmin } = usePermissions();
-  // route-level gate. Sidebar already hides /settings/* for
-  // non-admins, but a stale deep-link still lands here — short-circuit
-  // to an EmptyState so we don't render the rail + outlet (which is
-  // mostly admin-only mutation UI behind individual per-page checks).
-  if (!isAdmin) {
-    return (
-      <main className="anim-fade flex flex-1 flex-col overflow-hidden p-6">
-        <Card className="p-6">
-          <EmptyState
-            icon={Shield}
-            title={tr('需要管理员权限', 'Admin permission required')}
-            hint={tr('设置页只对管理员开放。请联系管理员授予权限。', 'Settings are admin-only. Ask an admin to grant permission.')}
-          />
-        </Card>
-      </main>
-    );
-  }
+  const visibleItems = RAIL_ITEMS.filter((item) => isAdmin || item.to !== 'secrets');
   return (
     <main className="anim-fade flex flex-1 flex-col overflow-hidden">
-      <PageHeader title={tr('设置', 'Settings')} subtitle={tr('产品级配置；admin 可改', 'Product-wide configuration; admin can edit')} />
+      <PageHeader
+        title={tr('设置', 'Settings')}
+        subtitle={isAdmin ? tr('产品级配置；admin 可改', 'Product-wide configuration; admin can edit') : tr('产品级配置；当前为只读视图', 'Product-wide configuration; read-only view')}
+      />
 
       <div className="flex-1 overflow-hidden">
         <div className="grid h-full grid-cols-1 lg:grid-cols-[240px_1fr]">
@@ -87,7 +74,7 @@ export default function SettingsLayout() {
               'flex shrink-0 gap-1 overflow-x-auto border-b px-3 py-3 lg:flex-col lg:gap-0.5 lg:px-3 lg:py-4'
             )}
           >
-            {RAIL_ITEMS.map((item) => (
+            {visibleItems.map((item) => (
               <RailLink key={item.to} item={item} />
             ))}
           </nav>
