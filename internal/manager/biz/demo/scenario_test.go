@@ -81,6 +81,7 @@ type fakeScenarios struct {
 	rows           map[string]*demomodel.ScenarioRun
 	events         []*alertmodel.Event
 	failEventWrite bool
+	expiredRows    []demomodel.ScenarioRun
 }
 
 func newFakeScenarios() *fakeScenarios {
@@ -120,6 +121,19 @@ func (f *fakeScenarios) GetByIncident(_ context.Context, tenantID uint64, scenar
 		}
 	}
 	return nil, errs.ErrNotFound
+}
+
+func (f *fakeScenarios) ListExpiredAwaitingApproval(_ context.Context, now time.Time, limit int) ([]demomodel.ScenarioRun, error) {
+	rows := make([]demomodel.ScenarioRun, 0, len(f.expiredRows))
+	for _, row := range f.expiredRows {
+		if row.Status == demomodel.ScenarioStatusAwaitingApproval && !row.ExpiresAt.After(now) {
+			rows = append(rows, row)
+		}
+		if limit > 0 && len(rows) >= limit {
+			break
+		}
+	}
+	return rows, nil
 }
 
 func (f *fakeFixtures) Recover(_ context.Context, manifestID, reason string) error {
@@ -195,6 +209,7 @@ type fakeFixtures struct {
 	recoverCalls int
 	lastManifest string
 	lastReason   string
+	statusCalls  int
 }
 
 type fakePreviewRepository struct {
@@ -319,7 +334,8 @@ func (f *fakeFixtures) Start(_ context.Context, input FixtureStartInput) (Fixtur
 	return FixtureStartResult{ManifestID: fmt.Sprintf("manifest-%d", f.starts)}, nil
 }
 
-func (f *fakeFixtures) Status(context.Context, string) (FixtureStatus, error) {
+func (f *fakeFixtures) Status(_ context.Context, _ string) (FixtureStatus, error) {
+	f.statusCalls++
 	state := f.state
 	if state == "" {
 		state = "running"
@@ -759,6 +775,59 @@ func TestApproveDoesNotRepeatRecoveredFixtureOperation(t *testing.T) {
 		if !found {
 			t.Fatalf("archive events %v lack %s", eventTypes, required)
 		}
+	}
+}
+
+func TestExpiredApprovalClosesScenarioReleasesFixtureAndSkipsRepair(t *testing.T) {
+	baseline := previewCandidate("baseline", "baseline", repairpreview.DecisionPass)
+	baseline.Kind = "baseline"
+	passing := previewCandidate("candidate-a", "resize_pool", repairpreview.DecisionPass)
+	previews := &fakePreviewRepository{runs: []repairpreview.Run{previewRun(baseline, passing)}}
+	usecase, _, _, scenarios := scenarioPartsWithPreview(t, previews, "sha256:workload-v1")
+	fixtures := &fakeFixtures{state: "expired", recoverErr: errors.New("expired fixture must not be recovered")}
+	usecase.fixtures = fixtures
+	publisher := &fakeWorkflowPublisher{}
+	usecase.workflowPublisher = publisher
+	archive := &fakeArchiveWriter{}
+	usecase.SetArchiveWriter(archive, "goai-demo")
+
+	run, err := scenarios.GetByIncident(context.Background(), 1, ScenarioID, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := scenarios.UpdateStatus(
+		context.Background(), run.ID, demomodel.ScenarioStatusAwaitingApproval,
+		func(*demomodel.ScenarioRun) error { return nil },
+	); err != nil {
+		t.Fatal(err)
+	}
+	run.ExpiresAt = time.Now().Add(-time.Second)
+
+	status, err := usecase.Approve(context.Background(), 1, 100, "@admin:matrix-local.agentteams.io:18080")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Status != demomodel.ScenarioStatusClosed || status.PreviewDecision == nil ||
+		status.PreviewDecision.EligibleForHITL {
+		t.Fatalf("status = %+v decision = %+v", status, status.PreviewDecision)
+	}
+	if fixtures.statusCalls != 1 || fixtures.recoverCalls != 0 {
+		t.Fatalf("status calls = %d recover calls = %d", fixtures.statusCalls, fixtures.recoverCalls)
+	}
+	if len(publisher.stages) != 1 || publisher.stages[0] != demomodel.ScenarioStatusClosed {
+		t.Fatalf("published stages = %v", publisher.stages)
+	}
+	if len(scenarios.events) != 1 || scenarios.events[0].EventType != demomodel.ScenarioStatusClosed {
+		t.Fatalf("events = %+v", scenarios.events)
+	}
+	foundExpiredArchive := false
+	for _, event := range archive.events {
+		if event.EventType == incidentcontrol.EventClosed && event.Status == "expired" {
+			foundExpiredArchive = true
+		}
+	}
+	if !foundExpiredArchive {
+		t.Fatalf("archive events = %+v lack expired closure", archive.events)
 	}
 }
 

@@ -1348,6 +1348,9 @@ func main() {
 			archiveTenantID = "1"
 		}
 		demoScenarioUsecase.SetArchiveWriter(incidentcontrol.NewSQLRepository(db), archiveTenantID)
+		go demoScenarioUsecase.RunExpirySweeper(
+			rootCtx, 30*time.Second, log.With(slog.String("comp", "demo-expiry-sweeper")),
+		)
 		demoScenarioHandler = managerserverdemo.NewHandler(managersvcdemo.NewService(demoScenarioUsecase), demoAPIToken)
 	} else if demoAPIToken != "" {
 		log.Warn("demo scenario API disabled: pool fixture URL/token is required")

@@ -165,6 +165,44 @@ func TestMatrixWorkflowPublisherRequiresCompleteConfiguration(t *testing.T) {
 	}
 }
 
+func TestMatrixWorkflowPublisherSendsExplicitExpiredOutcome(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		encoded, _ := io.ReadAll(request.Body)
+		if err := json.Unmarshal(encoded, &body); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		_, _ = writer.Write([]byte(`{"event_id":"$authority"}`))
+	}))
+	defer server.Close()
+
+	publisher, err := NewMatrixWorkflowPublisher(
+		server.URL, "matrix-token", "!room:hs", "@manager:hs", "0123456789abcdef",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := &demomodel.ScenarioRun{
+		IncidentID: 101, IdempotencyKey: "final-demo-expired", TargetFingerprint: "0123456789abcdef",
+		ExpiresAt: time.Date(2026, 9, 19, 13, 48, 20, 0, time.UTC),
+	}
+	if err := publisher.PublishWorkflow(context.Background(), run, "closed", &PreviewDecisionSummary{
+		BoundaryText: "Scenario expired before approval. Controlled fixed-workload reconstruction.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	message := body["body"].(string)
+	if !strings.Contains(message, "stage=closed") ||
+		!strings.Contains(message, "Outcome: approval expired before HITL; no repair was executed.") ||
+		!strings.Contains(message, "Approval expired (UTC): 2026-09-19T13:48:20Z") {
+		t.Fatalf("authority message = %q", message)
+	}
+	workflow := body["agentteams.workflow"].(map[string]any)
+	if workflow["authorityStage"] != "closed" {
+		t.Fatalf("workflow = %+v", workflow)
+	}
+}
+
 func assertNoJSONFloats(t *testing.T, data []byte) {
 	t.Helper()
 	decoder := json.NewDecoder(bytes.NewReader(data))

@@ -164,7 +164,7 @@ func (publisher *MatrixWorkflowPublisher) PublishWorkflow(
 	switch stage {
 	case demomodel.ScenarioStatusPreviewReady, demomodel.ScenarioStatusAwaitingApproval,
 		demomodel.ScenarioStatusRepairDispatched, demomodel.ScenarioStatusVerifying,
-		demomodel.ScenarioStatusRecovered:
+		demomodel.ScenarioStatusRecovered, demomodel.ScenarioStatusClosed:
 	default:
 		return errors.New("unknown workflow authority stage")
 	}
@@ -218,6 +218,15 @@ func (publisher *MatrixWorkflowPublisher) PublishWorkflow(
 			brief.RootCause, brief.ImpactScope, brief.Boundary,
 			formatWorkflowCandidate(brief.CandidateA), formatWorkflowCandidate(brief.CandidateB),
 			brief.ApprovalExpiresUTC, brief.ApprovalExpiresBJT, brief.ArchiveURL, brief.ApprovalCommand,
+		)
+	}
+	if stage == demomodel.ScenarioStatusClosed {
+		decisionText += fmt.Sprintf(
+			"Outcome: approval expired before HITL; no repair was executed.\n"+
+				"Approval expired (UTC): %s\nApproval expired (BJT): %s\n"+
+				"Fixture release: verified by pool fixture TTL or expiry readback.\n",
+			run.ExpiresAt.UTC().Format(time.RFC3339),
+			run.ExpiresAt.In(beijingTimezone).Format("2006-01-02T15:04:05+08:00"),
 		)
 	}
 	decisionText += "OPSKEEPER_AUTHORITY_V1 " + token
