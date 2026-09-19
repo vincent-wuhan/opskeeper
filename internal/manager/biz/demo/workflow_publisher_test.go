@@ -19,7 +19,9 @@ import (
 func TestMatrixWorkflowPublisherSignsAndSendsAuthorityEvent(t *testing.T) {
 	t.Setenv("OPSKEEPER_DEMO_ARCHIVE_URL_TEMPLATE", "https://teams.example/archive?incident_id={incident_id}")
 	var body map[string]any
+	var requestPath string
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requestPath = request.URL.Path
 		if request.Header.Get("Authorization") != "Bearer matrix-token" {
 			t.Errorf("authorization = %q", request.Header.Get("Authorization"))
 		}
@@ -37,7 +39,7 @@ func TestMatrixWorkflowPublisherSignsAndSendsAuthorityEvent(t *testing.T) {
 		t.Fatal(err)
 	}
 	run := &demomodel.ScenarioRun{
-		IncidentID: 100, TargetFingerprint: "0123456789abcdef",
+		IncidentID: 100, IdempotencyKey: "final-demo-key", TargetFingerprint: "0123456789abcdef",
 		ExpiresAt: time.Date(2026, 9, 19, 13, 19, 34, 0, time.UTC),
 	}
 	decision := &PreviewDecisionSummary{
@@ -61,6 +63,9 @@ func TestMatrixWorkflowPublisherSignsAndSendsAuthorityEvent(t *testing.T) {
 	}
 	if err := publisher.PublishWorkflow(context.Background(), run, "awaiting_approval", decision); err != nil {
 		t.Fatal(err)
+	}
+	if !strings.HasSuffix(requestPath, "/final-demo-key-awaiting_approval-authority") {
+		t.Fatalf("workflow authority transaction path must include an idempotency key: %s", requestPath)
 	}
 	authority := body["opskeeper.authority"].(map[string]any)
 	token := authority["token"].(string)
@@ -177,5 +182,37 @@ func TestMatrixWorkflowPublisherOmitsDecisionBriefOutsideApproval(t *testing.T) 
 	workflow := body["agentteams.workflow"].(map[string]any)
 	if _, exists := workflow["decision_brief"]; exists {
 		t.Fatalf("non-approval workflow must omit decision brief: %+v", workflow)
+	}
+}
+
+func TestMatrixWorkflowPublisherRetriesTransientFailure(t *testing.T) {
+	requests := 0
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		requests++
+		paths = append(paths, request.URL.Path)
+		if requests == 1 {
+			http.Error(writer, "rate limited", http.StatusTooManyRequests)
+			return
+		}
+		_, _ = writer.Write([]byte(`{"event_id":"$authority"}`))
+	}))
+	defer server.Close()
+
+	publisher, err := NewMatrixWorkflowPublisher(
+		server.URL, "matrix-token", "!room:hs", "@manager:hs", "0123456789abcdef",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := &demomodel.ScenarioRun{
+		IncidentID: 102, IdempotencyKey: "stable-key", TargetFingerprint: "0123456789abcdef",
+	}
+	decision := &PreviewDecisionSummary{CandidateA: "candidate-a", RootCause: "pool exhausted"}
+	if err := publisher.PublishWorkflow(context.Background(), run, "awaiting_approval", decision); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 || paths[0] != paths[1] {
+		t.Fatalf("requests = %d paths = %v", requests, paths)
 	}
 }

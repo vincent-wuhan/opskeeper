@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -23,7 +22,10 @@ import (
 	demomodel "github.com/vincent-wuhan/opskeeper/internal/manager/model/demo"
 )
 
-const workflowAuthorityTimeout = 5 * time.Second
+const (
+	workflowAuthorityTimeout = 5 * time.Second
+	workflowAuthorityRetries = 3
+)
 
 var beijingTimezone = time.FixedZone("UTC+8", 8*60*60)
 
@@ -213,25 +215,47 @@ func (publisher *MatrixWorkflowPublisher) PublishWorkflow(
 		return err
 	}
 	eventURL := fmt.Sprintf(
-		"%s/_matrix/client/v3/rooms/%s/send/m.room.message/%d-authority",
-		publisher.baseURL, url.PathEscape(publisher.roomID), now.UnixNano(),
+		"%s/_matrix/client/v3/rooms/%s/send/m.room.message/%s-%s-authority",
+		publisher.baseURL, url.PathEscape(publisher.roomID), url.PathEscape(run.IdempotencyKey), stage,
 	)
-	request, err := http.NewRequestWithContext(ctx, http.MethodPut, eventURL, bytes.NewReader(encodedContent))
-	if err != nil {
-		return err
+	var lastErr error
+	for attempt := 0; attempt < workflowAuthorityRetries; attempt++ {
+		if attempt > 0 {
+			if err := sleepWithContext(ctx, time.Duration(1<<attempt)*100*time.Millisecond); err != nil {
+				return err
+			}
+		}
+		request, err := http.NewRequestWithContext(ctx, http.MethodPut, eventURL, bytes.NewReader(encodedContent))
+		if err != nil {
+			return err
+		}
+		request.Header.Set("Authorization", "Bearer "+publisher.token)
+		request.Header.Set("Content-Type", "application/json")
+		response, err := publisher.client.Do(request)
+		if err == nil {
+			_ = response.Body.Close()
+			if response.StatusCode >= 200 && response.StatusCode < 300 {
+				return nil
+			}
+			err = fmt.Errorf("matrix workflow authority send failed: %s", response.Status)
+			if response.StatusCode != http.StatusTooManyRequests && response.StatusCode < 500 {
+				return err
+			}
+		}
+		lastErr = err
 	}
-	request.Header.Set("Authorization", "Bearer "+publisher.token)
-	request.Header.Set("Content-Type", "application/json")
-	response, err := publisher.client.Do(request)
-	if err != nil {
-		return err
+	return lastErr
+}
+
+func sleepWithContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
-	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<16))
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("matrix workflow authority send failed: %s", response.Status)
-	}
-	return nil
 }
 
 func formatWorkflowCandidate(candidate *PreviewCandidateSummary) string {

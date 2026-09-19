@@ -962,7 +962,7 @@ func TestAlertCorrelatedCannotSkipDiagnosis(t *testing.T) {
 	}
 }
 
-func TestPreviewEventFailureRollsBackStatusAndDoesNotPublish(t *testing.T) {
+func TestPreviewEventFailureRollsBackStatusAfterIdempotentPublish(t *testing.T) {
 	baseline := previewCandidate("baseline", "baseline", repairpreview.DecisionPass)
 	baseline.Kind = "baseline"
 	passing := previewCandidate("candidate-a", "resize_pool", repairpreview.DecisionPass)
@@ -980,8 +980,35 @@ func TestPreviewEventFailureRollsBackStatusAndDoesNotPublish(t *testing.T) {
 	if getErr != nil || run.Status != demomodel.ScenarioStatusDiagnosisSent {
 		t.Fatalf("run = %+v err = %v", run, getErr)
 	}
-	if len(scenarios.events) != 0 || len(incidents.events) != 0 || len(publisher.stages) != 0 {
+	if len(scenarios.events) != 0 || len(incidents.events) != 0 ||
+		strings.Join(publisher.stages, ",") != demomodel.ScenarioStatusPreviewReady {
 		t.Fatalf("events = %+v incident events = %+v stages = %v", scenarios.events, incidents.events, publisher.stages)
+	}
+}
+
+func TestPreviewPublishFailureDoesNotAdvanceStatus(t *testing.T) {
+	baseline := previewCandidate("baseline", "baseline", repairpreview.DecisionPass)
+	baseline.Kind = "baseline"
+	passing := previewCandidate("candidate-a", "resize_pool", repairpreview.DecisionPass)
+	previews := &fakePreviewRepository{runs: []repairpreview.Run{previewRun(baseline, passing)}}
+	usecase, input, _, scenarios := scenarioPartsWithPreview(t, previews, "sha256:workload-v1")
+	run, err := scenarios.GetByIdempotencyKey(context.Background(), 1, ScenarioID, input.IdempotencyKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.Status = demomodel.ScenarioStatusDiagnosisSent
+	publisher := &fakeWorkflowPublisher{fails: true}
+	usecase.workflowPublisher = publisher
+
+	if _, err := usecase.Get(context.Background(), 1, ScenarioID, input.IdempotencyKey); err == nil {
+		t.Fatal("expected workflow publisher failure")
+	}
+	run, err = scenarios.GetByIdempotencyKey(context.Background(), 1, ScenarioID, input.IdempotencyKey)
+	if err != nil || run.Status != demomodel.ScenarioStatusDiagnosisSent {
+		t.Fatalf("run = %+v err = %v", run, err)
+	}
+	if strings.Join(publisher.stages, ",") != demomodel.ScenarioStatusPreviewReady {
+		t.Fatalf("publisher stages = %v", publisher.stages)
 	}
 }
 

@@ -824,6 +824,9 @@ func (u *Usecase) transitionPreview(
 		allowedCurrent = demomodel.ScenarioStatusPreviewReady
 	}
 	event := u.previewEvent(run, decision, target)
+	if err := u.publishWorkflow(ctx, run, target, decision); err != nil {
+		return err
+	}
 	if err := u.scenarios.UpdateStatusWithEvent(ctx, run.ID, target, event, allowedCurrent); err != nil {
 		return err
 	}
@@ -836,7 +839,6 @@ func (u *Usecase) transitionPreview(
 			return err
 		}
 	}
-	u.publishWorkflow(ctx, run, target, decision)
 	return nil
 }
 
@@ -930,7 +932,7 @@ func (u *Usecase) advanceLoadedWorkflow(
 		return err
 	}
 	run.Status = stage
-	u.publishWorkflow(ctx, run, stage, decision)
+	_ = u.publishWorkflow(ctx, run, stage, decision)
 	return nil
 }
 
@@ -983,11 +985,11 @@ func (u *Usecase) expiryEvent(run *demomodel.ScenarioRun) *alertmodel.Event {
 
 func (u *Usecase) publishWorkflow(
 	ctx context.Context, run *demomodel.ScenarioRun, stage string, decision *PreviewDecisionSummary,
-) {
+) error {
 	if u.workflowPublisher == nil {
-		return
+		return nil
 	}
-	_ = u.workflowPublisher.PublishWorkflow(ctx, run, stage, decision)
+	return u.workflowPublisher.PublishWorkflow(ctx, run, stage, decision)
 }
 
 func ValidateStart(input StartScenarioInput) error {
