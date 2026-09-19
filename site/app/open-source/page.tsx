@@ -39,7 +39,7 @@ const acknowledgedProjects = [
     name: 'OpenBuddy',
     href: 'https://github.com/louloulin/OpenBuddy',
     description:
-      'Practical help with expression and structure while the final presentation was being prepared. Thank you for keeping this work open.',
+      'An open-source desktop AI workspace and WorkBuddy alternative for office productivity, with plan mode, local files, skills, MCP connectors, and multi-agent collaboration.',
   },
   {
     name: 'upup',

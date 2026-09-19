@@ -38,7 +38,7 @@ const acknowledgedProjects = [
   {
     name: 'OpenBuddy',
     href: 'https://github.com/louloulin/OpenBuddy',
-    description: '决赛 PPT 准备阶段的表达与结构打磨带来了实际帮助，感谢作者开放这份工作。',
+    description: '开源桌面 AI 工作区与 WorkBuddy 替代方案，面向办公提效，提供计划模式、本地文件、技能、MCP 连接器与多智能体协作。',
   },
   {
     name: 'upup',
