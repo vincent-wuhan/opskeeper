@@ -39,13 +39,13 @@ const acknowledgedProjects = [
     name: 'OpenBuddy',
     href: 'https://github.com/louloulin/OpenBuddy',
     description:
-      'An open-source desktop AI workspace and WorkBuddy alternative for office productivity, with plan mode, local files, skills, MCP connectors, and multi-agent collaboration.',
+      'A Pi-native open-source AI workspace built on a microkernel-plus-plugin architecture: 100% MIT, fully readable and auditable code, a forkable customizable UI, and an extensible capability mesh that keeps your AI workspace under your control.',
   },
   {
     name: 'upup',
     href: 'https://github.com/louloulin/upup',
     description:
-      'A Pi-native Chinese AI investment-research assistant covering market data, fundamentals, filings, valuation, risk, and backtesting for A-shares, Hong Kong, and US-listed stocks.',
+      'A Pi-native AI investment agent built on the Pi runtime, covering deep investment research, valuation, and portfolio risk management for A-shares, Hong Kong, and US stocks in one place.',
   },
 ];
 
