@@ -15,6 +15,7 @@ import {
   type WorkflowStage,
 } from '@/lib/demo-types';
 import type { DemoLocale } from '@/lib/demo-locale';
+import { DEMO_URLS } from '@/lib/demos';
 import { cn } from '@/lib/utils';
 
 type SnapshotState = {
@@ -98,8 +99,8 @@ const demoLinks: Record<DemoLocale, DemoLink[]> = {
     },
     {
       label: 'OpsKeeper 后台',
-      description: '登录控制台查看事故、审批、审计与配置',
-      href: 'https://opskeeper.yueming.xin/dashboard',
+      description: '切换为演示普通用户，查看事故、审批、审计与只读配置',
+      href: DEMO_URLS.opskeeper,
     },
     {
       label: '事故档案',
@@ -137,8 +138,8 @@ const demoLinks: Record<DemoLocale, DemoLink[]> = {
     },
     {
       label: 'OpsKeeper console',
-      description: 'Sign in to review incidents, approvals, audits, and settings',
-      href: 'https://opskeeper.yueming.xin/dashboard',
+      description: 'Switch to the standard demo user to review incidents, approvals, audits, and read-only settings',
+      href: DEMO_URLS.opskeeper,
     },
     {
       label: 'Incident archive',
