@@ -97,6 +97,11 @@ const demoLinks: Record<DemoLocale, DemoLink[]> = {
       href: 'https://teams.yueming.xin/#plugin-route:opskeeper-teamharness/home',
     },
     {
+      label: 'OpsKeeper 后台',
+      description: '登录控制台查看事故、审批、审计与配置',
+      href: 'https://opskeeper.yueming.xin/dashboard',
+    },
+    {
       label: '事故档案',
       description: '关闭后回看完整证据链与 A/B 对比表',
       href: 'https://teams.yueming.xin/#plugin-route:opskeeper-teamharness/archive',
@@ -129,6 +134,11 @@ const demoLinks: Record<DemoLocale, DemoLink[]> = {
       label: 'AgentTeams Dashboard',
       description: 'Inspect the task board and OpsKeeper runtime',
       href: 'https://teams.yueming.xin/#plugin-route:opskeeper-teamharness/home',
+    },
+    {
+      label: 'OpsKeeper console',
+      description: 'Sign in to review incidents, approvals, audits, and settings',
+      href: 'https://opskeeper.yueming.xin/dashboard',
     },
     {
       label: 'Incident archive',
