@@ -43,7 +43,7 @@ const acknowledgedProjects = [
   {
     name: 'upup',
     href: 'https://github.com/louloulin/upup',
-    description: '一个很有意思的开源项目，推荐给关注工程效率与自动化的朋友。',
+    description: '基于 Pi runtime 的中文 AI 投研助手，覆盖 A股 / 港股 / 美股行情、基本面、公告、估值、风险与回测；定位为研究工具。',
   },
 ];
 

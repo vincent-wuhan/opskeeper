@@ -45,7 +45,7 @@ const acknowledgedProjects = [
     name: 'upup',
     href: 'https://github.com/louloulin/upup',
     description:
-      'An interesting open-source project recommended for engineers who care about automation and productivity.',
+      'A Pi-native Chinese AI investment-research assistant covering market data, fundamentals, filings, valuation, risk, and backtesting for A-shares, Hong Kong, and US-listed stocks.',
   },
 ];
 
