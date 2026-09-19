@@ -563,6 +563,7 @@ func TestPreviewPASSCreatesOnlyHITLEligibility(t *testing.T) {
 	baseline.Kind = "baseline"
 	passing := previewCandidate("candidate-a", "resize_pool", repairpreview.DecisionPass)
 	rejected := previewCandidate("candidate-b", "reset_pool", repairpreview.DecisionReject)
+	rejected.RejectionReason = "business probe failed"
 	previews := &fakePreviewRepository{runs: []repairpreview.Run{
 		previewRun(baseline, passing, rejected),
 	}}
@@ -580,6 +581,13 @@ func TestPreviewPASSCreatesOnlyHITLEligibility(t *testing.T) {
 		decision.ReplayProfileID != "sha256:workload-v1" ||
 		decision.CandidateA != "candidate-a" || decision.CandidateB != "candidate-b" {
 		t.Fatalf("decision = %+v", decision)
+	}
+	if decision.RootCause == "" || decision.ImpactScope == "" ||
+		decision.CandidateADetails == nil || decision.CandidateBDetails == nil ||
+		decision.CandidateADetails.Action != "resize_pool" ||
+		decision.CandidateADetails.Decision != string(repairpreview.DecisionPass) ||
+		decision.CandidateBDetails.RejectionReason != "business probe failed" {
+		t.Fatalf("decision must carry HITL context: %+v", decision)
 	}
 	if previews.eligibleCalls != 1 {
 		t.Fatalf("eligible calls = %d", previews.eligibleCalls)
