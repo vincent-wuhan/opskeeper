@@ -44,15 +44,31 @@ type workflowAuthorityClaims struct {
 }
 
 type workflowDecisionBrief struct {
-	RootCause          string                   `json:"root_cause"`
-	ImpactScope        string                   `json:"impact_scope"`
-	Boundary           string                   `json:"boundary"`
-	ApprovalExpiresUTC string                   `json:"approval_expires_utc"`
-	ApprovalExpiresBJT string                   `json:"approval_expires_bjt"`
-	ArchiveURL         string                   `json:"archive_url"`
-	ApprovalCommand    string                   `json:"approval_command"`
-	CandidateA         *PreviewCandidateSummary `json:"candidate_a,omitempty"`
-	CandidateB         *PreviewCandidateSummary `json:"candidate_b,omitempty"`
+	RootCause          string                    `json:"root_cause"`
+	ImpactScope        string                    `json:"impact_scope"`
+	Boundary           string                    `json:"boundary"`
+	ApprovalExpiresUTC string                    `json:"approval_expires_utc"`
+	ApprovalExpiresBJT string                    `json:"approval_expires_bjt"`
+	ArchiveURL         string                    `json:"archive_url"`
+	ApprovalCommand    string                    `json:"approval_command"`
+	CandidateA         *workflowCandidateSummary `json:"candidate_a,omitempty"`
+	CandidateB         *workflowCandidateSummary `json:"candidate_b,omitempty"`
+}
+
+type workflowCandidateSummary struct {
+	CandidateID       string `json:"candidate_id"`
+	Name              string `json:"name"`
+	Action            string `json:"action"`
+	ChangeSummary     string `json:"change_summary"`
+	Decision          string `json:"decision"`
+	RejectionReason   string `json:"rejection_reason,omitempty"`
+	Consistent        bool   `json:"consistent"`
+	BusinessProbePass bool   `json:"business_probe_pass"`
+	AverageLatencyMS  string `json:"average_latency_ms"`
+	P95LatencyMS      string `json:"p95_latency_ms"`
+	TPS               string `json:"tps"`
+	ErrorCount        int    `json:"error_count"`
+	WriteImpact       string `json:"write_impact"`
 }
 
 type MatrixWorkflowPublisher struct {
@@ -104,9 +120,25 @@ func buildWorkflowDecisionBrief(
 	brief.RootCause = decision.RootCause
 	brief.ImpactScope = decision.ImpactScope
 	brief.Boundary = decision.BoundaryText
-	brief.CandidateA = decision.CandidateADetails
-	brief.CandidateB = decision.CandidateBDetails
+	brief.CandidateA = newWorkflowCandidateSummary(decision.CandidateADetails)
+	brief.CandidateB = newWorkflowCandidateSummary(decision.CandidateBDetails)
 	return brief
+}
+
+func newWorkflowCandidateSummary(candidate *PreviewCandidateSummary) *workflowCandidateSummary {
+	if candidate == nil {
+		return nil
+	}
+	return &workflowCandidateSummary{
+		CandidateID: candidate.CandidateID, Name: candidate.Name, Action: candidate.Action,
+		ChangeSummary: candidate.ChangeSummary, Decision: candidate.Decision,
+		RejectionReason: candidate.RejectionReason, Consistent: candidate.Consistent,
+		BusinessProbePass: candidate.BusinessProbePass,
+		AverageLatencyMS:  strconv.FormatFloat(candidate.AverageLatencyMS, 'f', -1, 64),
+		P95LatencyMS:      strconv.FormatFloat(candidate.P95LatencyMS, 'f', -1, 64),
+		TPS:               strconv.FormatFloat(candidate.TPS, 'f', -1, 64),
+		ErrorCount:        candidate.ErrorCount, WriteImpact: candidate.WriteImpact,
+	}
 }
 
 func workflowArchiveURL(incidentID string) string {
@@ -258,12 +290,12 @@ func sleepWithContext(ctx context.Context, delay time.Duration) error {
 	}
 }
 
-func formatWorkflowCandidate(candidate *PreviewCandidateSummary) string {
+func formatWorkflowCandidate(candidate *workflowCandidateSummary) string {
 	if candidate == nil {
 		return "not available"
 	}
 	text := fmt.Sprintf(
-		"%s (%s / %s): %s; consistent=%t; business_probe=%t; avg_ms=%.3f; p95_ms=%.3f; tps=%.3f; errors=%d; write_impact=%s",
+		"%s (%s / %s): %s; consistent=%t; business_probe=%t; avg_ms=%s; p95_ms=%s; tps=%s; errors=%d; write_impact=%s",
 		candidate.CandidateID, candidate.Name, candidate.Action, candidate.Decision,
 		candidate.Consistent, candidate.BusinessProbePass, candidate.AverageLatencyMS,
 		candidate.P95LatencyMS, candidate.TPS, candidate.ErrorCount, candidate.WriteImpact,

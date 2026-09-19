@@ -1,12 +1,15 @@
 package demo
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,13 +22,15 @@ import (
 func TestMatrixWorkflowPublisherSignsAndSendsAuthorityEvent(t *testing.T) {
 	t.Setenv("OPSKEEPER_DEMO_ARCHIVE_URL_TEMPLATE", "https://teams.example/archive?incident_id={incident_id}")
 	var body map[string]any
+	var rawBody []byte
 	var requestPath string
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		rawBody, _ = io.ReadAll(request.Body)
 		requestPath = request.URL.Path
 		if request.Header.Get("Authorization") != "Bearer matrix-token" {
 			t.Errorf("authorization = %q", request.Header.Get("Authorization"))
 		}
-		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+		if err := json.Unmarshal(rawBody, &body); err != nil {
 			t.Errorf("decode body: %v", err)
 		}
 		_, _ = writer.Write([]byte(`{"event_id":"$authority"}`))
@@ -117,6 +122,7 @@ func TestMatrixWorkflowPublisherSignsAndSendsAuthorityEvent(t *testing.T) {
 	if authority["decision_brief_sha256"] != authorityClaims.DecisionBriefSHA256 {
 		t.Fatalf("authority decision brief hash = %v", authority["decision_brief_sha256"])
 	}
+	assertNoJSONFloats(t, rawBody)
 	utcTime := authority["time_utc"].(string)
 	beijingTime := authority["time_bjt"].(string)
 	if !strings.HasSuffix(utcTime, "Z") || !strings.HasSuffix(beijingTime, "+08:00") {
@@ -157,6 +163,36 @@ func TestMatrixWorkflowPublisherRequiresCompleteConfiguration(t *testing.T) {
 	if _, err := NewMatrixWorkflowPublisher("http://matrix", "token", "!room", "@manager:hs", "short"); err == nil {
 		t.Fatal("expected secret failure")
 	}
+}
+
+func assertNoJSONFloats(t *testing.T, data []byte) {
+	t.Helper()
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		t.Fatal(err)
+	}
+	var visit func(value any)
+	visit = func(value any) {
+		switch typed := value.(type) {
+		case map[string]any:
+			for _, child := range typed {
+				visit(child)
+			}
+		case []any:
+			for _, child := range typed {
+				visit(child)
+			}
+		case json.Number:
+			number, err := typed.Float64()
+			if err != nil || strings.ContainsAny(typed.String(), ".eE") ||
+				number != math.Trunc(number) || math.Abs(number) > 9007199254740991 {
+				t.Fatalf("matrix event contains a non-JS-integer number: %s", typed.String())
+			}
+		}
+	}
+	visit(value)
 }
 
 func TestMatrixWorkflowPublisherOmitsDecisionBriefOutsideApproval(t *testing.T) {
