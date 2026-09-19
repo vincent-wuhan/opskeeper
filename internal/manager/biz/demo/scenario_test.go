@@ -581,6 +581,18 @@ func TestPreviewPASSCreatesOnlyHITLEligibility(t *testing.T) {
 		decision.CandidateA != "candidate-a" || decision.CandidateB != "candidate-b" {
 		t.Fatalf("decision = %+v", decision)
 	}
+	if decision.CandidateADetails == nil || decision.CandidateADetails.CandidateID != "candidate-a" ||
+		decision.CandidateADetails.Action != "resize_pool" || !decision.CandidateADetails.BusinessProbePass {
+		t.Fatalf("candidate A details = %+v", decision.CandidateADetails)
+	}
+	if decision.CandidateBDetails == nil || decision.CandidateBDetails.CandidateID != "candidate-b" ||
+		decision.CandidateBDetails.Action != "reset_pool" || decision.CandidateBDetails.BusinessProbePass {
+		t.Fatalf("candidate B details = %+v", decision.CandidateBDetails)
+	}
+	if !strings.Contains(decision.RootCause, "pg_pool_exhaustion") ||
+		!strings.Contains(decision.ImpactScope, "orders、inventory、audit") {
+		t.Fatalf("decision context = root cause %q impact %q", decision.RootCause, decision.ImpactScope)
+	}
 	if previews.eligibleCalls != 1 {
 		t.Fatalf("eligible calls = %d", previews.eligibleCalls)
 	}

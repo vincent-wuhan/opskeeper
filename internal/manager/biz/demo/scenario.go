@@ -62,11 +62,31 @@ type ScenarioStatus struct {
 }
 
 type PreviewDecisionSummary struct {
-	ReplayProfileID string `json:"replay_profile_id"`
-	BoundaryText    string `json:"boundary_text"`
-	CandidateA      string `json:"candidate_a"`
-	CandidateB      string `json:"candidate_b"`
-	EligibleForHITL bool   `json:"eligible_for_hitl"`
+	ReplayProfileID   string                   `json:"replay_profile_id"`
+	BoundaryText      string                   `json:"boundary_text"`
+	RootCause         string                   `json:"root_cause"`
+	ImpactScope       string                   `json:"impact_scope"`
+	CandidateA        string                   `json:"candidate_a"`
+	CandidateB        string                   `json:"candidate_b"`
+	CandidateADetails *PreviewCandidateSummary `json:"candidate_a_details,omitempty"`
+	CandidateBDetails *PreviewCandidateSummary `json:"candidate_b_details,omitempty"`
+	EligibleForHITL   bool                     `json:"eligible_for_hitl"`
+}
+
+type PreviewCandidateSummary struct {
+	CandidateID       string  `json:"candidate_id"`
+	Name              string  `json:"name"`
+	Action            string  `json:"action"`
+	ChangeSummary     string  `json:"change_summary"`
+	Decision          string  `json:"decision"`
+	RejectionReason   string  `json:"rejection_reason,omitempty"`
+	Consistent        bool    `json:"consistent"`
+	BusinessProbePass bool    `json:"business_probe_pass"`
+	AverageLatencyMS  float64 `json:"average_latency_ms"`
+	P95LatencyMS      float64 `json:"p95_latency_ms"`
+	TPS               float64 `json:"tps"`
+	ErrorCount        int     `json:"error_count"`
+	WriteImpact       string  `json:"write_impact"`
 }
 
 type ApproveScenarioInput struct {
@@ -678,7 +698,17 @@ func (u *Usecase) previewDecision(ctx context.Context, tenantID uint64, scenario
 	summary := &PreviewDecisionSummary{
 		ReplayProfileID: selected.WorkloadFingerprint,
 		BoundaryText:    selected.IsolationBoundary,
+		RootCause:       "症状：orders/inventory/audit 查询返回 503 或明显变慢；确认根因：PostgreSQL connection pool exhausted（pg_pool_exhaustion）。",
+		ImpactScope:     "影响 orders、inventory、audit 演示业务查询；修复范围限定在 target pool fixture，不直接变更共享 PostgreSQL。",
 		CandidateB:      rejected.CandidateID,
+	}
+	if passing.CandidateID != "" {
+		details := newPreviewCandidateSummary(passing)
+		summary.CandidateADetails = &details
+	}
+	if rejected.CandidateID != "" {
+		details := newPreviewCandidateSummary(rejected)
+		summary.CandidateBDetails = &details
 	}
 	if !profileMatches {
 		summary.BoundaryText = fmt.Sprintf(
@@ -710,6 +740,17 @@ func (u *Usecase) previewDecision(ctx context.Context, tenantID uint64, scenario
 		}
 	}
 	return summary
+}
+
+func newPreviewCandidateSummary(candidate repairpreview.Candidate) PreviewCandidateSummary {
+	return PreviewCandidateSummary{
+		CandidateID: candidate.CandidateID, Name: candidate.Name, Action: candidate.Action,
+		ChangeSummary: candidate.ChangeSummary, Decision: string(candidate.Decision),
+		RejectionReason: candidate.RejectionReason, Consistent: candidate.Consistent,
+		BusinessProbePass: candidate.BusinessProbePass, AverageLatencyMS: candidate.AverageLatencyMS,
+		P95LatencyMS: candidate.P95LatencyMS, TPS: candidate.TPS, ErrorCount: candidate.ErrorCount,
+		WriteImpact: candidate.WriteImpact,
+	}
 }
 
 func (u *Usecase) appendArchiveEvent(
