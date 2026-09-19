@@ -9,6 +9,8 @@ import { Languages } from 'lucide-react';
  * "other locale" version of the same route. Root `/` and `/zh` map cleanly.
  */
 function stripLocale(pathname: string): string {
+  if (pathname === '/en' || pathname === '/en/') return '/';
+  if (pathname.startsWith('/en/')) return pathname.slice(3) || '/';
   if (pathname === '/zh' || pathname === '/zh/') return '/';
   if (pathname.startsWith('/zh/')) return pathname.slice(3) || '/';
   return pathname;

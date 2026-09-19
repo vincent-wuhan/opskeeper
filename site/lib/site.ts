@@ -17,7 +17,7 @@ export const PRIMARY_NAV: NavLink[] = [
   { label: 'Platform', href: '/platform' },
   { label: 'Workers', href: '/workers' },
   { label: 'Use cases', href: '/use-cases' },
-  { label: 'Live demo', href: '/live-incident' },
+  { label: 'Live demo', href: '/en/live-incident' },
   { label: 'Integrations', href: '/integrations' },
   { label: 'Docs', href: '/docs' },
   { label: 'Open source', href: '/open-source' },
