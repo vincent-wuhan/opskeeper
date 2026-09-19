@@ -38,12 +38,12 @@ const acknowledgedProjects = [
   {
     name: 'OpenBuddy',
     href: 'https://github.com/louloulin/OpenBuddy',
-    description: '开源桌面 AI 工作区与 WorkBuddy 替代方案，面向办公提效，提供计划模式、本地文件、技能、MCP 连接器与多智能体协作。',
+    description: '原生基于 Pi 框架打造的微内核 + 插件架构开源 AI 工作台，100% MIT 协议；代码全可读可审计、UI 可 fork 二次定制、能力网格可自由扩展，让你的 AI 工作台真正由你做主。',
   },
   {
     name: 'upup',
     href: 'https://github.com/louloulin/upup',
-    description: '基于 Pi runtime 的中文 AI 投研助手，覆盖 A股 / 港股 / 美股行情、基本面、公告、估值、风险与回测；定位为研究工具。',
+    description: 'Pi-native AI 投资智能体，构建在 Pi runtime 之上，一站式覆盖 A股、港股、美股深度投研、估值与组合风险管理。',
   },
 ];
 
