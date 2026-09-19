@@ -33,6 +33,7 @@ const (
 	businessTimeout                = 3 * time.Second
 	finalDemoInitialPoolCapacity   = 4
 	finalDemoRecoveredPoolCapacity = 8
+	expiryNotificationWindow       = time.Hour
 )
 
 var (
@@ -308,7 +309,7 @@ func (u *Usecase) Get(ctx context.Context, tenantID uint64, scenarioID, key stri
 		return nil, err
 	}
 	if run.Status == demomodel.ScenarioStatusAwaitingApproval {
-		status, expired, err := u.expireApprovalIfDue(ctx, run)
+		status, expired, err := u.expireApprovalIfDue(ctx, run, true)
 		if err != nil || expired {
 			return status, err
 		}
@@ -522,7 +523,7 @@ func (u *Usecase) BusinessSnapshotBaseline(ctx context.Context, section string) 
 }
 
 func (u *Usecase) expireApprovalIfDue(
-	ctx context.Context, run *demomodel.ScenarioRun,
+	ctx context.Context, run *demomodel.ScenarioRun, notifyMatrix bool,
 ) (*ScenarioStatus, bool, error) {
 	if run.Status != demomodel.ScenarioStatusAwaitingApproval || u.clock.Now().Before(run.ExpiresAt) {
 		return nil, false, nil
@@ -533,7 +534,7 @@ func (u *Usecase) expireApprovalIfDue(
 		}
 	}
 	decision := u.previewDecision(ctx, run.TenantID, run)
-	if decision != nil {
+	if decision != nil && notifyMatrix {
 		decision.EligibleForHITL = false
 		decision.BoundaryText = "Scenario expired before approval. " + decision.BoundaryText
 		u.publishWorkflow(ctx, run, demomodel.ScenarioStatusClosed, decision)
@@ -587,7 +588,9 @@ func (u *Usecase) SweepExpiredApprovals(ctx context.Context, logger *slog.Logger
 		run := &runs[index]
 		lock := u.executionLock(run.ID)
 		lock.Lock()
-		_, _, expireErr := u.expireApprovalIfDue(ctx, run)
+		_, _, expireErr := u.expireApprovalIfDue(
+			ctx, run, u.clock.Now().Sub(run.ExpiresAt) <= expiryNotificationWindow,
+		)
 		lock.Unlock()
 		if expireErr != nil && logger != nil {
 			logger.Error(
@@ -641,7 +644,7 @@ func (u *Usecase) Approve(
 		return nil, errs.ErrConflict
 	}
 	if run.Status == demomodel.ScenarioStatusAwaitingApproval {
-		status, expired, err := u.expireApprovalIfDue(ctx, run)
+		status, expired, err := u.expireApprovalIfDue(ctx, run, true)
 		if err != nil || expired {
 			return status, err
 		}
