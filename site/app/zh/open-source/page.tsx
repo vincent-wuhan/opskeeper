@@ -182,8 +182,12 @@ export default function OpenSourceZhPage() {
                     <Github className="h-3.5 w-3.5" />
                     louloulin
                   </a>
-                  <span className="text-ink-300">对 OpsKeeper 的开源贡献与支持。</span>
+                  <span className="text-ink-300">及其所属的 Lumos 组织。</span>
                 </div>
+                <p className="mt-3 text-sm leading-6 text-ink-300">
+                  Lumos 是一个由 AI Native 爱好者组成的非正式群体，喜欢研究 AI、多智能体等方向，
+                  并把研究过程中沉淀出的成熟产品开放出来。下面是 louloulin 一些有趣的开源成果，欢迎关注了解。
+                </p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   {acknowledgedProjects.map((project) => (
                     <a

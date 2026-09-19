@@ -188,8 +188,13 @@ export default function OpenSourcePage() {
                     <Github className="h-3.5 w-3.5" />
                     louloulin
                   </a>
-                  <span className="text-ink-300">for open-source contributions and support for OpsKeeper.</span>
+                  <span className="text-ink-300">and the Lumos group they belong to.</span>
                 </div>
+                <p className="mt-3 text-sm leading-6 text-ink-300">
+                  Lumos is an informal group of AI-native enthusiasts who enjoy researching AI,
+                  multi-agent systems, and related topics, then open-sourcing mature products from
+                  their work. Here are some interesting projects from louloulin worth exploring.
+                </p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   {acknowledgedProjects.map((project) => (
                     <a
