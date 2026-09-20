@@ -637,7 +637,7 @@ export default function OpskeeperRoute({ api }) {
   }
 
   const filtered = incidents.filter((i) =>
-    !filter || (i.id || '').includes(filter) || (i.summary || '').includes(filter)
+    !filter || String(i.id ?? '').includes(filter) || String(i.summary ?? '').includes(filter)
   );
 
   return (

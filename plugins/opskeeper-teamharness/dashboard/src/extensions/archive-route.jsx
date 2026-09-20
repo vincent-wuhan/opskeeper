@@ -5,7 +5,7 @@ import {
   normalizeArchiveResponse,
   normalizeIncidentSummary,
 } from './archive.js';
-import { formatBeijingTime } from './time-format.js';
+import { formatBeijingTime as formatTime } from './time-format.js';
 
 const PREVIEW_URL = 'https://opskeeper.yueming.xin/preview/';
 const summaryGridStyle = {

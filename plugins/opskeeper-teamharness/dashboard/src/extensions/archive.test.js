@@ -32,6 +32,7 @@ test('normalizes archive response wrappers and arrays', () => {
 test('projects authoritative repair previews responsively without replacing them with the preview link', () => {
   const source = readFileSync(fileURLToPath(new URL('./archive-route.jsx', import.meta.url)), 'utf8');
 
+  assert.match(source, /import \{ formatBeijingTime as formatTime \} from '\.\/time-format\.js';/u);
   assert.match(source, /RepairPreviewArchive runs=\{archive\.repair_previews\}/u);
   assert.match(source, /Manager Archive 权威数据 · 只读投影/u);
   assert.match(source, /辅助深链：preview-pg/u);
@@ -53,6 +54,8 @@ test('projects the compact approval gate after RCA and preserves the controlled-
   assert.ok(knowledgeIndex >= 0);
   assert.ok(gateIndex > knowledgeIndex);
   assert.ok(rawJsonIndex > gateIndex);
+  assert.match(source, /String\(i\.id \?\? ''\)\.includes\(filter\)/u);
+  assert.match(source, /String\(i\.summary \?\? ''\)\.includes\(filter\)/u);
   assert.match(source, /opskeeperApi\.getIncidentRepairPreviewSummary\(incidentId\)/u);
   assert.match(source, /Controlled fixed-workload reconstruction in disposable preview-pg; original active sessions are not copied\./u);
   assert.match(source, /PASS \/ eligible for human approval/u);
