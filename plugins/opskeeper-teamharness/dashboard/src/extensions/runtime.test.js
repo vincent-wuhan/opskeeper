@@ -159,6 +159,7 @@ test('propagates PG pool incident bindings into investigation hints', () => {
     labels: {
       incident_id: 'incident-live-pool-smoke',
       target: 'pg:pool-fixture',
+      scenario: 'pg-pool-exhaustion',
       pool_manifest_id: '7f5c60e593e68840f974789166cc3374',
       fault_family: 'capacity/connection_pool',
     },
@@ -172,7 +173,7 @@ test('propagates PG pool incident bindings into investigation hints', () => {
       fault_family: 'capacity/connection_pool',
       source_id: 'dashboard',
       device_id: '36',
-      resource_type: 'unknown',
+      resource_type: 'pg',
     },
   });
 });
