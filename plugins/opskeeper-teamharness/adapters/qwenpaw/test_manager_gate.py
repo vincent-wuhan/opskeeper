@@ -550,6 +550,59 @@ class ManagerGateTest(unittest.TestCase):
         self.assertEqual(result.action.value, "continue")
         emit.assert_awaited_once_with("matrix:room-1", workflow)
 
+    def test_incomplete_admin_approval_is_rejected_in_room(self):
+        environment = {"AGENTTEAMS_ADMIN_MATRIX_ID": "@admin:hs"}
+        context = self._hook_context("manager: 同意", sender="@admin:hs")
+        with patch.dict("os.environ", environment, clear=False), patch.object(
+            self.module,
+            "_send_matrix_notice",
+            return_value="$invalid-approval-event",
+        ) as send_notice, patch.object(
+            self.module,
+            "_dispatch_final_demo_approval",
+            side_effect=AssertionError("must not call the approval API"),
+        ):
+            result = asyncio.run(self._registered_hook().run(context))
+
+        self.assertEqual(result.action.value, "skip_agent")
+        send_notice.assert_called_once_with(
+            "matrix:room-1",
+            "审批未执行：审批指令不完整。请发送：@manager 已批准 "
+            "incident_id=<当前事件ID> Candidate A",
+        )
+
+    def test_admin_approval_without_candidate_a_is_rejected_in_room(self):
+        environment = {"AGENTTEAMS_ADMIN_MATRIX_ID": "@admin:hs"}
+        context = self._hook_context(
+            "@manager 已批准 incident_id=82",
+            sender="@admin:hs",
+        )
+        with patch.dict("os.environ", environment, clear=False), patch.object(
+            self.module,
+            "_send_matrix_notice",
+            return_value="$invalid-approval-event",
+        ) as send_notice:
+            result = asyncio.run(self._registered_hook().run(context))
+
+        self.assertEqual(result.action.value, "skip_agent")
+        self.assertIn("Candidate A", send_notice.call_args[0][1])
+
+    def test_incomplete_approval_blocks_even_if_room_notice_fails(self):
+        environment = {"AGENTTEAMS_ADMIN_MATRIX_ID": "@admin:hs"}
+        context = self._hook_context("manager: 同意", sender="@admin:hs")
+        with patch.dict("os.environ", environment, clear=False), patch.object(
+            self.module,
+            "_send_matrix_notice",
+            side_effect=RuntimeError("matrix unavailable"),
+        ), patch.object(
+            self.module,
+            "_dispatch_final_demo_approval",
+            side_effect=AssertionError("must not call the approval API"),
+        ):
+            result = asyncio.run(self._registered_hook().run(context))
+
+        self.assertEqual(result.action.value, "skip_agent")
+
     def test_hook_projects_consumed_worker_result_before_relay(self):
         source_session = "matrix:!entry-room:hs"
         worker_session = "matrix:!worker-room:hs"

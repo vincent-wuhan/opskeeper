@@ -121,6 +121,10 @@ _FINAL_DEMO_INCIDENT_ID_PATTERN = re.compile(
     r"\bincident_id(?:=|:)\s*([0-9]{1,18})\b",
     re.IGNORECASE,
 )
+_FINAL_DEMO_CANDIDATE_A_PATTERN = re.compile(
+    r"\bcandidate[\s_-]+a\b",
+    re.IGNORECASE,
+)
 _MATRIX_CURRENT_MESSAGE_MARKER = "[Current message - respond to this]"
 _WORKFLOW_ROLE_PATTERN = re.compile(
     r"@?opskeeper-(alerter|investigator|reviewer|repairer|verifier|reporter)"
@@ -1641,6 +1645,35 @@ def _send_matrix_workflow(
     return event_id
 
 
+def _send_matrix_notice(origin_session_id: str, body: str) -> str:
+    base_url = os.environ.get("AGENTTEAMS_MATRIX_URL", "").rstrip("/")
+    token = os.environ.get("AGENTTEAMS_MANAGER_MATRIX_TOKEN", "").strip()
+    room_id = origin_session_id
+    if room_id.startswith("matrix:"):
+        room_id = room_id[len("matrix:"):]
+    if not base_url or not token or not room_id.startswith("!"):
+        raise RuntimeError("Matrix workflow projection is not configured")
+
+    content = {"msgtype": "m.notice", "body": body}
+    request = urllib.request.Request(
+        f"{base_url}/_matrix/client/v3/rooms/"
+        f"{urllib.parse.quote(room_id, safe='')}/send/m.room.message/"
+        f"{uuid.uuid4()}",
+        data=json.dumps(content, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="PUT",
+    )
+    with urllib.request.urlopen(request, timeout=5) as response:
+        payload = json.loads(response.read().decode())
+    event_id = str(payload.get("event_id", ""))
+    if not event_id:
+        raise RuntimeError("Matrix notice returned no event_id")
+    return event_id
+
+
 async def _emit_workflow_projection(
     origin_session_id: str,
     workflow: dict[str, Any] | None,
@@ -2516,6 +2549,29 @@ def _register_manager_gate_hook(api: Any) -> None:
                     sender,
                 )
             if admin_sender:
+                if approved and not rejected and (
+                    not _final_demo_incident_id(message)
+                    or not _FINAL_DEMO_CANDIDATE_A_PATTERN.search(
+                        _current_matrix_message(message)
+                    )
+                ):
+                    try:
+                        event_id = await asyncio.to_thread(
+                            _send_matrix_notice,
+                            session_id,
+                            "审批未执行：审批指令不完整。请发送：@manager 已批准 "
+                            "incident_id=<当前事件ID> Candidate A",
+                        )
+                        _MANAGER_GATE_LOGGER.info(
+                            "Rejected incomplete admin approval event=%s",
+                            event_id,
+                        )
+                    except Exception:
+                        _MANAGER_GATE_LOGGER.warning(
+                            "Failed to notify incomplete admin approval",
+                            exc_info=True,
+                        )
+                    return HookResult(action=HookAction.SKIP_AGENT)
                 deterministic_approval = approved and not rejected and (
                     await asyncio.to_thread(
                         _dispatch_final_demo_approval,
