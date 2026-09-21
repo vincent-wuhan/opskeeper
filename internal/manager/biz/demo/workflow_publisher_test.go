@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -128,6 +129,11 @@ func TestMatrixWorkflowPublisherSignsAndSendsAuthorityEvent(t *testing.T) {
 	if authority["decision_brief_sha256"] != authorityClaims.DecisionBriefSHA256 {
 		t.Fatalf("authority decision brief hash = %v", authority["decision_brief_sha256"])
 	}
+	assertNoNonIntegerJSONNumbers(t, body)
+	candidate := workflow["decision_brief"].(map[string]any)["candidate_a"].(map[string]any)
+	if candidate["average_latency_ms"] != "1.254" || candidate["p95_latency_ms"] != "10.065" || candidate["tps"] != "6139.071" {
+		t.Fatalf("candidate metrics must be Matrix JSON-safe strings: %+v", candidate)
+	}
 	utcTime := authority["time_utc"].(string)
 	beijingTime := authority["time_bjt"].(string)
 	if !strings.HasSuffix(utcTime, "Z") || !strings.HasSuffix(beijingTime, "+08:00") {
@@ -169,6 +175,24 @@ func TestMatrixWorkflowPublisherSignsAndSendsAuthorityEvent(t *testing.T) {
 	}
 }
 
+func assertNoNonIntegerJSONNumbers(t *testing.T, value any) {
+	t.Helper()
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, nested := range typed {
+			assertNoNonIntegerJSONNumbers(t, nested)
+		}
+	case []any:
+		for _, nested := range typed {
+			assertNoNonIntegerJSONNumbers(t, nested)
+		}
+	case float64:
+		if typed != float64(int64(typed)) {
+			t.Fatalf("Matrix canonical JSON contains non-integer number: %v", typed)
+		}
+	}
+}
+
 func TestMatrixWorkflowPublisherRequiresCompleteConfiguration(t *testing.T) {
 	if _, err := NewMatrixWorkflowPublisher("", "token", "!room", "@manager:hs", "0123456789abcdef"); err == nil {
 		t.Fatal("expected missing URL failure")
@@ -181,9 +205,95 @@ func TestMatrixWorkflowPublisherRequiresCompleteConfiguration(t *testing.T) {
 	}
 }
 
+func TestMatrixWorkflowPublisherRetriesTransientFailureWithStableTransaction(t *testing.T) {
+	var requests []struct {
+		path string
+		body string
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		payload, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+			return
+		}
+		requests = append(requests, struct {
+			path string
+			body string
+		}{path: request.URL.Path, body: string(payload)})
+		if len(requests) == 1 {
+			writer.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_, _ = writer.Write([]byte(`{"event_id":"$authority-retry"}`))
+	}))
+	defer server.Close()
+
+	publisher, err := NewMatrixWorkflowPublisher(
+		server.URL, "matrix-token", "!room:hs", "@manager:hs", "0123456789abcdef",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := &demomodel.ScenarioRun{
+		IncidentID: 102, IdempotencyKey: "final-demo-retry", TargetFingerprint: "0123456789abcdef",
+	}
+	if err := publisher.PublishWorkflow(context.Background(), run, "awaiting_approval", nil); err != nil {
+		t.Fatal(err)
+	}
+	if len(requests) != 2 {
+		t.Fatalf("request count = %d, want 2", len(requests))
+	}
+	if requests[0].path != requests[1].path || requests[0].body != requests[1].body {
+		t.Fatalf("retry changed Matrix transaction: first=%+v second=%+v", requests[0], requests[1])
+	}
+	if !strings.Contains(requests[0].path, "/final-demo-retry-awaiting_approval-authority") {
+		t.Fatalf("transaction path = %q", requests[0].path)
+	}
+}
+
+func TestMatrixWorkflowPublisherIncludesSanitizedMatrixErrorBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusBadRequest)
+		_, _ = writer.Write([]byte(`{"errcode":"M_INVALID_JSON","error":"invalid content api_key=secret-token"}`))
+	}))
+	defer server.Close()
+
+	publisher, err := NewMatrixWorkflowPublisher(
+		server.URL, "matrix-token", "!room:hs", "@manager:hs", "0123456789abcdef",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := &demomodel.ScenarioRun{
+		IncidentID: 103, IdempotencyKey: "final-demo-error-body", TargetFingerprint: "0123456789abcdef",
+	}
+	err = publisher.PublishWorkflow(context.Background(), run, "awaiting_approval", nil)
+	if err == nil {
+		t.Fatal("expected Matrix error")
+	}
+	message := err.Error()
+	if !strings.Contains(message, "400 Bad Request") || !strings.Contains(message, "M_INVALID_JSON") {
+		t.Fatalf("error missing Matrix response body: %v", err)
+	}
+	if strings.Contains(message, "secret-token") {
+		t.Fatalf("error leaked sensitive response data: %v", err)
+	}
+	if !strings.Contains(message, "[REDACTED]") {
+		t.Fatalf("error did not redact sensitive response data: %v", err)
+	}
+}
+
 func TestWorkflowArchiveURLRejectsEmbeddedCredentials(t *testing.T) {
 	t.Setenv("OPSKEEPER_DEMO_ARCHIVE_URL_TEMPLATE", "https://user:pass@teams.example/archive?incident_id={incident_id}&api_key=value")
 	if got := workflowArchiveURL("100"); got != "opskeeper://incidents/100/archive" {
+		t.Fatalf("archive URL = %q", got)
+	}
+}
+
+func TestWorkflowArchiveURLAllowsSafeStaticTeamsArchive(t *testing.T) {
+	t.Setenv("OPSKEEPER_DEMO_ARCHIVE_URL_TEMPLATE", "https://teams.example/#plugin-route:opskeeper-teamharness/archive")
+	const template = "https://teams.example/#plugin-route:opskeeper-teamharness/archive"
+	if got := workflowArchiveURL("100"); got != template {
 		t.Fatalf("archive URL = %q", got)
 	}
 }
@@ -218,5 +328,46 @@ func TestMatrixWorkflowPublisherOmitsDecisionBriefOutsideApproval(t *testing.T) 
 	}
 	if !strings.Contains(body["body"].(string), "OPSKEEPER_AUTHORITY_V1 ") {
 		t.Fatalf("non-approval message must retain authority token: %q", body["body"])
+	}
+}
+
+func TestMatrixWorkflowPublisherSendsChineseExpiredClosure(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		_, _ = writer.Write([]byte(`{"event_id":"$authority-closed"}`))
+	}))
+	defer server.Close()
+
+	publisher, err := NewMatrixWorkflowPublisher(
+		server.URL, "matrix-token", "!room:hs", "@manager:hs", "0123456789abcdef",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := &demomodel.ScenarioRun{
+		IncidentID: 104, IdempotencyKey: "final-demo-expired", TargetFingerprint: "0123456789abcdef",
+		ExpiresAt: time.Date(2026, 9, 20, 15, 46, 38, 0, time.UTC),
+	}
+	if err := publisher.PublishWorkflow(context.Background(), run, demomodel.ScenarioStatusClosed, nil); err != nil {
+		t.Fatal(err)
+	}
+	message := body["body"].(string)
+	for _, required := range []string{
+		"stage=closed", "处理结果：审批已过期，未伪造人工审批，未执行修复。",
+		"审批过期时间（UTC）：2026-09-20T15:46:38Z", "审批过期时间（北京时间）：2026-09-20T23:46:38+08:00",
+	} {
+		if !strings.Contains(message, required) {
+			t.Fatalf("closure message missing %q: %q", required, message)
+		}
+	}
+	workflow := body["agentteams.workflow"].(map[string]any)
+	if workflow["status"] != "expired" || workflow["summary"] != "审批过期，安全关闭，未执行修复" {
+		t.Fatalf("workflow closure display = %+v", workflow)
+	}
+	if _, exists := workflow["decision_brief"]; exists {
+		t.Fatalf("closure event unexpectedly carries decision brief: %+v", workflow)
 	}
 }

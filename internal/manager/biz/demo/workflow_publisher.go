@@ -24,7 +24,10 @@ import (
 	demomodel "github.com/vincent-wuhan/opskeeper/internal/manager/model/demo"
 )
 
-const workflowAuthorityTimeout = 5 * time.Second
+const (
+	workflowAuthorityTimeout = 5 * time.Second
+	workflowAuthorityRetries = 3
+)
 
 var beijingTimezone = time.FixedZone("UTC+8", 8*60*60)
 
@@ -47,15 +50,31 @@ type workflowAuthorityClaims struct {
 }
 
 type workflowDecisionBrief struct {
-	RootCause          string                   `json:"root_cause"`
-	ImpactScope        string                   `json:"impact_scope"`
-	Boundary           string                   `json:"boundary"`
-	ApprovalExpiresUTC string                   `json:"approval_expires_utc"`
-	ApprovalExpiresBJT string                   `json:"approval_expires_bjt"`
-	ArchiveURL         string                   `json:"archive_url"`
-	ApprovalCommand    string                   `json:"approval_command"`
-	CandidateA         *PreviewCandidateSummary `json:"candidate_a,omitempty"`
-	CandidateB         *PreviewCandidateSummary `json:"candidate_b,omitempty"`
+	RootCause          string                    `json:"root_cause"`
+	ImpactScope        string                    `json:"impact_scope"`
+	Boundary           string                    `json:"boundary"`
+	ApprovalExpiresUTC string                    `json:"approval_expires_utc"`
+	ApprovalExpiresBJT string                    `json:"approval_expires_bjt"`
+	ArchiveURL         string                    `json:"archive_url"`
+	ApprovalCommand    string                    `json:"approval_command"`
+	CandidateA         *workflowCandidateSummary `json:"candidate_a,omitempty"`
+	CandidateB         *workflowCandidateSummary `json:"candidate_b,omitempty"`
+}
+
+type workflowCandidateSummary struct {
+	CandidateID       string `json:"candidate_id"`
+	Name              string `json:"name"`
+	Action            string `json:"action"`
+	ChangeSummary     string `json:"change_summary"`
+	Decision          string `json:"decision"`
+	RejectionReason   string `json:"rejection_reason,omitempty"`
+	Consistent        bool   `json:"consistent"`
+	BusinessProbePass bool   `json:"business_probe_pass"`
+	AverageLatencyMS  string `json:"average_latency_ms"`
+	P95LatencyMS      string `json:"p95_latency_ms"`
+	TPS               string `json:"tps"`
+	ErrorCount        int    `json:"error_count"`
+	WriteImpact       string `json:"write_impact"`
 }
 
 type MatrixWorkflowPublisher struct {
@@ -133,8 +152,10 @@ func workflowArchiveURL(incidentID string) string {
 		if err == nil {
 			switch parsed.Scheme {
 			case "http", "https", "opskeeper":
-				if parsed.User == nil && strings.Contains(template, "{incident_id}") &&
-					!workflowArchiveURLHasSensitiveQuery(parsed) {
+				if parsed.User == nil && !workflowArchiveURLHasSensitiveQuery(parsed) {
+					if !strings.Contains(template, "{incident_id}") {
+						return template
+					}
 					return strings.ReplaceAll(template, "{incident_id}", incidentID)
 				}
 			}
@@ -159,19 +180,25 @@ func workflowSafeEvidenceText(value string) string {
 	return workflowDisplayText(workflowSensitiveEvidencePattern.ReplaceAllString(value, "[REDACTED]"))
 }
 
-func workflowSafeCandidateSummary(candidate *PreviewCandidateSummary) *PreviewCandidateSummary {
+func workflowSafeCandidateSummary(candidate *PreviewCandidateSummary) *workflowCandidateSummary {
 	if candidate == nil {
 		return nil
 	}
-	safe := *candidate
-	safe.CandidateID = workflowSafeEvidenceText(safe.CandidateID)
-	safe.Name = workflowSafeEvidenceText(safe.Name)
-	safe.Action = workflowSafeEvidenceText(safe.Action)
-	safe.ChangeSummary = workflowSafeEvidenceText(safe.ChangeSummary)
-	safe.Decision = workflowSafeEvidenceText(safe.Decision)
-	safe.RejectionReason = workflowSafeEvidenceText(safe.RejectionReason)
-	safe.WriteImpact = workflowSafeEvidenceText(safe.WriteImpact)
-	return &safe
+	return &workflowCandidateSummary{
+		CandidateID:       workflowSafeEvidenceText(candidate.CandidateID),
+		Name:              workflowSafeEvidenceText(candidate.Name),
+		Action:            workflowSafeEvidenceText(candidate.Action),
+		ChangeSummary:     workflowSafeEvidenceText(candidate.ChangeSummary),
+		Decision:          workflowSafeEvidenceText(candidate.Decision),
+		RejectionReason:   workflowSafeEvidenceText(candidate.RejectionReason),
+		Consistent:        candidate.Consistent,
+		BusinessProbePass: candidate.BusinessProbePass,
+		AverageLatencyMS:  strconv.FormatFloat(candidate.AverageLatencyMS, 'f', 3, 64),
+		P95LatencyMS:      strconv.FormatFloat(candidate.P95LatencyMS, 'f', 3, 64),
+		TPS:               strconv.FormatFloat(candidate.TPS, 'f', 3, 64),
+		ErrorCount:        candidate.ErrorCount,
+		WriteImpact:       workflowSafeEvidenceText(candidate.WriteImpact),
+	}
 }
 
 func (publisher *MatrixWorkflowPublisher) PublishWorkflow(
@@ -183,7 +210,7 @@ func (publisher *MatrixWorkflowPublisher) PublishWorkflow(
 	switch stage {
 	case demomodel.ScenarioStatusPreviewReady, demomodel.ScenarioStatusAwaitingApproval,
 		demomodel.ScenarioStatusRepairDispatched, demomodel.ScenarioStatusVerifying,
-		demomodel.ScenarioStatusRecovered:
+		demomodel.ScenarioStatusRecovered, demomodel.ScenarioStatusClosed:
 	default:
 		return errors.New("unknown workflow authority stage")
 	}
@@ -244,6 +271,15 @@ func (publisher *MatrixWorkflowPublisher) PublishWorkflow(
 			workflowDisplayText(brief.ApprovalCommand),
 		)
 	}
+	if stage == demomodel.ScenarioStatusClosed {
+		decisionText += fmt.Sprintf(
+			"处理结果：审批已过期，未伪造人工审批，未执行修复。\n"+
+				"审批过期时间（UTC）：%s\n审批过期时间（北京时间）：%s\n"+
+				"故障负载：由受控 fixture TTL 或过期读回验证释放。\n",
+			workflowDisplayText(run.ExpiresAt.UTC().Format(time.RFC3339)),
+			workflowDisplayText(run.ExpiresAt.In(beijingTimezone).Format("2006-01-02T15:04:05+08:00")),
+		)
+	}
 	decisionText += "OPSKEEPER_AUTHORITY_V1 " + token
 	workflowMetadata := map[string]any{
 		"type": "opskeeper-workflow", "runId": incidentID, "authorityStage": stage,
@@ -273,26 +309,58 @@ func (publisher *MatrixWorkflowPublisher) PublishWorkflow(
 	if err != nil {
 		return err
 	}
+	transactionID := run.IdempotencyKey
+	if transactionID == "" {
+		transactionID = "incident-" + strconv.FormatUint(run.IncidentID, 10)
+	}
 	eventURL := fmt.Sprintf(
-		"%s/_matrix/client/v3/rooms/%s/send/m.room.message/%d-authority",
-		publisher.baseURL, url.PathEscape(publisher.roomID), now.UnixNano(),
+		"%s/_matrix/client/v3/rooms/%s/send/m.room.message/%s-%s-authority",
+		publisher.baseURL, url.PathEscape(publisher.roomID),
+		url.PathEscape(transactionID), url.PathEscape(stage),
 	)
-	request, err := http.NewRequestWithContext(ctx, http.MethodPut, eventURL, bytes.NewReader(encodedContent))
-	if err != nil {
-		return err
+	var lastErr error
+	for attempt := 0; attempt < workflowAuthorityRetries; attempt++ {
+		if attempt > 0 {
+			if err := sleepWithContext(ctx, time.Duration(1<<attempt)*100*time.Millisecond); err != nil {
+				return err
+			}
+		}
+		request, err := http.NewRequestWithContext(ctx, http.MethodPut, eventURL, bytes.NewReader(encodedContent))
+		if err != nil {
+			return err
+		}
+		request.Header.Set("Authorization", "Bearer "+publisher.token)
+		request.Header.Set("Content-Type", "application/json")
+		response, err := publisher.client.Do(request)
+		if err == nil {
+			responseBody, readErr := io.ReadAll(io.LimitReader(response.Body, 1<<12))
+			_ = response.Body.Close()
+			if response.StatusCode >= 200 && response.StatusCode < 300 {
+				return nil
+			}
+			responseText := workflowSafeEvidenceText(string(responseBody))
+			if readErr != nil {
+				responseText = fmt.Sprintf("<response body unavailable: %v>", readErr)
+			}
+			err = fmt.Errorf("matrix workflow authority send failed: %s: %s", response.Status, responseText)
+			if response.StatusCode != http.StatusTooManyRequests && response.StatusCode < 500 {
+				return err
+			}
+		}
+		lastErr = err
 	}
-	request.Header.Set("Authorization", "Bearer "+publisher.token)
-	request.Header.Set("Content-Type", "application/json")
-	response, err := publisher.client.Do(request)
-	if err != nil {
-		return err
+	return lastErr
+}
+
+func sleepWithContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
 	}
-	defer response.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<16))
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("matrix workflow authority send failed: %s", response.Status)
-	}
-	return nil
 }
 
 func workflowDisplayText(value string) string {
@@ -307,13 +375,13 @@ func workflowDisplayText(value string) string {
 	}, value)
 }
 
-func formatWorkflowCandidate(candidate *PreviewCandidateSummary) string {
+func formatWorkflowCandidate(candidate *workflowCandidateSummary) string {
 	if candidate == nil {
 		return "暂无数据"
 	}
 	text := fmt.Sprintf(
 		"%s（%s / %s）：%s；变更：%s；consistent=%t；business_probe_pass=%t；"+
-			"average_latency_ms=%.3f；p95_latency_ms=%.3f；tps=%.3f；error_count=%d；write_impact=%s",
+			"average_latency_ms=%s；p95_latency_ms=%s；tps=%s；error_count=%d；write_impact=%s",
 		candidate.CandidateID, candidate.Name, candidate.Action, candidate.Decision,
 		candidate.ChangeSummary, candidate.Consistent, candidate.BusinessProbePass,
 		candidate.AverageLatencyMS, candidate.P95LatencyMS, candidate.TPS,
@@ -328,6 +396,9 @@ func formatWorkflowCandidate(candidate *PreviewCandidateSummary) string {
 func workflowStatus(stage string) string {
 	if stage == demomodel.ScenarioStatusRecovered {
 		return "success"
+	}
+	if stage == demomodel.ScenarioStatusClosed {
+		return "expired"
 	}
 	return "in_progress"
 }
@@ -344,6 +415,8 @@ func workflowSummary(stage string) string {
 		return "修复执行完成，独立验证中"
 	case demomodel.ScenarioStatusRecovered:
 		return "修复验证通过，业务已恢复"
+	case demomodel.ScenarioStatusClosed:
+		return "审批过期，安全关闭，未执行修复"
 	default:
 		return stage
 	}
@@ -383,6 +456,8 @@ func workflowStepID(stage string) string {
 	case demomodel.ScenarioStatusPreviewReady:
 		return "preview"
 	case demomodel.ScenarioStatusAwaitingApproval:
+		return "approval"
+	case demomodel.ScenarioStatusClosed:
 		return "approval"
 	case demomodel.ScenarioStatusRepairDispatched:
 		return "repair"

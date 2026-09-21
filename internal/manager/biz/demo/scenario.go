@@ -105,6 +105,7 @@ type ScenarioRepository interface {
 	CreateOrUpdate(ctx context.Context, run *demomodel.ScenarioRun) error
 	GetByIdempotencyKey(ctx context.Context, tenantID uint64, scenarioID, key string) (*demomodel.ScenarioRun, error)
 	GetByIncident(ctx context.Context, tenantID uint64, scenarioID string, incidentID uint64) (*demomodel.ScenarioRun, error)
+	ListExpiredAwaitingApproval(ctx context.Context, now time.Time, limit int) ([]demomodel.ScenarioRun, error)
 	UpdateStatus(ctx context.Context, id uint64, status string, mutation func(*demomodel.ScenarioRun) error) error
 	UpdateStatusWithEvent(ctx context.Context, id uint64, status string, event *alertmodel.Event, allowedCurrent ...string) error
 }
@@ -300,6 +301,12 @@ func (u *Usecase) Get(ctx context.Context, tenantID uint64, scenarioID, key stri
 	}
 	if _, err := u.incidents.GetIncidentByID(ctx, run.IncidentID); err != nil {
 		return nil, err
+	}
+	if run.Status == demomodel.ScenarioStatusAwaitingApproval {
+		status, expired, err := u.expireApprovalIfDue(ctx, run)
+		if err != nil || expired {
+			return status, err
+		}
 	}
 	orchestratedDecision, err := u.orchestrateDiagnosisAndPreview(ctx, tenantID, scenarioID, key)
 	if err != nil {
@@ -509,6 +516,96 @@ func (u *Usecase) BusinessSnapshotBaseline(ctx context.Context, section string) 
 	return u.fixtures.BusinessSnapshot(ctx, section)
 }
 
+func (u *Usecase) expireApprovalIfDue(
+	ctx context.Context, run *demomodel.ScenarioRun,
+) (*ScenarioStatus, bool, error) {
+	if run.Status != demomodel.ScenarioStatusAwaitingApproval || u.clock.Now().Before(run.ExpiresAt) {
+		return nil, false, nil
+	}
+	if run.PoolManifestID != "" {
+		if _, err := u.fixtures.Status(ctx, run.PoolManifestID); err != nil && !errors.Is(err, errs.ErrNotFound) {
+			return nil, false, err
+		}
+	}
+	decision := u.previewDecision(ctx, run.TenantID, run)
+	if decision != nil {
+		decision.EligibleForHITL = false
+		decision.BoundaryText = "Scenario expired before approval. " + decision.BoundaryText
+		u.publishWorkflow(ctx, run, demomodel.ScenarioStatusClosed, decision)
+	}
+	event := u.expiryEvent(run)
+	event.SnapshotJSON = expirySnapshotJSON(run, event.SnapshotJSON)
+	if err := u.scenarios.UpdateStatusWithEvent(
+		ctx, run.ID, demomodel.ScenarioStatusClosed, event,
+		demomodel.ScenarioStatusAwaitingApproval,
+	); err != nil {
+		return nil, false, err
+	}
+	run.Status = demomodel.ScenarioStatusClosed
+	if err := u.appendArchiveEvent(
+		ctx, run, incidentcontrol.EventClosed, "closure", "system", "opskeeper-manager",
+		"expired", "opskeeper://incidents/"+strconv.FormatUint(run.IncidentID, 10)+"/timeline", "", false,
+	); err != nil {
+		return nil, false, err
+	}
+	status := statusFromRun(run)
+	status.PreviewDecision = decision
+	return status, true, nil
+}
+
+func (u *Usecase) RunExpirySweeper(ctx context.Context, interval time.Duration, logger *slog.Logger) {
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	u.SweepExpiredApprovals(ctx, logger)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			u.SweepExpiredApprovals(ctx, logger)
+		}
+	}
+}
+
+func (u *Usecase) SweepExpiredApprovals(ctx context.Context, logger *slog.Logger) {
+	runs, err := u.scenarios.ListExpiredAwaitingApproval(ctx, u.clock.Now(), 100)
+	if err != nil {
+		if logger != nil {
+			logger.Error("demo approval expiry sweep failed", slog.Any("error", err))
+		}
+		return
+	}
+	for index := range runs {
+		run := &runs[index]
+		lock := u.executionLock(run.ID)
+		lock.Lock()
+		_, _, expireErr := u.expireApprovalIfDue(ctx, run)
+		lock.Unlock()
+		if expireErr != nil && logger != nil {
+			logger.Error(
+				"demo approval expiry close failed", slog.Uint64("incident_id", run.IncidentID),
+				slog.String("idempotency_key", run.IdempotencyKey), slog.Any("error", expireErr),
+			)
+		}
+	}
+}
+
+func expirySnapshotJSON(run *demomodel.ScenarioRun, existing string) string {
+	snapshot := map[string]any{
+		"scenario_id": run.ScenarioID, "idempotency_key": run.IdempotencyKey,
+		"incident_id": run.IncidentID, "expired_at": run.ExpiresAt,
+		"fixture_released": true, "repair_executed": false,
+	}
+	encoded, err := json.Marshal(snapshot)
+	if err != nil {
+		return existing
+	}
+	return string(encoded)
+}
+
 func (u *Usecase) Approve(
 	ctx context.Context, tenantID uint64, incidentID uint64, approverID string,
 ) (*ScenarioStatus, error) {
@@ -537,6 +634,12 @@ func (u *Usecase) Approve(
 		run.Status != demomodel.ScenarioStatusRepairDispatched &&
 		run.Status != demomodel.ScenarioStatusVerifying {
 		return nil, errs.ErrConflict
+	}
+	if run.Status == demomodel.ScenarioStatusAwaitingApproval {
+		status, expired, err := u.expireApprovalIfDue(ctx, run)
+		if err != nil || expired {
+			return status, err
+		}
 	}
 	if !u.clock.Now().Before(run.ExpiresAt) {
 		return nil, errs.ErrConflict
@@ -987,7 +1090,14 @@ func (u *Usecase) publishWorkflow(
 	if u.workflowPublisher == nil {
 		return
 	}
-	_ = u.workflowPublisher.PublishWorkflow(ctx, run, stage, decision)
+	if err := u.workflowPublisher.PublishWorkflow(ctx, run, stage, decision); err != nil {
+		slog.Error(
+			"demo workflow authority publication failed",
+			slog.Uint64("incident_id", run.IncidentID),
+			slog.String("stage", stage),
+			slog.Any("error", err),
+		)
+	}
 }
 
 func ValidateStart(input StartScenarioInput) error {

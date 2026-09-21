@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -112,6 +113,17 @@ func (r *Repo) GetByIncident(ctx context.Context, tenantID uint64, scenarioID st
 		return nil, err
 	}
 	return &run, nil
+}
+
+func (r *Repo) ListExpiredAwaitingApproval(ctx context.Context, now time.Time, limit int) ([]model.ScenarioRun, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var runs []model.ScenarioRun
+	err := r.db.WithContext(ctx).Where(
+		"status = ? AND expires_at <= ?", model.ScenarioStatusAwaitingApproval, now,
+	).Order("expires_at ASC, id ASC").Limit(limit).Find(&runs).Error
+	return runs, err
 }
 
 func (r *Repo) UpdateStatus(ctx context.Context, id uint64, status string, mutation func(*model.ScenarioRun) error) error {
