@@ -23,7 +23,7 @@ type fakeConnection struct {
 	releaseErr error
 }
 
-func TestAggregatePrometheusMetricsLabelEveryManifest(t *testing.T) {
+func TestAggregatePrometheusMetricsExposeOnlyLatestManifest(t *testing.T) {
 	controller, _, _ := newTestController(t)
 	first, err := controller.Start(context.Background(), StartRequest{
 		CaseID:          "pg-pool-exhaustion",
@@ -56,8 +56,6 @@ func TestAggregatePrometheusMetricsLabelEveryManifest(t *testing.T) {
 		t.Fatalf("aggregate metrics status = %d", recorder.Code)
 	}
 	expectedSeries := []string{
-		`opskeeper_pool_fixture_active_connections{target="pg:pool-fixture",pool_manifest_id="` + first.ManifestID + `"} 2`,
-		`opskeeper_pool_fixture_capacity{target="pg:pool-fixture",pool_manifest_id="` + first.ManifestID + `"} 2`,
 		`opskeeper_pool_fixture_active_connections{target="pg:pool-fixture",pool_manifest_id="` + second.ManifestID + `"} 3`,
 		`opskeeper_pool_fixture_capacity{target="pg:pool-fixture",pool_manifest_id="` + second.ManifestID + `"} 3`,
 	}
@@ -65,6 +63,9 @@ func TestAggregatePrometheusMetricsLabelEveryManifest(t *testing.T) {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("missing %s in:\n%s", expected, body)
 		}
+	}
+	if strings.Contains(body, first.ManifestID) {
+		t.Fatalf("historical manifest leaked into metrics:\n%s", body)
 	}
 }
 
@@ -258,6 +259,9 @@ func TestControllerRequiresFailedProbeThenRecovers(t *testing.T) {
 	}
 	if runtime.resizedTo != 4 {
 		t.Fatalf("target capacity = %d", runtime.resizedTo)
+	}
+	if !runtime.closed {
+		t.Fatal("recovered pool runtime was not closed")
 	}
 	for _, connection := range runtime.connections {
 		if !connection.released {

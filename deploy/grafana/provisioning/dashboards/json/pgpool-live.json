@@ -1,0 +1,165 @@
+{
+  "id": 6,
+  "panels": [
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "opskeeper-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "showPoints": "never"
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Active"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Capacity"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 16,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "expr": "opskeeper_pool_fixture_active_connections",
+          "legendFormat": "Active",
+          "refId": "A"
+        },
+        {
+          "expr": "opskeeper_pool_fixture_capacity",
+          "legendFormat": "Capacity",
+          "refId": "B"
+        }
+      ],
+      "title": "PG 应用连接池 / Active / Capacity",
+      "type": "timeseries",
+      "description": "绿线 = Active（当前连接数）；黄线 = Capacity（连接池容量）。修复后 Active 归零时仍锁定同一 pool_manifest_id，Capacity 应显示 4→8 阶跃。"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "opskeeper-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 95
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "expr": "opskeeper_pool_fixture_active_connections / on(pool_manifest_id) opskeeper_pool_fixture_capacity",
+          "legendFormat": "utilization",
+          "refId": "A"
+        }
+      ],
+      "title": "连接池利用率",
+      "type": "stat"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": [
+    "opskeeper",
+    "postgresql",
+    "pool"
+  ],
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "OpsKeeper PG Pool Live",
+  "uid": "opskeeper-pgpool-live",
+  "version": 3
+}
