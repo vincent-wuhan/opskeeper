@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	htmpl "html"
 	"io"
 	"net/http"
 	"os"
@@ -251,12 +252,12 @@ func (publisher *MatrixWorkflowPublisher) PublishWorkflow(
 	incidentID := claims.IncidentID
 	utcTime := now.Format("2006-01-02T15:04:05Z")
 	beijingTime := now.In(beijingTimezone).Format("2006-01-02T15:04:05+08:00")
-	decisionText := fmt.Sprintf(
-		"【OpsKeeper 人工审批决策简报】\nincident_id=%s stage=%s time_utc=%s time_bjt=%s\n",
-		incidentID, stage, utcTime, beijingTime,
-	)
+	decisionLines := []string{fmt.Sprintf(
+		"【OpsKeeper 人工审批决策简报】\nincident_id=%s stage=%s time_utc=%s time_bjt=%s\n阶段摘要：%s",
+		incidentID, stage, utcTime, beijingTime, workflowSummary(stage),
+	)}
 	if stage == demomodel.ScenarioStatusAwaitingApproval {
-		decisionText += fmt.Sprintf(
+		decisionLines = append(decisionLines, fmt.Sprintf(
 			"确认根因：%s\n影响范围：%s\n预演边界：%s\n候选 A：%s\n候选 B：%s\n"+
 				"审批有效期（UTC）：%s\n审批有效期（北京时间）：%s\n"+
 				"证据档案：%s\n建议审批命令：%s\n",
@@ -269,18 +270,24 @@ func (publisher *MatrixWorkflowPublisher) PublishWorkflow(
 			brief.ApprovalExpiresBJT,
 			workflowDisplayText(brief.ArchiveURL),
 			workflowDisplayText(brief.ApprovalCommand),
-		)
+		))
 	}
 	if stage == demomodel.ScenarioStatusClosed {
-		decisionText += fmt.Sprintf(
+		decisionLines = append(decisionLines, fmt.Sprintf(
 			"处理结果：审批已过期，未伪造人工审批，未执行修复。\n"+
 				"审批过期时间（UTC）：%s\n审批过期时间（北京时间）：%s\n"+
 				"故障负载：由受控 fixture TTL 或过期读回验证释放。\n",
 			workflowDisplayText(run.ExpiresAt.UTC().Format(time.RFC3339)),
 			workflowDisplayText(run.ExpiresAt.In(beijingTimezone).Format("2006-01-02T15:04:05+08:00")),
-		)
+		))
 	}
-	decisionText += "OPSKEEPER_AUTHORITY_V1 " + token
+	decisionText := strings.Join(decisionLines, "\n") + "\nOPSKEEPER_AUTHORITY_V1 " + token
+	formattedLines := make([]string, len(decisionLines)+1)
+	for index, line := range decisionLines {
+		formattedLines[index] = htmpl.EscapeString(line)
+	}
+	formattedLines[len(formattedLines)-1] = "机器凭证：默认隐藏；完整 OPSKEEPER_AUTHORITY_V1 保留在事件原始 body 中，用于签名校验。"
+	formattedBody := "<p>" + strings.Join(formattedLines, "<br>") + "</p>"
 	workflowMetadata := map[string]any{
 		"type": "opskeeper-workflow", "runId": incidentID, "authorityStage": stage,
 		"title":  "OpsKeeper 事故恢复 " + incidentID,
@@ -302,6 +309,8 @@ func (publisher *MatrixWorkflowPublisher) PublishWorkflow(
 	content := map[string]any{
 		"msgtype":             "m.notice",
 		"body":                decisionText,
+		"format":              "org.matrix.custom.html",
+		"formatted_body":      formattedBody,
 		"agentteams.workflow": workflowMetadata,
 		"opskeeper.authority": authorityMetadata,
 	}
@@ -439,10 +448,10 @@ func workflowSteps(stage string) []map[string]any {
 		switch {
 		case index < selectedIndex:
 			status = "completed"
-		case index == selectedIndex:
-			status = definition.status
 		case stage == demomodel.ScenarioStatusRecovered:
 			status = "completed"
+		case index == selectedIndex:
+			status = definition.status
 		}
 		steps = append(steps, map[string]any{
 			"id": definition.id, "name": definition.title, "status": status,

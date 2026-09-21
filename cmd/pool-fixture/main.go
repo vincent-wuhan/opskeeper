@@ -404,6 +404,10 @@ func (c *Controller) Recover(ctx context.Context, manifestID string, request Rec
 	if pool.timer != nil {
 		pool.timer.Stop()
 	}
+	if err := pool.runtime.Close(); err != nil {
+		return PoolManifest{}, fmt.Errorf("close recovered pool: %w", err)
+	}
+	pool.runtime = nil
 	if err := c.persistLocked(pool); err != nil {
 		return PoolManifest{}, err
 	}
@@ -928,15 +932,23 @@ func writeBusinessSnapshot(writer http.ResponseWriter, snapshot BusinessSnapshot
 func (h *Handler) prometheusMetrics(writer http.ResponseWriter) {
 	statuses := h.controller.Statuses()
 	writer.Header().Set("Content-Type", `text/plain; version=0.0.4; charset=utf-8`)
-	for _, status := range statuses {
-		capacity := status.TargetCapacity
-		if status.Status == poolStateRunning {
-			capacity = status.InitialCapacity
-		}
-		labels := fmt.Sprintf("target=%q,pool_manifest_id=%q", status.Resource, status.ManifestID)
-		fmt.Fprintf(writer, "opskeeper_pool_fixture_active_connections{%s} %d\n", labels, status.ActiveConnections)
-		fmt.Fprintf(writer, "opskeeper_pool_fixture_capacity{%s} %d\n", labels, capacity)
+	if len(statuses) == 0 {
+		return
 	}
+	latest := statuses[0]
+	for _, status := range statuses[1:] {
+		if status.StartedAt.After(latest.StartedAt) ||
+			(status.StartedAt.Equal(latest.StartedAt) && status.ManifestID > latest.ManifestID) {
+			latest = status
+		}
+	}
+	capacity := latest.TargetCapacity
+	if latest.Status == poolStateRunning {
+		capacity = latest.InitialCapacity
+	}
+	labels := fmt.Sprintf("target=%q,pool_manifest_id=%q", latest.Resource, latest.ManifestID)
+	fmt.Fprintf(writer, "opskeeper_pool_fixture_active_connections{%s} %d\n", labels, latest.ActiveConnections)
+	fmt.Fprintf(writer, "opskeeper_pool_fixture_capacity{%s} %d\n", labels, capacity)
 }
 
 type poolMetricsSnapshot struct {
