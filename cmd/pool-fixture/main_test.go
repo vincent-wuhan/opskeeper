@@ -35,7 +35,7 @@ func TestAggregatePrometheusMetricsExposeOnlyLatestManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = controller.Start(context.Background(), StartRequest{
+	second, err := controller.Start(context.Background(), StartRequest{
 		CaseID:          "pg-pool-exhaustion",
 		IncidentID:      "incident-live-002",
 		InitialCapacity: 3,
@@ -56,8 +56,10 @@ func TestAggregatePrometheusMetricsExposeOnlyLatestManifest(t *testing.T) {
 		t.Fatalf("aggregate metrics status = %d", recorder.Code)
 	}
 	expectedSeries := []string{
-		`opskeeper_pool_fixture_active_connections{target="pg:pool-fixture",pool_manifest_id="live"} 3`,
-		`opskeeper_pool_fixture_capacity{target="pg:pool-fixture",pool_manifest_id="live"} 3`,
+		`opskeeper_pool_fixture_active_connections{target="pg:pool-fixture",pool_manifest_id="` + second.ManifestID + `"} 3`,
+		`opskeeper_pool_fixture_capacity{target="pg:pool-fixture",pool_manifest_id="` + second.ManifestID + `"} 3`,
+		`opskeeper_pool_fixture_live_active_connections{target="pg:pool-fixture",pool_manifest_id="live"} 3`,
+		`opskeeper_pool_fixture_live_capacity{target="pg:pool-fixture",pool_manifest_id="live"} 3`,
 	}
 	for _, expected := range expectedSeries {
 		if !strings.Contains(body, expected) {
@@ -127,7 +129,7 @@ func TestAggregateMetricsExposeNewManifestWithoutRestart(t *testing.T) {
 	if metricsResponse.StatusCode != http.StatusOK {
 		t.Fatalf("metrics response = %d", metricsResponse.StatusCode)
 	}
-	expected := `opskeeper_pool_fixture_active_connections{target="pg:pool-fixture",pool_manifest_id="live"} 2`
+	expected := `opskeeper_pool_fixture_active_connections{target="pg:pool-fixture",pool_manifest_id="` + manifest.ManifestID + `"} 2`
 	if !strings.Contains(string(metricsBody), expected) {
 		t.Fatalf("missing %s in:\n%s", expected, metricsBody)
 	}
