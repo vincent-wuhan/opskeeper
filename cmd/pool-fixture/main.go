@@ -946,7 +946,7 @@ func (h *Handler) prometheusMetrics(writer http.ResponseWriter) {
 	if latest.Status == poolStateRunning {
 		capacity = latest.InitialCapacity
 	}
-	labels := fmt.Sprintf("target=%q,pool_manifest_id=%q", latest.Resource, latest.ManifestID)
+	labels := fmt.Sprintf("target=%q,pool_manifest_id=%q", latest.Resource, "live")
 	fmt.Fprintf(writer, "opskeeper_pool_fixture_active_connections{%s} %d\n", labels, latest.ActiveConnections)
 	fmt.Fprintf(writer, "opskeeper_pool_fixture_capacity{%s} %d\n", labels, capacity)
 }

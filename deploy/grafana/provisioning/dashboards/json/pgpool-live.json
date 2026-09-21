@@ -73,12 +73,12 @@
       },
       "targets": [
         {
-          "expr": "opskeeper_pool_fixture_active_connections",
+          "expr": "opskeeper_pool_fixture_active_connections{pool_manifest_id=\"live\"}",
           "legendFormat": "Active",
           "refId": "A"
         },
         {
-          "expr": "opskeeper_pool_fixture_capacity",
+          "expr": "opskeeper_pool_fixture_capacity{pool_manifest_id=\"live\"}",
           "legendFormat": "Capacity",
           "refId": "B"
         }
@@ -138,7 +138,7 @@
       },
       "targets": [
         {
-          "expr": "opskeeper_pool_fixture_active_connections / on(pool_manifest_id) opskeeper_pool_fixture_capacity",
+          "expr": "opskeeper_pool_fixture_active_connections{pool_manifest_id=\"live\"} / on(pool_manifest_id) opskeeper_pool_fixture_capacity{pool_manifest_id=\"live\"}",
           "legendFormat": "utilization",
           "refId": "A"
         }
