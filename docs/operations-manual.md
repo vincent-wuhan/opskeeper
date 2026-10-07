@@ -88,7 +88,7 @@ kubectl get pods -n opskeeper
 
 ```bash
 # 1. 备份数据库（前置）
-opskeeper-migrate backup --output backup-$(date +%Y%m%d).sql
+opskeeper-migrate export --output backup-$(date +%Y%m%d).json
 
 # 2. 升级 helm
 helm upgrade opskeeper opskeeper/opskeeper \
@@ -112,7 +112,9 @@ helm history opskeeper -n opskeeper
 helm rollback opskeeper <REVISION> -n opskeeper
 
 # 数据库回滚（若 migration 已执行）
-opskeeper-migrate rollback --to backup-20260713.sql
+opskeeper-migrate rollback \
+  --rollback-snapshot backup-20260713.json \
+  --target opskeeper://opskeeper-host:8080
 ```
 
 ---
@@ -167,6 +169,39 @@ opskeeper-migrate rollback --to backup-20260713.sql
 | Loki | 100m | 256Mi | 500m | 1Gi |
 | Tempo | 100m | 256Mi | 500m | 1Gi |
 | Grafana | 100m | 256Mi | 500m | 512Mi |
+
+### 2.5 闭环修复动作的适配器装配
+
+approved phase 要把一个修复动作真正打到工具上，需要该动作所属的中间件适配器
+被连上。六个适配器各自独立，按环境变量装配到同一个工具 registry；**没配 DSN
+的适配器只是不出现**（对应的动作会被明确拒绝并说明原因，不会静默跳过或猜参数）。
+配了但连不上的会被记录并跳过，不会阻止 manager 启动。
+
+| 环境变量 | 适配器 | 工具数 | DSN 形态 |
+|---|---|---|---|
+| `OPSKEEPER_LOOP_PG_DSN` | PostgreSQL | 22 | `postgres://user:pass@host:5432/db` |
+| `OPSKEEPER_LOOP_REDIS_DSN` | Redis | 17 | `redis://[:pass@]host:6379/0`（cluster 亦可） |
+| `OPSKEEPER_LOOP_K8S_DSN` | Kubernetes | 19 | `kubeconfig:///path/to/kubeconfig`、`incluster://`、`https://host:port?token=...` |
+| `OPSKEEPER_LOOP_MQ_DSN` | 消息队列 | 6 | `amqp(s)://`（RabbitMQ，走 management API）或 `kafka://`（broker 列表） |
+| `OPSKEEPER_LOOP_HOST_DSN` | 主机 | 7 | `local://` 或 `ssh://user@host[:port]?key=/path/to/key` |
+| `OPSKEEPER_LOOP_GIT_DSN` | Git 仓库 | 8 | `/path/to/checkout`、`/path/to/checkout#branch`、`https://host/owner/repo.git`、`git@host:owner/repo.git` |
+
+Git 适配器**只读**：`git.connect` / `list_repos` / `commit_history` /
+`file_at_commit` / `blame` / `diff` / `search_code` / `find_runtime_link`。
+`Execute` 即使收到 `approved_by` 也会拒绝全部 `push` / `tag` / `reset`——
+平台没有经过审批闸门的 git 写路径，一个只看"审批人字段非空"就执行 push 的
+入口比没有入口更危险。远端 DSN 会 clone 到临时目录（**全量 fetch，不是
+`--depth=1`**：浅克隆会让 `git blame` 把每一行都归给切点），`Close` 时删除；
+本地路径就地读取，不会被清理。
+
+主机适配器的写操作还有一层独立的闸门：`OPSKEEPER_HOST_UNIT_ALLOWLIST`
+（逗号分隔的 systemd unit 名单）。**它为空时拒绝所有重启请求**，不是允许所有——
+这是一个需要显式配置才能打开的开关。
+
+DSN 支持 `secret://` 前缀（`core/manager/pkg/secretbox`），也接受明文（兼容读取）。
+
+检查装配结果：manager 启动日志里每个成功的适配器各有一行
+`loop: remediation adapter wired`；一个都没连上时是一条 `Warn`，并附上可用变量名。
 
 ---
 
@@ -283,7 +318,58 @@ logcli query '{app="opskeeper-manager"} |= "audit"' --since=1h
 logcli query '{app="opskeeper-manager"} | json | user_id="42"' --since=24h --output=json
 ```
 
-### 4.3 合规导出
+### 4.3 防篡改链（HMAC chain）
+
+`audit_logs` 是一条**带密钥的哈希链**：第 N 行携带第 N-1 行的摘要，所以改动或
+删除任何一行，都会让它之后所有行一起校验失败。链的密钥只在控制面（manager）里，
+节点、插件、模型都只能读、不能续。
+
+**开启（生产必做）**：
+
+```bash
+# 生成一次性密钥，写进 manager 的 Secret，不要进 git
+export OPSKEEPER_AUDIT_HMAC_KEY=$(openssl rand -hex 32)
+```
+
+未配置时账本**照常记录**，只是行里没有摘要；manager 启动时会打一条
+`audit: OPSKEEPER_AUDIT_HMAC_KEY is not set` 的 WARN。
+
+**查看链状态**：
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  https://opskeeper.example.com/v1/admin/audit-logs/chain
+```
+
+```json
+{
+  "enabled": true,
+  "intact": false,
+  "head_seq": 184213,
+  "anchor_seq": 91204,
+  "broken_at_seq": 150337,
+  "reason": "link mismatch: PrevHash is 9f2c… but the preceding entry hashes to 41ab…"
+}
+```
+
+| 字段 | 含义 |
+|---|---|
+| `enabled` | 是否配置了 key。未配置时 `intact` 是 `null`，**不是** `true` |
+| `intact` | `true` 全链通过；`false` 有断点；`null` 没有链 |
+| `head_seq` | 最新一条链上记录的位置 |
+| `anchor_seq` | 现存最老一条的位置。**低于它的已被保留策略裁掉**，所以「校验通过」只覆盖 `anchor_seq` 之后 |
+| `broken_at_seq` | 第一个对不上的位置。从这里往后的记录都不可信 |
+
+该接口恒返回 200——「有篡改」是一个答案，不是服务端错误。轮询它不会写审计行。
+
+**保留策略只裁前缀**：链中段的行不会因为 `occurred_at` 早于 cutoff 被删。
+这意味着**表里最老的一行可能比 cutoff 还老**——它前面有更新的行，删它会在链中间
+挖洞。判定标准是 `anchor_seq`，不是行数。
+
+**轮换密钥会让旧行的摘要全部失效**。轮换是一次保留级事件：要么先让旧窗口过期，
+要么保留旧 key 以便按时间段分别校验。
+
+### 4.4 合规导出
 
 ```bash
 # 导出最近 90 天审计日志（用于 SOC2 / ISO27001 审计）
@@ -348,8 +434,8 @@ helm upgrade opskeeper opskeeper/opskeeper --set investigator.timeout=300s
 helm upgrade opskeeper opskeeper/opskeeper \
   --set harness.judge.models[0]=claude-sonnet-4-20250514
 
-# 锁定 golden case 不更新
-opskeeper-eval lock --until 2026-08-01
+# 重跑 leaderboard，确认回滚后的评分已恢复
+opskeeper-eval leaderboard
 ```
 
 ### 5.4 数据迁移失败

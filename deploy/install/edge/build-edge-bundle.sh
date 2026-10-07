@@ -27,18 +27,24 @@ EDGE_DIR=${1:?usage: build-edge-bundle.sh <edge_dir> <version> [arch]}
 VERSION=${2:?version}
 ARCH=${3:-linux-amd64}
 
-# (src_in_bundle  mode  dest_path  loose_file_in_edge_dir)
+# (src_in_bundle  mode  dest_path  loose_file_in_edge_dir  required?)
+#
+# The last column has to agree with dist/build-edge-bundle.sh: a bundle
+# missing an optional entry is degraded, a bundle missing a required one is a
+# node that installs and comes up healthy with an empty toolset. `pig` is
+# required because the edge spawns it — see the note in dist/build-edge-bundle.sh.
 ENTRIES=(
-  "opskeeper-edge              0755 /usr/local/bin/opskeeper-edge                          opskeeper-edge-${ARCH}"
-  "node_exporter            0755 /usr/local/lib/opskeeper-edge/node_exporter            node_exporter-${ARCH}"
-  "process_exporter         0755 /usr/local/lib/opskeeper-edge/process_exporter         process_exporter-${ARCH}"
-  "mysqld_exporter          0755 /usr/local/lib/opskeeper-edge/mysqld_exporter          mysqld_exporter-${ARCH}"
-  "postgres_exporter        0755 /usr/local/lib/opskeeper-edge/postgres_exporter        postgres_exporter-${ARCH}"
-  "redis_exporter           0755 /usr/local/lib/opskeeper-edge/redis_exporter           redis_exporter-${ARCH}"
-  "mongodb_exporter         0755 /usr/local/lib/opskeeper-edge/mongodb_exporter         mongodb_exporter-${ARCH}"
-  "promtail                 0755 /usr/local/lib/opskeeper-edge/promtail                 promtail-${ARCH}"
-  "otelcol-contrib          0755 /usr/local/lib/opskeeper-edge/otelcol-contrib          otelcol-contrib-${ARCH}"
-  "apply-pending-upgrade.sh 0755 /usr/local/lib/opskeeper-edge/apply-pending-upgrade.sh apply-pending-upgrade.sh"
+  "opskeeper-edge              0755 /usr/local/bin/opskeeper-edge                          opskeeper-edge-${ARCH}                 required"
+  "node_exporter            0755 /usr/local/lib/opskeeper-edge/node_exporter            node_exporter-${ARCH}                 optional"
+  "process_exporter         0755 /usr/local/lib/opskeeper-edge/process_exporter         process_exporter-${ARCH}              optional"
+  "mysqld_exporter          0755 /usr/local/lib/opskeeper-edge/mysqld_exporter          mysqld_exporter-${ARCH}               optional"
+  "postgres_exporter        0755 /usr/local/lib/opskeeper-edge/postgres_exporter        postgres_exporter-${ARCH}             optional"
+  "redis_exporter           0755 /usr/local/lib/opskeeper-edge/redis_exporter           redis_exporter-${ARCH}                optional"
+  "mongodb_exporter         0755 /usr/local/lib/opskeeper-edge/mongodb_exporter         mongodb_exporter-${ARCH}              optional"
+  "promtail                 0755 /usr/local/lib/opskeeper-edge/promtail                 promtail-${ARCH}                      optional"
+  "otelcol-contrib          0755 /usr/local/lib/opskeeper-edge/otelcol-contrib          otelcol-contrib-${ARCH}               optional"
+  "pig                      0755 /usr/local/lib/opskeeper-edge/pig                     pig-${ARCH}                           required"
+  "apply-pending-upgrade.sh 0755 /usr/local/lib/opskeeper-edge/apply-pending-upgrade.sh apply-pending-upgrade.sh            optional"
 )
 
 work=$(mktemp -d)
@@ -60,9 +66,16 @@ for entry in "${ENTRIES[@]}"; do
   mode=$2
   dest=$3
   loose=$4
+  required=${5:-optional}
   src_file="$EDGE_DIR/$loose"
 
   if [[ ! -f "$src_file" ]]; then
+    if [[ "$required" == "required" ]]; then
+      echo "build-edge-bundle(host): REQUIRED $src_in_bundle is missing at $src_file" >&2
+      echo "  The node would install cleanly and offer the model no tools at all." >&2
+      echo "  Stage $loose into $EDGE_DIR and re-run." >&2
+      exit 1
+    fi
     echo "build-edge-bundle(host): missing $src_file — skipping (bundle will be incomplete)" >&2
     continue
   fi

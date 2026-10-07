@@ -17,6 +17,10 @@ interface ToolCallBlockProps {
   args?: string;
   /** 出参渲染文本（已格式化为单行） */
   result?: string;
+  /** 实际执行的命令向量（argv）。这是"真的跑了什么"的唯一证据，
+   *  也是结晶机制要晋升进声明的那条向量；与 args（解析后的参数包）
+   *  是两个不同的问题。缺失则不渲染。 */
+  argv?: string[];
   status: PhaseStatus;
   /** 工具执行延迟，毫秒 */
   latencyMs?: number;
@@ -27,6 +31,7 @@ export function ToolCallBlock({
   name,
   args,
   result,
+  argv,
   status,
   latencyMs,
   className,
@@ -46,6 +51,15 @@ export function ToolCallBlock({
         {args && (
           <div className="mt-0.5 text-[11px] font-mono text-zinc-400 truncate" title={args}>
             {args}
+          </div>
+        )}
+        {argv && argv.length > 0 && (
+          <div
+            className="mt-0.5 text-[11px] font-mono text-amber-300/90 truncate"
+            title={argv.join(' ')}
+          >
+            <span className="text-zinc-600">$ </span>
+            {argv.join(' ')}
           </div>
         )}
         {result && (

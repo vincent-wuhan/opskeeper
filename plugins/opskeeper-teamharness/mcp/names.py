@@ -2,31 +2,31 @@
 """opskeeper-teamharness MCP name routing.
 
 plugin 端工具名（Worker LLM 看到）⇄ backend opskeeper /v1/mcp 实际工具名 的映射。
-backend 实际工具名（按 `internal/manager/biz/aiops/tools/*_basetool.go` 的 ToolNameXxx 常量）：
+backend 实际工具名（按 `core/manager/biz/aiops/tools/*_basetool.go` 的 ToolNameXxx 常量）：
 
-  - loop.investigate      (internal/manager/biz/loop/mcp_adapter.go: ToolNameInvestigate)
-  - loop.correlate        (internal/manager/biz/loop/mcp_adapter.go: ToolNameCorrelate)
-  - recovery.verify       (internal/manager/biz/loop/mcp_adapter.go: ToolNameVerify)
-  - query_promql          (internal/manager/biz/aiops/tools/query_promql.go)
-  - query_incidents       (internal/manager/biz/aiops/tools/query_incidents.go)
-  - get_incident_detail   (internal/manager/biz/aiops/tools/get_incident_detail.go)
-  - analyze_database_status (internal/manager/biz/aiops/tools/analyze_database_status.go)
-  - get_host_load         (internal/manager/biz/aiops/tools/host_load.go)
-  - get_host_processes    (internal/manager/biz/aiops/tools/host_processes.go)
-  - host_restart_service  (internal/manager/biz/aiops/tools/restart_service_basetool.go)
-  - host_find_large_files (internal/manager/biz/aiops/tools/host_files_basetool.go)
-  - host_du_summary       (internal/manager/biz/aiops/tools/host_files_basetool.go)
-  - host_stat_file        (internal/manager/biz/aiops/tools/host_files_basetool.go)
-  - query_knowledge       (internal/manager/biz/aiops/tools/query_knowledge_basetool.go)
-  - list_repo_sources     (internal/manager/biz/aiops/tools/code_source_basetool.go)
-  - read_source           (internal/manager/biz/aiops/tools/code_source_basetool.go)
-  - grep_source           (internal/manager/biz/aiops/tools/code_source_basetool.go)
-  - query_logql           (internal/manager/biz/aiops/tools/query_logql.go)
-  - query_traceql         (internal/manager/biz/aiops/tools/query_traceql.go)
-  - list_metric_catalog   (internal/manager/biz/aiops/tools/metric_catalog_tool.go)
+  - loop.investigate      (core/manager/biz/loop/mcp_adapter.go: ToolNameInvestigate)
+  - loop.correlate        (core/manager/biz/loop/mcp_adapter.go: ToolNameCorrelate)
+  - recovery.verify       (core/manager/biz/loop/mcp_adapter.go: ToolNameVerify)
+  - query_promql          (core/manager/biz/aiops/tools/query_promql.go)
+  - query_incidents       (core/manager/biz/aiops/tools/query_incidents.go)
+  - get_incident_detail   (core/manager/biz/aiops/tools/get_incident_detail.go)
+  - analyze_database_status (core/manager/biz/aiops/tools/analyze_database_status.go)
+  - get_host_load         (core/manager/biz/aiops/tools/host_load.go)
+  - get_host_processes    (core/manager/biz/aiops/tools/host_processes.go)
+  - host_restart_service  (core/manager/biz/aiops/tools/restart_service_basetool.go)
+  - host_find_large_files (core/manager/biz/aiops/tools/host_files_basetool.go)
+  - host_du_summary       (core/manager/biz/aiops/tools/host_files_basetool.go)
+  - host_stat_file        (core/manager/biz/aiops/tools/host_files_basetool.go)
+  - query_knowledge       (core/manager/biz/aiops/tools/query_knowledge_basetool.go)
+  - list_repo_sources     (core/manager/biz/aiops/tools/code_source_basetool.go)
+  - read_source           (core/manager/biz/aiops/tools/code_source_basetool.go)
+  - grep_source           (core/manager/biz/aiops/tools/code_source_basetool.go)
+  - query_logql           (core/manager/biz/aiops/tools/query_logql.go)
+  - query_traceql         (core/manager/biz/aiops/tools/query_traceql.go)
+  - list_metric_catalog   (core/manager/biz/aiops/tools/metric_catalog_tool.go)
 
 plugin 自实现的工具（不走 /v1/mcp，走 plugin HTTP handler 在
-internal/manager/server/agentteams/http.go，路由通过 cmd/opskeeper/main.go
+core/manager/server/agentteams/http.go，路由通过 cmd/opskeeper/main.go
 的 api.Group(...) 注册，所以 path 全部带 /api 前缀；server.py:263 把
 get_backend_url() 与 path 直接拼接，因此 path_template 必须自带 /api）。
 注意：/healthz 公开端点在 backend mux 根，不在 api.Group 内，不要加 /api。

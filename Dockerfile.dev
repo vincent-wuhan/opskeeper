@@ -6,7 +6,7 @@
 #
 # Build context 必须为仓库根（与 docker-compose.yml 中的 `build: context: .` 配合）。
 
-FROM golang:1.25-bookworm
+FROM golang:1.26-bookworm
 
 ARG TARGETARCH
 ARG ONNXRUNTIME_VERSION=1.20.1

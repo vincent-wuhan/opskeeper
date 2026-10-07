@@ -62,13 +62,38 @@ mocked at the HTTP layer. The manager binary is the only real one.
 The hard rule: **no real token ever lands in this repo**. Everything that
 hits a real external service is opt-in and skipped when its secret is missing.
 
-### Three modes
+### Four modes
 
 | Mode | What runs | Secret needed | Where secrets live |
 |---|---|---|---|
 | **default** (`make test-e2e`) | mocked-external tests | none | — |
 | **live-X** (`E2E_LIVE_SLACK=1` etc) | one external integration replaced with the real endpoint | only the specific one | `tests/e2e/secrets.local.env` (gitignored) **or** env |
 | **full live** (`E2E_LIVE_ALL=1`) | every external integration live | every secret | same |
+| **real LLM** (`make test-e2e-real-llm BASE_URL=…`) | the model itself is a real local engine instead of the fake | **none** | — |
+
+The last row is the odd one out and deserves the reason. The other three modes
+substitute *external services*; this one substitutes the **model**, which is the
+substitution the delivery acceptance cares about — a fake model accepts every
+request shape, so a translation a real engine would reject passes the whole
+suite and then fails on the first turn in production.
+
+It is also the only mode that requires no secret, and that is deliberate rather
+than lucky: this harness scrubs every credential-shaped variable out of every
+child process, because one property it must demonstrate is that a node holds no
+cloud vendor key. A hosted provider needs a key by definition, so
+`E2E_REAL_LLM_BASE_URL` accepts **loopback only** and refuses anything else with
+the reason attached. Point it at ollama, llama.cpp or vLLM:
+
+```sh
+make test-e2e-real-llm BASE_URL=http://127.0.0.1:11434
+make test-e2e-real-llm BASE_URL=http://127.0.0.1:11434 MODEL=qwen2.5:7b
+```
+
+What a green run establishes, and what it does not, is written down in
+`testenv.RealLLMLimits` rather than left for the next reader to infer from a
+green log. Short version: it proves the translation survives a real inference
+engine; it does not prove any hosted vendor's dialect, and it says nothing about
+answer quality — a local model is a real model and also a weak one.
 
 ### `RequireSecret` pattern
 
@@ -146,6 +171,74 @@ tests/e2e/
 New tests follow the same naming as the catalog: `<area>_<short>_test.go`,
 one numbered case per file (so a regression doesn't take down five at
 once and `go test -run` works on the catalog number).
+
+## The node-agent delivery gate
+
+`node_agent_delivery_test.go` is the one suite here that is not a
+loopback test. It runs in `make test-e2e` too — the two share the one
+broker and the one MySQL that `TestMain` tears down — and
+`make e2e-delivery-check` is the named target when you want only this
+path.
+
+```bash
+make e2e-delivery-check
+# or, on a machine whose daemon is not the default socket:
+DOCKER_HOST="unix://$HOME/.colima/default/docker.sock" make e2e-delivery-check
+```
+
+What is real in it: the `opskeeper` manager binary, the `opskeeper-edge`
+binary, a `pig` binary built from `core/pig` with `GOWORK=off` (the same way
+a release builds it), a frontier broker container, the node's own sockets,
+the manager's OpenAI-compatible gateway, and the console's SSE frame
+contract. What is substituted: the model, by the harness's fake LLM. So it
+proves the delivery path and says nothing about answer quality.
+
+It also says nothing about whether the node's agent was offered any tools.
+A node can hold a correct profile, a signed package, a gate, an allow-list
+and an audit ledger and still be handed an agent that may not call
+anything — which is what `make pig-tool-scoping-check` is the only gate
+that asks, and what it answered "no" to for months (0 of 18 tools, an
+upstream provenance defect) before PiG v0.4.0 fixed it. It now runs on
+every push; run it yourself before reading a green delivery gate as "the
+node can diagnose".
+
+The split exists because the two questions are different. Everything else in
+this directory replaces the transport (an in-process loopback) and the agent
+process (a scripted stand-in), which is the right trade for operational
+scenarios and the wrong one for "do the real halves fit together". Three
+defects have now escaped that trade entirely and been caught only here:
+
+- the edge subscribed to the agent's event stream exactly once, so a node
+  whose agent started after the node itself never heard it again;
+- frames were stamped with the agent's own session id, which in PiG's rpc
+  mode is empty, so the manager dropped every frame of every turn;
+- the fake LLM answered a `stream: true` request with a whole JSON body, so
+  the client's SSE reader found no `data:` lines and the gateway settled an
+  empty reply — with a 200 and no error anywhere.
+
+That third one is the reason `TestTheGatewayServesAStreamToANodeCredential`
+asserts on the response **body**. It used to assert on the status line, and
+a gateway that answers 200 with a well-formed empty stream is
+indistinguishable, to every client, from a working one.
+
+Note on the frontier image: the harness pulls `singchia/frontier:1.2.5`,
+which is the same broker the release ships — the release builds it from the
+upstream git tag `v1.2.5` and names the local image with the `v`; Docker Hub
+has never published that spelling. `make broker-pin-check` keeps the six
+files that name it agreeing.
+
+If your registry cannot reach the `singchia` namespace at all, build the
+broker from source with the Dockerfile the release uses and point the
+harness at that image:
+
+```sh
+git clone --depth 1 --branch v1.2.5 https://github.com/singchia/frontier.git /tmp/frontier
+make docker-build-broker FRONTIER_SRC=/tmp/frontier
+OPSKEEPER_E2E_FRONTIER_IMAGE=singchia/frontier:v1.2.5 make e2e-delivery-check
+```
+
+`OPSKEEPER_E2E_FRONTIER_IMAGE` is also the escape hatch for a mirror that
+carries a different tag.
 
 ## Conventions for writing a new e2e
 

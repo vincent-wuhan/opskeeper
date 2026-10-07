@@ -1,0 +1,11 @@
+{"type":"assistant_start","session_id":"s-1","iteration":1,"seq":1,"assistant":{"content":""}}
+{"type":"assistant_delta","session_id":"s-1","iteration":1,"seq":2,"assistant":{"content":"checking"}}
+{"type":"assistant_end","session_id":"s-1","iteration":1,"seq":3,"assistant":{"content":"Let me look.","pending_tool_calls":1,"created_at":"2026-09-30T01:00:00Z"}}
+{"type":"tool_start","session_id":"s-1","iteration":1,"seq":4,"tool":{"tool_call_id":"tc-1","name":"get_topology","args_json":"{\"root\":\"prod\"}","started_at":"2026-09-30T01:00:00Z"}}
+{"type":"tool_update","session_id":"s-1","iteration":1,"seq":5,"tool":{"tool_call_id":"tc-1","name":"tail_file","result_json":"line 1\n"}}
+{"type":"tool_end","session_id":"s-1","iteration":1,"seq":6,"tool":{"tool_call_id":"tc-1","name":"get_topology","status":"success","result_json":"three tiers","ended_at":"2026-09-30T01:00:00Z"}}
+{"type":"tool_end","session_id":"s-1","iteration":1,"seq":7,"tool":{"tool_call_id":"tc-2","name":"restart_service","status":"blocked","result_json":"opskeeper: tool blocked by host policy: needs approval","error":"opskeeper: tool blocked by host policy: needs approval","ended_at":"2026-09-30T01:00:00Z"}}
+{"type":"assistant_start","session_id":"s-1","iteration":2,"seq":8,"assistant":{"content":""}}
+{"type":"assistant_delta","session_id":"s-1","iteration":2,"seq":9,"assistant":{"content":"checking"}}
+{"type":"assistant_end","session_id":"s-1","iteration":2,"seq":10,"assistant":{"content":"The node is healthy.","created_at":"2026-09-30T01:00:00Z"}}
+{"type":"done","session_id":"s-1","iteration":2,"seq":11,"done":{"iterations":2,"tool_calls":1,"usage":{"input_tokens":1200,"output_tokens":340,"cache_read_tokens":800,"cost_usd":0.031,"model":"gpt-5.6"}}}

@@ -26,6 +26,9 @@ const SkillsPage = lazy(() => import('@/pages/Skills'));
 const ApprovalsPage = lazy(() => import('@/pages/Approvals'));
 const SkillRunPage = lazy(() => import('@/pages/SkillRun'));
 const AgentsPage = lazy(() => import('@/pages/Agents'));
+const NodeAgentsPage = lazy(() => import('@/pages/NodeAgents'));
+const PluginMarketplacePage = lazy(() => import('@/pages/PluginMarketplace'));
+const CrystallizedPage = lazy(() => import('@/pages/Crystallized'));
 const McpPage = lazy(() => import('@/pages/Mcp'));
 const FlowsPage = lazy(() => import('@/pages/Flows'));
 const FlowEditorPage = lazy(() => import('@/pages/FlowEditor'));
@@ -57,6 +60,10 @@ const AdminUsers = lazy(() => import('@/pages/settings/Users'));
 const AdminOrgs = lazy(() => import('@/pages/settings/Orgs'));
 const AdminAuditLog = lazy(() => import('@/pages/settings/AuditLog'));
 const AdminWebshell = lazy(() => import('@/pages/settings/Webshell'));
+// Plugin release console — the fleet-side half of the plugin ecosystem.
+// Sits under /admin because a release puts L2 code (tools that can restart
+// services) onto hosts, so it is governance rather than product config.
+const AdminPluginReleases = lazy(() => import('@/pages/settings/PluginReleases'));
 // Deployment / runtime / version composition page.
 const RuntimePage = lazy(() => import('@/pages/admin/Runtime'));
 
@@ -129,6 +136,9 @@ export default function App() {
         <Route path="/approvals" element={<ApprovalsPage />} />
         <Route path="/skills/:key" element={<SkillRunPage />} />
         <Route path="/agents" element={<AgentsPage />} />
+        <Route path="/node-agents" element={<NodeAgentsPage />} />
+        <Route path="/plugins" element={<PluginMarketplacePage />} />
+        <Route path="/crystallized" element={<CrystallizedPage />} />
         <Route path="/mcp" element={<McpPage />} />
         <Route path="/workflows" element={<FlowsPage />} />
         <Route path="/workflows/:id" element={<FlowEditorPage />} />
@@ -190,6 +200,7 @@ export default function App() {
               from any incident detail screen straight to the
               Manager / Worker / plugin composition view. */}
           <Route path="runtime" element={<RuntimePage />} />
+          <Route path="plugins" element={<AdminPluginReleases />} />
         </Route>
         {/* Audit log lives under the Admin (Users & Orgs) section — it's
             platform governance ("who did what"), grouped with users/orgs,

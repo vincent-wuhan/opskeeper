@@ -495,59 +495,18 @@ if (( ${#LEGACY_VOLS[@]} > 0 )); then
     log_warn "see README.md '数据卷迁移' to copy data into $OPSKEEPER_DATA_DIR before bringing the stack up"
 fi
 
-mkdir -p \
-    "$OPSKEEPER_DATA_DIR/mysql" \
-    "$OPSKEEPER_DATA_DIR/prometheus" \
-    "$OPSKEEPER_DATA_DIR/loki" \
-    "$OPSKEEPER_DATA_DIR/tempo" \
-    "$OPSKEEPER_DATA_DIR/qdrant" \
-    "$OPSKEEPER_DATA_DIR/grafana" \
-    "$OPSKEEPER_DATA_DIR/embeddings" \
-    "$OPSKEEPER_DATA_DIR/skills" \
-    "$OPSKEEPER_DATA_DIR/pages" \
-    "$OPSKEEPER_DATA_DIR/workspace" \
-    "$OPSKEEPER_DATA_DIR/tools" \
-    "$OPSKEEPER_LOG_DIR"
+# The list of host directories and the uid each container process runs as
+# lives in one place — see state-dirs.sh, which install.sh, upgrade.sh and the
+# test that exercises this all share. mkdir, then chown, then chmod, in that
+# order: a chown before the mkdir is a no-op, and the directory is then
+# created by `compose up` as root, which no log line reports.
+mkdir -p "$OPSKEEPER_DATA_DIR"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/state-dirs.sh"
+opskeeper_state_dirs | opskeeper_ensure_state_dirs "$OPSKEEPER_DATA_DIR"
 
-# Stage the bundled fastembed model (ADR-027 Phase-2 offline RAG).
-# Skip if operator already has files in there (e.g. a custom model).
-if [[ -d "$SCRIPT_DIR/embeddings/fast-bge-small-zh-v1.5" ]]; then
-    target="$OPSKEEPER_DATA_DIR/embeddings/fast-bge-small-zh-v1.5"
-    if [[ -f "$target/model_optimized.onnx" ]]; then
-        log_info "embedding model already staged ($target)"
-    else
-        log_info "staging bundled embedding model → $target"
-        mkdir -p "$target"
-        cp -rf "$SCRIPT_DIR/embeddings/fast-bge-small-zh-v1.5/." "$target/"
-    fi
-fi
-# Manager runs as uid 65532 (nonroot in the image); the embedding
-# cache must be readable by that uid AND writable so fastembed-go can
-# write its own progress / lock files on first load.
-chmod -R 0755 "$OPSKEEPER_DATA_DIR/embeddings" 2>/dev/null || true
-chown -R 65532:65532 "$OPSKEEPER_DATA_DIR/embeddings" 2>/dev/null || true
-# HLD-017 marketplace skills dir — manager (uid 65532) installs packs here;
-# must be writable by that uid (cf. embeddings). Without this a fresh install
-# fails at "move staging → install: permission denied".
-chown -R 65532:65532 "$OPSKEEPER_DATA_DIR/skills" 2>/dev/null || true
-# Manager-written runtime dirs (uid 65532), all bind-mounted into the container.
-# Without chown, docker creates them root-owned on first `up` and the nonroot
-# manager can't write: serve_page fails "mkdir page dir: permission denied",
-# cloud_bash fails "mkdir session" (workspace) + can't install tools.
-chown -R 65532:65532 "$OPSKEEPER_DATA_DIR/pages" 2>/dev/null || true
-chown -R 65532:65532 "$OPSKEEPER_DATA_DIR/workspace" 2>/dev/null || true
-chown -R 65532:65532 "$OPSKEEPER_DATA_DIR/tools" 2>/dev/null || true
-
-# Image uids — pinned to what the upstream images run as. Bumping the
-# image tag in docker-compose.yml without updating these here will fail
-# on first boot (chown to the wrong uid → service can't write).
-chown -R 999:999       "$OPSKEEPER_DATA_DIR/mysql"      2>/dev/null || true   # mysql:8.0
-chown -R 65534:65534   "$OPSKEEPER_DATA_DIR/prometheus" 2>/dev/null || true   # prom/prometheus runs as nobody
-chown -R 10001:10001   "$OPSKEEPER_DATA_DIR/loki"       2>/dev/null || true   # grafana/loki
-chown -R 10001:10001   "$OPSKEEPER_DATA_DIR/tempo"      2>/dev/null || true   # grafana/tempo
-chown -R 472:472       "$OPSKEEPER_DATA_DIR/grafana"    2>/dev/null || true   # grafana/grafana-oss
-# qdrant runs as root inside the container — no chown needed.
-# manager log dir: container's opskeeper user writes here.
+# The state root itself and the log dir: the manager writes into both, and
+# a parent directory at 0755 owned by root is not writable by uid 65532.
 chmod 755 "$OPSKEEPER_DATA_DIR" "$OPSKEEPER_LOG_DIR"
 
 # Export so the docker compose subprocess inherits — compose substitutes

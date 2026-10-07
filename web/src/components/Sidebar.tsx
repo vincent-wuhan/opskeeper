@@ -32,6 +32,8 @@ import {
   Trash2,
   Share2,
   Plug,
+  Package,
+  Sparkles,
 } from 'lucide-react';
 import { Avatar } from './Avatar';
 import { AgentBadge } from './AgentBadge';
@@ -415,6 +417,21 @@ export function Sidebar() {
         <SectionLabel>Agent</SectionLabel>
         <NavSection>
           <SidebarNavItem to="/agents" icon={Bot} label={tr('助理', 'Assistants')} />
+          {/* A node agent is a running agent on an edge rather than a
+              definition in the catalog, so it sits beside 助理 rather than
+              inside it: the two pages answer different questions and an
+              operator looking for "what can I install" should not have to
+              scroll past "what is running right now". */}
+          <SidebarNavItem to="/node-agents" icon={Server} label={tr('节点 Agent', 'Node Agents')} />
+          {/* The marketplace sits here rather than in settings because it
+              is the way packages get IN, which is an agent concern; the
+              release console that puts them on hosts stays under Admin. */}
+          <SidebarNavItem to="/plugins" icon={Package} label={tr('插件市场', 'Plugins')} />
+          {/* 自愈规则 sits beside the marketplace because it is the other
+              way a package can be born: the marketplace takes one IN, and
+              this page is where the platform asks a human to let it write
+              one OUT of its own history. */}
+          <SidebarNavItem to="/crystallized" icon={Sparkles} label={tr('自愈规则', 'Runbooks')} />
           <SidebarNavItem to="/workflows" icon={Route} label={tr('工作流', 'Workflows')} />
           <SidebarNavItem to="/skills" icon={Wrench} label={tr('技能', 'Skills')} />
           <SidebarNavItem to="/mcp" icon={Plug} label="MCP" />

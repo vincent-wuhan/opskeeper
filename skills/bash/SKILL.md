@@ -110,7 +110,7 @@ metadata:
 
 [能力: host_bash]
 
-本工具在目标设备上运行**单条 shell 命令或 pipe 管道**，由边端 `internal/edgeagent/cmdpolicy` 沙箱
+本工具在目标设备上运行**单条 shell 命令或 pipe 管道**，由边端 `core/edge/cmdpolicy` 沙箱
 做策略校验。**v1 是 read-only policy**，写操作一律被拒。
 
 ## 调用规则

@@ -21,7 +21,7 @@ curl -fsSL https://get.opskeeper.io/install.sh | bash -s -- --cli migrate
 
 ### 依赖
 
-- Go 1.25（构建时）
+- Go 1.26（构建时）
 - 网络可达 ops-keeper（导出阶段）+ opskeeper（导入阶段）
 - 凭据：ops-keeper API token + opskeeper JWT
 

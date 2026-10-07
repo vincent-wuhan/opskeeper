@@ -1,9 +1,10 @@
 //go:build e2e
 
 // Catalog: B1 — admin 登录 → 拿到 access + refresh JWT → 用 access 调
-//          /v1/self 返回当前用户。这是整个 e2e 套件的起点：如果它跑通，
-//          说明 testenv.Start 真的把 MySQL + manager binary + 默认 admin
-//          引导起来了，后续所有 test 都站在这之上。
+//
+//	/v1/self 返回当前用户。这是整个 e2e 套件的起点：如果它跑通，
+//	说明 testenv.Start 真的把 MySQL + manager binary + 默认 admin
+//	引导起来了，后续所有 test 都站在这之上。
 package e2e
 
 import (

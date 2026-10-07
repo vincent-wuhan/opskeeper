@@ -25,6 +25,8 @@ export interface TimelineToolCall {
   name: string;
   args?: string;
   result?: string;
+  /** 实际执行的 argv；与 args 不同，见 ToolCallBlock。 */
+  argv?: string[];
   status: PhaseStatus;
   latencyMs?: number;
 }

@@ -21,6 +21,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	aiopstools "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools"
+	"github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/recovery"
 	"io"
 	"log/slog"
 	"net/http"
@@ -34,194 +36,262 @@ import (
 	"syscall"
 	"time"
 
-	einomodel "github.com/cloudwego/eino/components/model"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/vincent-wuhan/opskeeper/core/domain"
+	"github.com/vincent-wuhan/opskeeper/core/pig/pigai"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/auth"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/authzmw"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/config"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/dbx"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/errs"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/httpserver"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/leader"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/llm"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/logger"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/probes"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/runner"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/secretbox"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/shutdown"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/workspace"
-	wsfanout "github.com/vincent-wuhan/opskeeper/internal/pkg/wsfanout"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/auth"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/authzmw"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/dbx"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/errs"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/leader"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/llm"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/probes"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/runner"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/secretbox"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/shutdown"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/workspace"
+	wsfanout "github.com/vincent-wuhan/opskeeper/core/base/pkg/wsfanout"
+	"github.com/vincent-wuhan/opskeeper/core/domains/llmpig"
+	"github.com/vincent-wuhan/opskeeper/core/floor/config"
+	"github.com/vincent-wuhan/opskeeper/core/floor/httpserver"
+	"github.com/vincent-wuhan/opskeeper/core/floor/logger"
 
 	redis "github.com/redis/go-redis/v9"
-	harnessrunner "github.com/vincent-wuhan/opskeeper/internal/harness/runner"
+	harnessrunner "github.com/vincent-wuhan/opskeeper/core/harness/runner"
 
 	"encoding/json"
 	"strconv"
 
-	"github.com/vincent-wuhan/opskeeper/internal/observability/otelgenai"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/embedding"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/qdrantx"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/tracing"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/embedding"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/qdrantx"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/tracing"
+	"github.com/vincent-wuhan/opskeeper/core/manager/observability/otelgenai"
 
-	pkglogquery "github.com/vincent-wuhan/opskeeper/internal/pkg/logquery"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/notify"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/prom"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/promauth"
-	pkgpromquery "github.com/vincent-wuhan/opskeeper/internal/pkg/promquery"
-	pkgpromwrite "github.com/vincent-wuhan/opskeeper/internal/pkg/promwrite"
-	pkgtracequery "github.com/vincent-wuhan/opskeeper/internal/pkg/tracequery"
+	pkglogquery "github.com/vincent-wuhan/opskeeper/core/base/pkg/logquery"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/notify"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/promauth"
+	pkgpromquery "github.com/vincent-wuhan/opskeeper/core/base/pkg/promquery"
+	pkgpromwrite "github.com/vincent-wuhan/opskeeper/core/base/pkg/promwrite"
+	pkgtracequery "github.com/vincent-wuhan/opskeeper/core/base/pkg/tracequery"
+	"github.com/vincent-wuhan/opskeeper/core/floor/prom"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	iambizauthz "github.com/vincent-wuhan/opskeeper/internal/iam/biz/authz"
-	iambizmembership "github.com/vincent-wuhan/opskeeper/internal/iam/biz/membership"
-	iambizorg "github.com/vincent-wuhan/opskeeper/internal/iam/biz/org"
-	iambizuser "github.com/vincent-wuhan/opskeeper/internal/iam/biz/user"
-	iamdatamembership "github.com/vincent-wuhan/opskeeper/internal/iam/data/membership/store"
-	iamdataorg "github.com/vincent-wuhan/opskeeper/internal/iam/data/org/store"
-	iamdatauser "github.com/vincent-wuhan/opskeeper/internal/iam/data/user/sqlite"
-	iammodel "github.com/vincent-wuhan/opskeeper/internal/iam/model"
-	iamserver "github.com/vincent-wuhan/opskeeper/internal/iam/server"
-	iamservice "github.com/vincent-wuhan/opskeeper/internal/iam/service"
+	iambizauthz "github.com/vincent-wuhan/opskeeper/core/manager/iam/biz/authz"
+	iambizmembership "github.com/vincent-wuhan/opskeeper/core/manager/iam/biz/membership"
+	iambizorg "github.com/vincent-wuhan/opskeeper/core/manager/iam/biz/org"
+	iambizuser "github.com/vincent-wuhan/opskeeper/core/manager/iam/biz/user"
+	iamdatamembership "github.com/vincent-wuhan/opskeeper/core/manager/iam/data/membership/store"
+	iamdataorg "github.com/vincent-wuhan/opskeeper/core/manager/iam/data/org/store"
+	iamdatauser "github.com/vincent-wuhan/opskeeper/core/manager/iam/data/user/sqlite"
+	iammodel "github.com/vincent-wuhan/opskeeper/core/manager/iam/model"
+	iamserver "github.com/vincent-wuhan/opskeeper/core/manager/iam/server"
+	iamservice "github.com/vincent-wuhan/opskeeper/core/manager/iam/service"
+	"github.com/vincent-wuhan/opskeeper/core/ports"
 
-	managerbizdemo "github.com/vincent-wuhan/opskeeper/internal/manager/biz/demo"
-	managerbizdevice "github.com/vincent-wuhan/opskeeper/internal/manager/biz/device"
-	managerbizedge "github.com/vincent-wuhan/opskeeper/internal/manager/biz/edge"
-	changeeventbiz "github.com/vincent-wuhan/opskeeper/internal/manager/biz/edge/changeevent"
-	managerbizmetric "github.com/vincent-wuhan/opskeeper/internal/manager/biz/metric"
-	managerbizpromwrite "github.com/vincent-wuhan/opskeeper/internal/manager/biz/promwrite"
-	managerbiztopology "github.com/vincent-wuhan/opskeeper/internal/manager/biz/topology"
-	manageralertdata "github.com/vincent-wuhan/opskeeper/internal/manager/data/alert/store"
-	managerdemodata "github.com/vincent-wuhan/opskeeper/internal/manager/data/demo"
-	managerdevicedata "github.com/vincent-wuhan/opskeeper/internal/manager/data/device/store"
-	manageredgedata "github.com/vincent-wuhan/opskeeper/internal/manager/data/edge/store"
-	managermetricdata "github.com/vincent-wuhan/opskeeper/internal/manager/data/metric/store"
-	managertopologydata "github.com/vincent-wuhan/opskeeper/internal/manager/data/topology/store"
-	managermodelalert "github.com/vincent-wuhan/opskeeper/internal/manager/model/alert"
+	managerbizmetric "github.com/vincent-wuhan/opskeeper/core/domains/biz/metric"
+	managerbizpromwrite "github.com/vincent-wuhan/opskeeper/core/domains/biz/promwrite"
+	managermetricdata "github.com/vincent-wuhan/opskeeper/core/domains/data/metric/store"
+	managerbizdemo "github.com/vincent-wuhan/opskeeper/core/manager/biz/demo"
+	managerbizdevice "github.com/vincent-wuhan/opskeeper/core/manager/biz/device"
+	managerbizedge "github.com/vincent-wuhan/opskeeper/core/manager/biz/edge"
+	changeeventbiz "github.com/vincent-wuhan/opskeeper/core/manager/biz/edge/changeevent"
+	managerbiztopology "github.com/vincent-wuhan/opskeeper/core/manager/biz/topology"
+	manageralertdata "github.com/vincent-wuhan/opskeeper/core/manager/data/alert/store"
+	managerdemodata "github.com/vincent-wuhan/opskeeper/core/manager/data/demo"
+	managerdevicedata "github.com/vincent-wuhan/opskeeper/core/manager/data/device/store"
+	manageredgedata "github.com/vincent-wuhan/opskeeper/core/manager/data/edge/store"
+	managertopologydata "github.com/vincent-wuhan/opskeeper/core/manager/data/topology/store"
+	managermodelalert "github.com/vincent-wuhan/opskeeper/core/manager/model/alert"
 
-	managerbizaiops "github.com/vincent-wuhan/opskeeper/internal/manager/biz/aiops"
-	aiopsagent "github.com/vincent-wuhan/opskeeper/internal/manager/biz/aiops/agent"
-	aiopschatruntime "github.com/vincent-wuhan/opskeeper/internal/manager/biz/aiops/chatruntime"
-	aiopsgraph "github.com/vincent-wuhan/opskeeper/internal/manager/biz/aiops/graph"
-	aiopsgraphcb "github.com/vincent-wuhan/opskeeper/internal/manager/biz/aiops/graph/callbacks"
-	aiopsinvestigator "github.com/vincent-wuhan/opskeeper/internal/manager/biz/aiops/investigator"
-	managerbizaiopsmentions "github.com/vincent-wuhan/opskeeper/internal/manager/biz/aiops/mentions"
-	aiopstools "github.com/vincent-wuhan/opskeeper/internal/manager/biz/aiops/tools"
-	aiopstoolsbase "github.com/vincent-wuhan/opskeeper/internal/manager/biz/aiops/tools/basetool"
-	aiopstoolsdec "github.com/vincent-wuhan/opskeeper/internal/manager/biz/aiops/tools/decorators"
-	managerbizalert "github.com/vincent-wuhan/opskeeper/internal/manager/biz/alert"
-	investigator "github.com/vincent-wuhan/opskeeper/internal/manager/biz/alert/investigator"
-	managerbizapproval "github.com/vincent-wuhan/opskeeper/internal/manager/biz/approval"
-	managerbizchatdiagnose "github.com/vincent-wuhan/opskeeper/internal/manager/biz/chatdiagnose"
-	managerbizgrafana "github.com/vincent-wuhan/opskeeper/internal/manager/biz/grafana"
-	managerbizhitl "github.com/vincent-wuhan/opskeeper/internal/manager/biz/hitl"
-	managerbizimbridge "github.com/vincent-wuhan/opskeeper/internal/manager/biz/imbridge"
-	managerbizimbridgefeishu "github.com/vincent-wuhan/opskeeper/internal/manager/biz/imbridge/provider/feishu"
-	managerbizimbridgeslack "github.com/vincent-wuhan/opskeeper/internal/manager/biz/imbridge/provider/slack"
-	managerbizimbridgetelegram "github.com/vincent-wuhan/opskeeper/internal/manager/biz/imbridge/provider/telegram"
-	managerbizknowledge "github.com/vincent-wuhan/opskeeper/internal/manager/biz/knowledge"
-	managerbizloop "github.com/vincent-wuhan/opskeeper/internal/manager/biz/loop"
-	managerbizloopcontractloader "github.com/vincent-wuhan/opskeeper/internal/manager/biz/loop/contractloader"
-	managerbizloopgitsink "github.com/vincent-wuhan/opskeeper/internal/manager/biz/loop/gitsink"
-	managerbizloopinvestigatorreal "github.com/vincent-wuhan/opskeeper/internal/manager/biz/loop/investigatorreal"
-	managerbizmarketplace "github.com/vincent-wuhan/opskeeper/internal/manager/biz/marketplace"
-	managerbizmcp "github.com/vincent-wuhan/opskeeper/internal/manager/biz/mcp"
-	managerbizmonitor "github.com/vincent-wuhan/opskeeper/internal/manager/biz/monitor"
-	managerbizsecret "github.com/vincent-wuhan/opskeeper/internal/manager/biz/secret"
-	managerbizsetting "github.com/vincent-wuhan/opskeeper/internal/manager/biz/setting"
-	managerbizskill "github.com/vincent-wuhan/opskeeper/internal/manager/biz/skill"
-	managerwebshellbiz "github.com/vincent-wuhan/opskeeper/internal/manager/biz/webshell"
-	manageraiopsdata "github.com/vincent-wuhan/opskeeper/internal/manager/data/aiops/store"
-	managerapprovaldata "github.com/vincent-wuhan/opskeeper/internal/manager/data/approval/store"
-	managerdatachatdiagnosestore "github.com/vincent-wuhan/opskeeper/internal/manager/data/chatdiagnose/store"
-	managerdatahitlstore "github.com/vincent-wuhan/opskeeper/internal/manager/data/hitl/store"
-	managerimbridgedata "github.com/vincent-wuhan/opskeeper/internal/manager/data/imbridge/store"
-	managerknowledgedata "github.com/vincent-wuhan/opskeeper/internal/manager/data/knowledge/store"
-	managerdataloopstore "github.com/vincent-wuhan/opskeeper/internal/manager/data/loop/store"
-	managermarketplacedata "github.com/vincent-wuhan/opskeeper/internal/manager/data/marketplace/store"
-	managermcpdata "github.com/vincent-wuhan/opskeeper/internal/manager/data/mcp/store"
-	managermonitordata "github.com/vincent-wuhan/opskeeper/internal/manager/data/monitor/store"
-	managersecretdata "github.com/vincent-wuhan/opskeeper/internal/manager/data/secret/store"
-	managersettingdata "github.com/vincent-wuhan/opskeeper/internal/manager/data/setting/store"
-	managerwebshelldata "github.com/vincent-wuhan/opskeeper/internal/manager/data/webshell/store"
-	settingmodel "github.com/vincent-wuhan/opskeeper/internal/manager/model/setting"
-	wsmodel "github.com/vincent-wuhan/opskeeper/internal/manager/model/webshell"
-	managerserverimbridge "github.com/vincent-wuhan/opskeeper/internal/manager/server/imbridge"
-	managerserverknowledge "github.com/vincent-wuhan/opskeeper/internal/manager/server/knowledge"
-	managerwebshellserver "github.com/vincent-wuhan/opskeeper/internal/manager/server/webshell"
-	mcpclient "github.com/vincent-wuhan/opskeeper/internal/pkg/mcpclient"
+	"github.com/vincent-wuhan/opskeeper/core/pig/pigagent"
+	"github.com/vincent-wuhan/opskeeper/core/pig/pigcoding"
+	"github.com/vincent-wuhan/opskeeper/core/pig/pigmodel"
 
-	internalagentteams "github.com/vincent-wuhan/opskeeper/internal/agentteams"
-	incidentcontrol "github.com/vincent-wuhan/opskeeper/internal/control/incident"
-	repairpreviewcontrol "github.com/vincent-wuhan/opskeeper/internal/control/repairpreview"
-	internaldataguard "github.com/vincent-wuhan/opskeeper/internal/dataguard"
-	internaldataguardheuristic "github.com/vincent-wuhan/opskeeper/internal/dataguard/heuristic"
-	internaldataguardlabel "github.com/vincent-wuhan/opskeeper/internal/dataguard/label"
-	internaldataguardstore "github.com/vincent-wuhan/opskeeper/internal/dataguard/store"
-	managerbizaudit "github.com/vincent-wuhan/opskeeper/internal/manager/biz/audit"
-	managerbizflow "github.com/vincent-wuhan/opskeeper/internal/manager/biz/flow"
-	managerbizreport "github.com/vincent-wuhan/opskeeper/internal/manager/biz/report"
-	managerbizscheduler "github.com/vincent-wuhan/opskeeper/internal/manager/biz/scheduler"
-	manageraudtdata "github.com/vincent-wuhan/opskeeper/internal/manager/data/audit/store"
-	managerflowdata "github.com/vincent-wuhan/opskeeper/internal/manager/data/flow/store"
-	managerreportdata "github.com/vincent-wuhan/opskeeper/internal/manager/data/report/store"
-	managerserveragentteams "github.com/vincent-wuhan/opskeeper/internal/manager/server/agentteams"
-	managerserveraiops "github.com/vincent-wuhan/opskeeper/internal/manager/server/aiops"
-	managerserveralert "github.com/vincent-wuhan/opskeeper/internal/manager/server/alert"
-	managerserverapproval "github.com/vincent-wuhan/opskeeper/internal/manager/server/approval"
-	managerserveraudit "github.com/vincent-wuhan/opskeeper/internal/manager/server/audit"
-	managerserverchatdiagnose "github.com/vincent-wuhan/opskeeper/internal/manager/server/chatdiagnose"
-	managerservercluster "github.com/vincent-wuhan/opskeeper/internal/manager/server/cluster"
-	managerserverdataguard "github.com/vincent-wuhan/opskeeper/internal/manager/server/dataguard"
-	managerserverdemo "github.com/vincent-wuhan/opskeeper/internal/manager/server/demo"
-	managerserverdevice "github.com/vincent-wuhan/opskeeper/internal/manager/server/device"
-	managerserveredge "github.com/vincent-wuhan/opskeeper/internal/manager/server/edge"
-	managerserveredgeauth "github.com/vincent-wuhan/opskeeper/internal/manager/server/edgeauth"
-	managerserverflow "github.com/vincent-wuhan/opskeeper/internal/manager/server/flow"
-	managerserverhitl "github.com/vincent-wuhan/opskeeper/internal/manager/server/hitl"
-	managerserverincident "github.com/vincent-wuhan/opskeeper/internal/manager/server/incident"
-	managerserverintegration "github.com/vincent-wuhan/opskeeper/internal/manager/server/integration"
-	managerserverlogs "github.com/vincent-wuhan/opskeeper/internal/manager/server/logs"
-	managerserverloop "github.com/vincent-wuhan/opskeeper/internal/manager/server/loop"
-	managerservermarketplace "github.com/vincent-wuhan/opskeeper/internal/manager/server/marketplace"
-	managerservermcp "github.com/vincent-wuhan/opskeeper/internal/manager/server/mcp"
-	managerservermetric "github.com/vincent-wuhan/opskeeper/internal/manager/server/metric"
-	managermiddleware "github.com/vincent-wuhan/opskeeper/internal/manager/server/middleware"
-	managerservermonitor "github.com/vincent-wuhan/opskeeper/internal/manager/server/monitor"
-	managerserverprom "github.com/vincent-wuhan/opskeeper/internal/manager/server/prometheus"
-	managerserverreport "github.com/vincent-wuhan/opskeeper/internal/manager/server/report"
-	managerserversecret "github.com/vincent-wuhan/opskeeper/internal/manager/server/secret"
-	managerserversetting "github.com/vincent-wuhan/opskeeper/internal/manager/server/setting"
-	managerserverskill "github.com/vincent-wuhan/opskeeper/internal/manager/server/skill"
-	managerserversystemhealth "github.com/vincent-wuhan/opskeeper/internal/manager/server/systemhealth"
-	managerserversystemupgrade "github.com/vincent-wuhan/opskeeper/internal/manager/server/systemupgrade"
-	managerservertopology "github.com/vincent-wuhan/opskeeper/internal/manager/server/topology"
-	managerservertraces "github.com/vincent-wuhan/opskeeper/internal/manager/server/traces"
-	managerserverversion "github.com/vincent-wuhan/opskeeper/internal/manager/server/version"
+	managerbizaiops "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops"
+	aiopsagent "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/agent"
+	"github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/agentkernel"
+	aiopschatprompt "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/chatprompt"
+	aiopschatruntime "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/chatruntime"
 
-	managersvcaiops "github.com/vincent-wuhan/opskeeper/internal/manager/service/aiops"
-	manageraiopsconfig "github.com/vincent-wuhan/opskeeper/internal/manager/service/aiopsconfig"
-	managersvcalert "github.com/vincent-wuhan/opskeeper/internal/manager/service/alert"
-	managersvcdemo "github.com/vincent-wuhan/opskeeper/internal/manager/service/demo"
-	managersvcedge "github.com/vincent-wuhan/opskeeper/internal/manager/service/edge"
-	managersvcfb "github.com/vincent-wuhan/opskeeper/internal/manager/service/frontierbound"
-	managersvcmetric "github.com/vincent-wuhan/opskeeper/internal/manager/service/metric"
-	managersvcprom "github.com/vincent-wuhan/opskeeper/internal/manager/service/prometheus"
-	managersvcsystemhealth "github.com/vincent-wuhan/opskeeper/internal/manager/service/systemhealth"
-	managersvcsystemupgrade "github.com/vincent-wuhan/opskeeper/internal/manager/service/systemupgrade"
+	mcpclient "github.com/vincent-wuhan/opskeeper/core/base/pkg/mcpclient"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/promptguard"
+	managerbizgrafana "github.com/vincent-wuhan/opskeeper/core/domains/biz/grafana"
+	managerbizmonitor "github.com/vincent-wuhan/opskeeper/core/domains/biz/monitor"
+	managerbiznodeagent "github.com/vincent-wuhan/opskeeper/core/domains/biz/nodeagent"
+	managerbiznodefleet "github.com/vincent-wuhan/opskeeper/core/domains/biz/nodefleet"
+	managerbizsecret "github.com/vincent-wuhan/opskeeper/core/domains/biz/secret"
+	managerbizsetting "github.com/vincent-wuhan/opskeeper/core/domains/biz/setting"
+	managermonitordata "github.com/vincent-wuhan/opskeeper/core/domains/data/monitor/store"
+	managersecretdata "github.com/vincent-wuhan/opskeeper/core/domains/data/secret/store"
+	managersettingdata "github.com/vincent-wuhan/opskeeper/core/domains/data/setting/store"
+	settingmodel "github.com/vincent-wuhan/opskeeper/core/domains/model/setting"
+	aiopsinvestigator "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/investigator"
+	managerbizaiopsmentions "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/mentions"
+	aiopstoolsbase "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/basetool"
+	aiopstoolsdec "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/decorators"
+	aiopshost "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/host"
+	aiopstoolscore "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/toolcore"
+	managerbizalert "github.com/vincent-wuhan/opskeeper/core/manager/biz/alert"
+	investigator "github.com/vincent-wuhan/opskeeper/core/manager/biz/alert/investigator"
+	managerbizapproval "github.com/vincent-wuhan/opskeeper/core/manager/biz/approval"
+	managerbizchatdiagnose "github.com/vincent-wuhan/opskeeper/core/manager/biz/chatdiagnose"
+	managerbizhitl "github.com/vincent-wuhan/opskeeper/core/manager/biz/hitl"
+	managerbizimbridge "github.com/vincent-wuhan/opskeeper/core/manager/biz/imbridge"
+	managerbizimbridgefeishu "github.com/vincent-wuhan/opskeeper/core/manager/biz/imbridge/provider/feishu"
+	managerbizimbridgeslack "github.com/vincent-wuhan/opskeeper/core/manager/biz/imbridge/provider/slack"
+	managerbizimbridgetelegram "github.com/vincent-wuhan/opskeeper/core/manager/biz/imbridge/provider/telegram"
+	managerbizknowledge "github.com/vincent-wuhan/opskeeper/core/manager/biz/knowledge"
+	managerbizloop "github.com/vincent-wuhan/opskeeper/core/manager/biz/loop"
+	managerbizloopcontractloader "github.com/vincent-wuhan/opskeeper/core/manager/biz/loop/contractloader"
+	managerbizloopgitsink "github.com/vincent-wuhan/opskeeper/core/manager/biz/loop/gitsink"
+	managerbizloopinvestigatorreal "github.com/vincent-wuhan/opskeeper/core/manager/biz/loop/investigatorreal"
+	managerbizmarketplace "github.com/vincent-wuhan/opskeeper/core/manager/biz/marketplace"
+	managerbizmcp "github.com/vincent-wuhan/opskeeper/core/manager/biz/mcp"
+	managerbizpluginimport "github.com/vincent-wuhan/opskeeper/core/manager/biz/pluginimport"
+	managerbizskill "github.com/vincent-wuhan/opskeeper/core/manager/biz/skill"
+	managerwebshellbiz "github.com/vincent-wuhan/opskeeper/core/manager/biz/webshell"
+	manageraiopsdata "github.com/vincent-wuhan/opskeeper/core/manager/data/aiops/store"
+	managerapprovaldata "github.com/vincent-wuhan/opskeeper/core/manager/data/approval/store"
+	managerdatachatdiagnosestore "github.com/vincent-wuhan/opskeeper/core/manager/data/chatdiagnose/store"
+	managerdatahitlstore "github.com/vincent-wuhan/opskeeper/core/manager/data/hitl/store"
+	managerimbridgedata "github.com/vincent-wuhan/opskeeper/core/manager/data/imbridge/store"
+	managerknowledgedata "github.com/vincent-wuhan/opskeeper/core/manager/data/knowledge/store"
+	managerdataloopstore "github.com/vincent-wuhan/opskeeper/core/manager/data/loop/store"
+	managermarketplacedata "github.com/vincent-wuhan/opskeeper/core/manager/data/marketplace/store"
+	managermcpdata "github.com/vincent-wuhan/opskeeper/core/manager/data/mcp/store"
+	managerwebshelldata "github.com/vincent-wuhan/opskeeper/core/manager/data/webshell/store"
+	middlewareregistry "github.com/vincent-wuhan/opskeeper/core/manager/middleware/registry"
+	"github.com/vincent-wuhan/opskeeper/core/manager/middleware/toolset"
+	hitlmodel "github.com/vincent-wuhan/opskeeper/core/manager/model/hitl"
+	wsmodel "github.com/vincent-wuhan/opskeeper/core/manager/model/webshell"
+	managerserverimbridge "github.com/vincent-wuhan/opskeeper/core/manager/server/imbridge"
+	managerserverknowledge "github.com/vincent-wuhan/opskeeper/core/manager/server/knowledge"
+	mcpauth "github.com/vincent-wuhan/opskeeper/core/manager/server/mcp/middleware"
+	managerwebshellserver "github.com/vincent-wuhan/opskeeper/core/manager/server/webshell"
+
+	managerbizaudit "github.com/vincent-wuhan/opskeeper/core/domains/biz/audit"
+	managerbizflow "github.com/vincent-wuhan/opskeeper/core/domains/biz/flow"
+	managerbizscheduler "github.com/vincent-wuhan/opskeeper/core/domains/biz/scheduler"
+	incidentcontrol "github.com/vincent-wuhan/opskeeper/core/domains/control/incident"
+	repairpreviewcontrol "github.com/vincent-wuhan/opskeeper/core/domains/control/repairpreview"
+	manageraudtdata "github.com/vincent-wuhan/opskeeper/core/domains/data/audit/store"
+	managerflowdata "github.com/vincent-wuhan/opskeeper/core/domains/data/flow/store"
+	managerserveraudit "github.com/vincent-wuhan/opskeeper/core/domains/server/audit"
+	managerservercluster "github.com/vincent-wuhan/opskeeper/core/domains/server/cluster"
+	managerserveredgeauth "github.com/vincent-wuhan/opskeeper/core/domains/server/edgeauth"
+	managerserverflow "github.com/vincent-wuhan/opskeeper/core/domains/server/flow"
+	managerserverincident "github.com/vincent-wuhan/opskeeper/core/domains/server/incident"
+	managerserverintegration "github.com/vincent-wuhan/opskeeper/core/domains/server/integration"
+	"github.com/vincent-wuhan/opskeeper/core/domains/server/llmgw"
+	managerserverlogs "github.com/vincent-wuhan/opskeeper/core/domains/server/logs"
+	managerservermetric "github.com/vincent-wuhan/opskeeper/core/domains/server/metric"
+	managermiddleware "github.com/vincent-wuhan/opskeeper/core/domains/server/middleware"
+	managerservermonitor "github.com/vincent-wuhan/opskeeper/core/domains/server/monitor"
+	managerservernodeagent "github.com/vincent-wuhan/opskeeper/core/domains/server/nodeagent"
+	managerserverprom "github.com/vincent-wuhan/opskeeper/core/domains/server/prometheus"
+	managerserversecret "github.com/vincent-wuhan/opskeeper/core/domains/server/secret"
+	managerserversetting "github.com/vincent-wuhan/opskeeper/core/domains/server/setting"
+	managerserversystemupgrade "github.com/vincent-wuhan/opskeeper/core/domains/server/systemupgrade"
+	managerservertraces "github.com/vincent-wuhan/opskeeper/core/domains/server/traces"
+	managerserverversion "github.com/vincent-wuhan/opskeeper/core/domains/server/version"
+	internalagentteams "github.com/vincent-wuhan/opskeeper/core/manager/agentteams"
+	managerbizreport "github.com/vincent-wuhan/opskeeper/core/manager/biz/report"
+	managerreportdata "github.com/vincent-wuhan/opskeeper/core/manager/data/report/store"
+	internaldataguard "github.com/vincent-wuhan/opskeeper/core/manager/dataguard"
+	internaldataguardheuristic "github.com/vincent-wuhan/opskeeper/core/manager/dataguard/heuristic"
+	internaldataguardlabel "github.com/vincent-wuhan/opskeeper/core/manager/dataguard/label"
+	internaldataguardstore "github.com/vincent-wuhan/opskeeper/core/manager/dataguard/store"
+	managerserveragentteams "github.com/vincent-wuhan/opskeeper/core/manager/server/agentteams"
+	managerserveraiops "github.com/vincent-wuhan/opskeeper/core/manager/server/aiops"
+	managerserveralert "github.com/vincent-wuhan/opskeeper/core/manager/server/alert"
+	managerserverapproval "github.com/vincent-wuhan/opskeeper/core/manager/server/approval"
+	managerserverchatdiagnose "github.com/vincent-wuhan/opskeeper/core/manager/server/chatdiagnose"
+	managerserverdataguard "github.com/vincent-wuhan/opskeeper/core/manager/server/dataguard"
+	managerserverdemo "github.com/vincent-wuhan/opskeeper/core/manager/server/demo"
+	managerserverdevice "github.com/vincent-wuhan/opskeeper/core/manager/server/device"
+	managerserveredge "github.com/vincent-wuhan/opskeeper/core/manager/server/edge"
+	managerserverhitl "github.com/vincent-wuhan/opskeeper/core/manager/server/hitl"
+	managerserverloop "github.com/vincent-wuhan/opskeeper/core/manager/server/loop"
+	managerservermarketplace "github.com/vincent-wuhan/opskeeper/core/manager/server/marketplace"
+	managerservermcp "github.com/vincent-wuhan/opskeeper/core/manager/server/mcp"
+	managerserverreport "github.com/vincent-wuhan/opskeeper/core/manager/server/report"
+	managerserverskill "github.com/vincent-wuhan/opskeeper/core/manager/server/skill"
+	managerserversystemhealth "github.com/vincent-wuhan/opskeeper/core/manager/server/systemhealth"
+	managerservertopology "github.com/vincent-wuhan/opskeeper/core/manager/server/topology"
+
+	managerserverplugin "github.com/vincent-wuhan/opskeeper/core/domains/server/plugin"
+	managersvcmetric "github.com/vincent-wuhan/opskeeper/core/domains/service/metric"
+	managersvcplugin "github.com/vincent-wuhan/opskeeper/core/domains/service/plugin"
+	managersvcprom "github.com/vincent-wuhan/opskeeper/core/domains/service/prometheus"
+	managersvcsystemupgrade "github.com/vincent-wuhan/opskeeper/core/domains/service/systemupgrade"
+	managersvcaiops "github.com/vincent-wuhan/opskeeper/core/manager/service/aiops"
+	managersvcalert "github.com/vincent-wuhan/opskeeper/core/manager/service/alert"
+	managersvcdemo "github.com/vincent-wuhan/opskeeper/core/manager/service/demo"
+	managersvcedge "github.com/vincent-wuhan/opskeeper/core/manager/service/edge"
+	managersvcfb "github.com/vincent-wuhan/opskeeper/core/manager/service/frontierbound"
+	managersvcsystemhealth "github.com/vincent-wuhan/opskeeper/core/manager/service/systemhealth"
 
 	// Builtin skill init() blocks register Executors with the shared
-	// internal/skill registry. Both manager (metadata) and edge
+	// core/floor/skill registry. Both manager (metadata) and edge
 	// (dispatcher) need this import to populate the registry.
-	skillcore "github.com/vincent-wuhan/opskeeper/internal/skill"
-	skillbuiltin "github.com/vincent-wuhan/opskeeper/internal/skill/builtin"
+	skillcore "github.com/vincent-wuhan/opskeeper/core/floor/skill"
+	skillbuiltin "github.com/vincent-wuhan/opskeeper/core/floor/skill/builtin"
 )
 
 // version is overwritten at build time via -ldflags.
 var version = "dev"
+
+// managerMigrators is the manager's schema, in startup order.
+//
+// It is a named function rather than a literal at the call site because the
+// list is a thing with a property, and a literal at the call site cannot be
+// tested for that property: **every boot replays every migrator**, because
+// there is no version ledger in front of them, so the only guarantee a
+// deployment has is that each migrator is idempotent. Two of them were not,
+// and both failures shared a shape — a step that is a no-op on an empty
+// database and an error on the second boot:
+//
+//   - metric store's dedupeRaw returns early while the table does not exist,
+//     so the DELETE that MySQL rejects (1093) is only reached on boot #2.
+//   - repair preview's MySQL schema list carried two bare CREATE INDEX
+//     statements, so boot #2 died with 1061 Duplicate key name.
+//
+// Neither was visible to CI, which creates a fresh database on every run and
+// therefore only ever performs boot #1. `make mysql-migration-check` replays
+// this whole list twice against a real MySQL, which is the test both of them
+// needed and the one that will hold the next migrator honest.
+func managerMigrators() []dbx.Migrator {
+	return []dbx.Migrator{
+		iamdatauser.Migrate,
+		iamdataorg.Migrate,
+		iamdatamembership.Migrate,
+		manageralertdata.Migrate,
+		managerdemodata.Migrate,
+		managerdevicedata.Migrate,
+		manageredgedata.Migrate,
+		managertopologydata.Migrate,
+		managermetricdata.Migrate,
+		manageraiopsdata.Migrate,
+		managerbizskill.Migrate,
+		managersettingdata.Migrate,
+		managermarketplacedata.Migrate,
+		managersecretdata.Migrate,
+		managermcpdata.Migrate,
+		managerapprovaldata.Migrate,
+		managermonitordata.Migrate,
+		managerdatahitlstore.Migrate,
+		managerwebshelldata.Migrate,
+		manageraudtdata.Migrate,
+		managerreportdata.Migrate,
+		managerflowdata.Migrate,
+		incidentcontrol.Migrate,
+		repairpreviewcontrol.Migrate,
+	}
+}
 
 func main() {
 	fmt.Fprintf(os.Stderr, "opskeeper %s starting\n", version)
@@ -271,7 +341,8 @@ func main() {
 		_ = otelShutdown(shutCtx)
 	}()
 
-	// Open the configured DB backend (MySQL by default, SQLite opt-in) and
+	// Open the configured DB backend (SQLite by default, MySQL/PostgreSQL
+	// opt-in) and
 	// run AutoMigrate-based schema management. Each data package exposes a
 	// Migrate(db) function and is composed in startup order below.
 	db, err := dbx.Open(cfg.DB, log)
@@ -279,32 +350,7 @@ func main() {
 		log.Error("open db", slog.Any("err", err))
 		os.Exit(1)
 	}
-	if err := dbx.RunMigrations(db, log,
-		iamdatauser.Migrate,
-		iamdataorg.Migrate,
-		iamdatamembership.Migrate,
-		manageralertdata.Migrate,
-		managerdemodata.Migrate,
-		managerdevicedata.Migrate,
-		manageredgedata.Migrate,
-		managertopologydata.Migrate,
-		managermetricdata.Migrate,
-		manageraiopsdata.Migrate,
-		managerbizskill.Migrate,
-		managersettingdata.Migrate,
-		managermarketplacedata.Migrate,
-		managersecretdata.Migrate,
-		managermcpdata.Migrate,
-		managerapprovaldata.Migrate,
-		managermonitordata.Migrate,
-		managerdatahitlstore.Migrate,
-		managerwebshelldata.Migrate,
-		manageraudtdata.Migrate,
-		managerreportdata.Migrate,
-		managerflowdata.Migrate,
-		incidentcontrol.Migrate,
-		repairpreviewcontrol.Migrate,
-	); err != nil {
+	if err := dbx.RunMigrations(db, log, managerMigrators()...); err != nil {
 		log.Error("run migrations", slog.Any("err", err))
 		os.Exit(1)
 	}
@@ -351,7 +397,7 @@ func main() {
 	// registered later, after their owning types are constructed;
 	// migrate:runner is intentionally skipped — it runs once at
 	// boot in dbx.RunMigrations and is serialised via MySQL
-	// GET_LOCK rather than Redis (see internal/migrator/runner.go).
+	// GET_LOCK rather than Redis (see core/manager/migrator/runner.go).
 	var leaderMgr *leader.Manager
 	if cfg.Leader.Enabled {
 		opts := []leader.Option{
@@ -447,18 +493,37 @@ func main() {
 		log.Error("iam: seed role policies", slog.Any("err", err))
 		os.Exit(1)
 	}
-	// ADR-019 tenant_wide 双签策略载入。
-	// 启动时校验 policy/opskeeper/casbin/tenant_wide.json 语法 + 加载，
-	// 缺失时记 warn 不阻断（生产要求文件存在；本地调试允许缺失）。
+	// ADR-019 双签策略：启动时加载、校验语法、并**把它接到审批路径上**。
+	//
+	// 决策 285 改掉了这三条日志的措辞，因为它们原来会说谎。原来打的是
+	// "dual sign policy loaded (N rules)"——一行绿的、像是控制已生效的日志，
+	// 而 dsp 这个局部变量在这一行之后就没有任何消费者：审批走的是
+	// approval 域的 Approve，第一次调用就把 status 写成 approved，
+	// 提案行的存储里也没有放第二个签名人的地方。**一个会把自己记成已启用
+	// 的控制，比一个不存在的控制更危险，因为它让运维不再去查。**
+	//
+	// 决策 362 让那两件事成真了：approvals 行能存 N 个签名，Sign 路径上累积
+	// 并调用 Validate。所以下面这段日志第一次可以描述一件**正在发生**的事，
+	// 而不是一件计划中的事。仍然保留"加载失败即启动失败"，是因为规则文件
+	// 写错了应该在启动时炸而不是在第一次用到时炸。
 	dsp, dsErr := managerbizhitl.LoadDualSignPolicies("policy/opskeeper/casbin/tenant_wide.json")
 	if dsErr != nil {
-		log.Error("hitl: load dual sign policies", slog.Any("err", dsErr))
+		log.Error("hitl: dual sign policy file is unreadable or malformed; the gate stays "+
+			"unwired, so every approval would fall back to single-signer — failing here "+
+			"instead is the whole point of loading it at boot", slog.Any("err", dsErr))
 		os.Exit(1)
 	}
-	if n := len(dsp.Rules()); n == 0 {
-		log.Warn("hitl: dual sign policy file missing or empty; tenant_wide approvals fall back to single signer")
-	} else {
-		log.Info("hitl: dual sign policy loaded", slog.Int("rules", n))
+	switch {
+	case len(dsp.Rules()) == 0:
+		log.Warn("hitl: no dual sign rules parsed; every approval is single-signer. " +
+			"The gate is wired, it has nothing to enforce (decision 362)")
+	case dualSignDisabled():
+		log.Warn("hitl: dual sign is DISABLED by OPSKEEPER_DUAL_SIGN; destructive " +
+			"approvals pass on one signature and every such pass is logged as a warning")
+	default:
+		log.Info("hitl: dual sign ENFORCED — " + strconv.Itoa(len(dsp.Rules())) +
+			" rules; destructive and cluster-scope approvals need two different " +
+			"administrators, and a row with only one signature stays pending (decision 362)")
 	}
 	orgRepo := iamdataorg.NewRepo(db)
 	membershipRepo := iamdatamembership.NewRepo(db)
@@ -531,12 +596,12 @@ func main() {
 	// Prometheus registry shared by all BCs.
 	reg := prom.NewRegistry()
 	// Self-observability collectors (alert evaluator latency, prom remote_write
-	// outcome). Registered once here so package-globals in internal/pkg/prom
+	// outcome). Registered once here so package-globals in core/floor/prom
 	// are non-nil before any evaluator tick or promwrite Push runs.
 	prom.RegisterManagerMetrics(reg, log.With(slog.String("comp", "prom-manager-metrics")))
 	// AgentTeams / closed-loop orchestrator metrics (MCP call counter +
 	// histogram, Higress resolve, plugin sync, 7-phase loop, DBApprovedDecision
-	// loader outcomes). See internal/pkg/prom/agentteams_metrics.go.
+	// loader outcomes). See core/floor/prom/agentteams_metrics.go.
 	prom.RegisterAgentTeamsMetrics(reg, log.With(slog.String("comp", "prom-agentteams-metrics")))
 	notifyRouter := notify.NewFromConfig(cfg.Notification, log.With(slog.String("comp", "notify")))
 
@@ -553,11 +618,62 @@ func main() {
 	// Retention is 180 days by default; OPSKEEPER_AUDIT_RETENTION_DAYS=0
 	// disables the sweep entirely (operator manages archival externally).
 	auditRepo := manageraudtdata.New(db)
-	auditUC := managerbizaudit.New(auditRepo, log.With(slog.String("comp", "audit")))
+	auditChainStore := manageraudtdata.NewChainStore(db)
+	// HLD-010 tamper-evidence. The chain key lives only here, in the
+	// control plane: nodes, plugins, and models can read the ledger and
+	// none of them can extend it, because the append path is reached only
+	// from host code. With no key the ledger still records every row — an
+	// empty audit trail is a worse failure than an unchained one — but
+	// rows carry no digest and VerifyChain says so instead of reporting
+	// a clean bill of health.
+	auditChainKey := os.Getenv("OPSKEEPER_AUDIT_HMAC_KEY")
+	if auditChainKey == "" {
+		log.Warn("audit: OPSKEEPER_AUDIT_HMAC_KEY is not set; the audit trail will be recorded but not tamper-evident",
+			slog.String("hint", "generate with: openssl rand -hex 32"))
+	}
+	auditUC := managerbizaudit.New(auditRepo, log.With(slog.String("comp", "audit")),
+		managerbizaudit.WithChain(auditChainKey, auditChainStore))
+	// HLD-017 propose-confirm inbox: the human approval queue for dangerous
+	// actions (agent cloud-shell, mutating host commands, skill installs,
+	// MCP calls). Built here, next to the audit log, because the chat
+	// runtime's kernel gate needs it and the runtime is assembled far
+	// earlier than this BC's handlers. Producers register their
+	// execute-on-approve executor below, where those subsystems are built.
+	// 决策 362：双签接上了。规则文件在第 509 行载入，那里的日志过去写的是
+	// "UNENFORCED"——今天不再如此，而一个还在说 UNENFORCED 的启动日志比
+	// 没有日志更坏，因为它让运维以为这件事已经处理过了。
+	approvalUC := managerbizapproval.NewUsecase(managerapprovaldata.NewRepo(db),
+		log.With(slog.String("comp", "approval"))).
+		WithDualSignGate(newDualSignGate(dsp, log.With(slog.String("comp", "dualsign"))))
 	auditRetentionDays := 180
 	if v := os.Getenv("OPSKEEPER_AUDIT_RETENTION_DAYS"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			auditRetentionDays = n
+		}
+	}
+	// Plugin release driver timing. Both are optional and both default to
+	// the driver's own constants rather than to something restated here:
+	// a second copy of "how often" is a second thing to forget to change.
+	//
+	// A zero interval or stall budget means "use the default", so the
+	// knob cannot be set to disable the driver. That is deliberate — an
+	// unset driver is the failure this whole thing exists to remove, and
+	// turning it off should be a deliberate act in code, not an env var
+	// someone set during an incident and forgot.
+	pluginReleaseDriverInterval := time.Duration(0)
+	pluginReleaseStallAfter := time.Duration(0)
+	if v := os.Getenv("OPSKEEPER_PLUGIN_RELEASE_INTERVAL"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			pluginReleaseDriverInterval = d
+		} else {
+			log.Warn("ignoring OPSKEEPER_PLUGIN_RELEASE_INTERVAL", slog.String("value", v), slog.Any("err", err))
+		}
+	}
+	if v := os.Getenv("OPSKEEPER_PLUGIN_RELEASE_STALL_AFTER"); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			pluginReleaseStallAfter = d
+		} else {
+			log.Warn("ignoring OPSKEEPER_PLUGIN_RELEASE_STALL_AFTER", slog.String("value", v), slog.Any("err", err))
 		}
 	}
 	if err := settingSvc.SetIfAbsent(rootCtx, settingmodel.CategoryLLM, settingmodel.KeyOpenAIAPIKey, cfg.OpenAI.APIKey, true); err != nil {
@@ -671,80 +787,12 @@ func main() {
 		}()
 	}
 
-	// LLM client. Resolver lets admin edits to system_settings take effect
-	// on the next Chat call (cache TTL = 60s) without a manager restart.
-	// Empty resolver fields fall back to cfg.OpenAI.
-	llmResolver := newLLMResolver(settingSvc)
-	openaiClient := llm.NewWithResolver(
-		llm.Config{APIKey: cfg.OpenAI.APIKey, Model: cfg.OpenAI.Model, BaseURL: cfg.OpenAI.BaseURL},
-		llmResolver,
-		nil, // BudgetChecker wired in Phase 2
-		reg,
-	)
-
-	// Multi-provider router (ChatInput model selector). The OpenAI
-	// sub-client uses the resolver-aware path so admin edits keep taking
-	// effect; the other providers (Anthropic / Zhipu / Gemini /
-	// DeepSeek / Kimi) seed from env here and then read live values via
-	// the LLMSettingsResolver wired below, so /settings/llm edits
-	// propagate within ~60s. A provider with empty APIKey is silently
-	// dropped from the catalog so it never appears in the SPA selector.
-	providerCfgs := []llm.ProviderConfig{}
-	if cfg.OpenAI.APIKey != "" {
-		providerCfgs = append(providerCfgs, llm.ProviderConfig{
-			ID: "openai", Label: "OpenAI",
-			APIKey:  cfg.OpenAI.APIKey,
-			Model:   firstNonEmpty(cfg.OpenAI.Model, "gpt-5.4"),
-			BaseURL: cfg.OpenAI.BaseURL,
-			Models:  dedupeModels(firstNonEmpty(cfg.OpenAI.Model, "gpt-5.4"), "gpt-5.5", "gpt-5.4", "gpt-5.4-mini"),
-		})
-	}
-	if cfg.LLM.Anthropic.APIKey != "" {
-		providerCfgs = append(providerCfgs, llm.ProviderConfig{
-			ID: "anthropic", Label: "Anthropic",
-			APIKey:  cfg.LLM.Anthropic.APIKey,
-			Model:   firstNonEmpty(cfg.LLM.Anthropic.Model, "claude-sonnet-4-6"),
-			BaseURL: firstNonEmpty(cfg.LLM.Anthropic.BaseURL, "https://api.anthropic.com/v1"),
-			Models:  cfg.LLM.Anthropic.Models,
-		})
-	}
-	if cfg.LLM.Zhipu.APIKey != "" {
-		providerCfgs = append(providerCfgs, llm.ProviderConfig{
-			ID: "zhipu", Label: "智谱 GLM",
-			APIKey:  cfg.LLM.Zhipu.APIKey,
-			Model:   firstNonEmpty(cfg.LLM.Zhipu.Model, "glm-4.7"),
-			BaseURL: firstNonEmpty(cfg.LLM.Zhipu.BaseURL, "https://open.bigmodel.cn/api/paas/v4"),
-			Models:  cfg.LLM.Zhipu.Models,
-		})
-	}
-	if cfg.LLM.Gemini.APIKey != "" {
-		providerCfgs = append(providerCfgs, llm.ProviderConfig{
-			ID: "gemini", Label: "Gemini",
-			APIKey:  cfg.LLM.Gemini.APIKey,
-			Model:   firstNonEmpty(cfg.LLM.Gemini.Model, "gemini-2.5-pro"),
-			BaseURL: firstNonEmpty(cfg.LLM.Gemini.BaseURL, "https://generativelanguage.googleapis.com/v1beta/openai"),
-			Models:  cfg.LLM.Gemini.Models,
-		})
-	}
-	if cfg.LLM.DeepSeek.APIKey != "" {
-		providerCfgs = append(providerCfgs, llm.ProviderConfig{
-			ID: "deepseek", Label: "DeepSeek",
-			APIKey:  cfg.LLM.DeepSeek.APIKey,
-			Model:   firstNonEmpty(cfg.LLM.DeepSeek.Model, "deepseek-v4-flash"),
-			BaseURL: firstNonEmpty(cfg.LLM.DeepSeek.BaseURL, "https://api.deepseek.com/v1"),
-			Models:  cfg.LLM.DeepSeek.Models,
-		})
-	}
-	if cfg.LLM.Kimi.APIKey != "" {
-		providerCfgs = append(providerCfgs, llm.ProviderConfig{
-			ID: "kimi", Label: "Kimi",
-			APIKey:  cfg.LLM.Kimi.APIKey,
-			Model:   firstNonEmpty(cfg.LLM.Kimi.Model, "kimi-k2.6"),
-			BaseURL: firstNonEmpty(cfg.LLM.Kimi.BaseURL, "https://api.moonshot.cn/v1"),
-			Models:  cfg.LLM.Kimi.Models,
-		})
-	}
-	llmRouter := llm.NewMultiClient(providerCfgs, cfg.LLM.Default, openaiClient)
+	// The model stack is assembled further down, once the settings resolver
+	// exists. There is deliberately nothing here: the previous shape built a
+	// hand-rolled OpenAI-compatible client and a multi-provider router at
+	// this point in the file, and both are gone. Every model call in the
+	// process now goes through PiG's provider stack, and the only thing
+	// OpsKeeper still owns is the policy around the call.
 
 	// Seed per-provider LLM settings rows from env on first boot so the
 	// 设置 → 集成 → LLM 模型 page has something to show out of the box.
@@ -860,17 +908,122 @@ func main() {
 		},
 	}
 	llmSettingsResolver := managerbizsetting.NewLLMSettingsResolver(settingSvc, llmEnvDefaults, cfg.LLM.Default)
-	llmRouter.SetProvidersResolver(llmSettingsResolver)
 
-	// All downstream agent/investigator wiring takes the router so a
-	// per-request Provider override flows through; absent that, behaviour
-	// matches the legacy single-provider path (router falls back to
-	// openaiClient when no providers are configured).
-	llmClient := llm.Client(otelgenai.NewClient(llmRouter))
+	// ---------------------------------------------------------------------
+	// The model plane. One stack, and it is PiG's.
+	// ---------------------------------------------------------------------
+	//
+	// Two objects, because PiG exposes two entry points and they have
+	// genuinely different lifetimes.
+	//
+	// pigRuntime is the agent side. One coding.Services + coding.Runtime for
+	// the life of the process: it owns the model registry that sessions
+	// resolve against, the extension runner, and the cancellation state
+	// every session inherits. OpsKeeper configures it to keep all of that
+	// in process — a private agent directory instead of ~/.pig, and an
+	// in-memory session log instead of .pig/sessions — because a manager
+	// pod that silently wrote session transcripts to an ephemeral
+	// container filesystem, or read a developer's home directory, is not a
+	// deployment anyone can reason about.
+	//
+	// modelRegistry is the one-shot side. Report extractors, the query
+	// translator, the semantic deduper and the harness judge send a single
+	// completion with no agent loop, so they take a pigmodel.Completer and
+	// never construct a session at all.
+	//
+	// Both read the same system_settings.llm.* rows through the same
+	// adapter, so a key rotation is visible to both on the next request and
+	// the chat surface can never disagree with the report pipeline about
+	// which models exist. Credentials are registered into PiG's
+	// ModelRegistry rather than written to auth.json: there is no
+	// interactive login on a server, and re-registering on change is what
+	// makes an admin's edit take effect without a restart.
+	//
+	// CWD is the one field here that is a containment decision rather than
+	// a path. Every turn's relative paths resolve against it, and PiG
+	// discovers a session's skills, prompt templates and context files
+	// under it, so "." would mean "whatever directory the operator
+	// happened to start the manager from" — the repository in a developer
+	// checkout, the application root in a container — with any file
+	// dropped there participating in the control plane's prompt.
+	//
+	// SessionStartOptions.CWDOverride cannot be used to fix this per turn:
+	// PiG only reads it when resuming a session whose stored cwd is gone.
+	// Measured in pigcontract (decision 171). So the directory is chosen
+	// once, here, and it holds nothing.
+	pigRuntime, err := newPigRuntime(log, rootCtx)
+	if err != nil {
+		// Without a runtime there is no agent, and the console would
+		// answer every chat with a bare 500. Failing the boot says why.
+		log.Error("pig: cannot start the agent runtime", slog.Any("err", err))
+		os.Exit(1)
+	}
+	// Close order matters and is the reverse of construction: sessions
+	// first (the kernel's own defer), then the runtime, then the settings
+	// manager it was built from. Closing the runtime also releases the
+	// provider transports it opened.
+	defer func() {
+		if cerr := pigRuntime.Close(); cerr != nil {
+			log.Warn("pig: closing the agent runtime", slog.Any("err", cerr))
+		}
+	}()
+
+	llmSync := llmpig.NewSync(pigRuntime, llmSettingsResolver, log)
+	// Publish at boot so a session started in the first second of the
+	// process resolves a model. A failure is a warning, not a fatal: the
+	// settings table may still be migrating, and a manager that refuses to
+	// boot over it would turn a read error into an outage.
+	publishCtx, publishCancel := context.WithTimeout(rootCtx, 30*time.Second)
+	if perr := llmSync.Publish(publishCtx); perr != nil {
+		log.Warn("llm: initial provider publish failed; models resolve once settings are readable",
+			slog.Any("err", perr))
+	} else {
+		log.Info("llm: provider catalog published into the PiG model registry",
+			slog.Int("models", len(pigRuntime.Catalogue())))
+	}
+	publishCancel()
+
+	// The console's model picker and the settings-save invalidation hook.
+	// Both read the same catalog the runtime was published from, so the
+	// operator can never be offered a model the next request cannot use.
+	modelView := llmpig.NewCatalogView(llmSync, llmSettingsResolver)
+
+	// The one-shot completion path. pigmodel.Registry caches a provider's
+	// transport (so a rotation does not re-dial) but re-reads the
+	// credentials, base URL and model list on every request, which is what
+	// makes an admin edit visible without the Invalidate hook above.
+	// The observer is wired here rather than inside pigmodel because only
+	// the manager has a /metrics endpoint. It is also the only layer that
+	// knows the provider id and model id -- those are the output of
+	// resolution -- so this is the first place the numbers exist.
+	modelRegistry := pigmodel.NewRegistry(
+		llmpig.SettingsSource(llmSettingsResolver),
+		pigmodel.WithCallObserver(prom.ObserveLLMCall),
+	)
+	// Close the cached transports on the way out. Without this a rolling
+	// restart leaks one connection pool per provider until the process
+	// exits — invisible in dev, a slow fd leak in production.
+	defer func() {
+		if cerr := modelRegistry.Close(); cerr != nil {
+			log.Warn("llm: closing pig provider transports", slog.Any("err", cerr))
+		}
+	}()
+
+	// Every downstream consumer takes a Completer, so a per-request
+	// provider/model pin in domain.ModelSelection is all any of them needs
+	// to know about model selection.
+	llmClient := otelgenai.NewClient(modelRegistry)
 
 	// manager/edge biz + service + server.
 	edgeRepo := manageredgedata.NewRepo(db)
-	deviceRepo := managerdevicedata.NewRepo(db)
+	// The device repo cannot name the edge vocabulary: deleting a device has
+	// to tombstone the credentials on the edge identities linked to it, in
+	// the same transaction, and the one direction that would allow it is the
+	// one the rest of the tree runs against (decision 112). So the edge repo
+	// is handed in here, at the composition root, as the device repo's
+	// EdgeIdentityRevoker. If the two signatures ever drift this stops
+	// compiling, which is the point of putting the wiring here.
+	deviceRepo := managerdevicedata.NewRepo(db, edgeRepo)
 	edgeDeviceRepo := managerdevicedata.NewEdgeDeviceRepo(db)
 	deviceUC := managerbizdevice.NewUsecase(deviceRepo, edgeDeviceRepo, log)
 	edgeUC := managerbizedge.NewUsecase(edgeRepo, deviceRepo, edgeDeviceRepo, log)
@@ -912,6 +1065,92 @@ func main() {
 		log.Info("alert: failed orphaned investigations on boot", slog.Int64("rows", n))
 	}
 	edgeAuthn := managerbizedge.NewAccessKeyAuthenticator(edgeRepo, log)
+
+	// The cluster's daily token cap, built here rather than inside
+	// buildAIOpsRuntime because there are now two loops that spend against
+	// it: the console's agent kernel and the node-facing gateway. One
+	// instance means one counter, and the comment that used to claim "the
+	// cap is one number regardless of which loop is live" is a statement
+	// about this object rather than about intent. Two instances would each
+	// enforce the cap, so a fleet could spend twice the operator's ceiling —
+	// the exact failure a cap exists to prevent.
+	var dailyBudget *llm.InMemoryBudget
+	if cfg.LLM.DailyTokenLimit > 0 {
+		dailyBudget = llm.NewInMemoryBudget(cfg.LLM.DailyTokenLimit)
+		log.Info("llm: daily token budget enabled",
+			slog.Int("daily_limit", cfg.LLM.DailyTokenLimit),
+		)
+	}
+
+	// The node-facing model gateway.
+	//
+	// It is built here, next to the tunnel's own authenticator, because it
+	// authenticates with the same credential pair and the same function. A
+	// node's agent speaks the OpenAI protocol; the credentials that can serve
+	// those requests live here. Either the provider key travels to the node
+	// or the request does, and this is the end that chose the request.
+	//
+	// Registering it on the public mux rather than under /api is deliberate:
+	// the caller is PiG's OpenAI provider, not the console, so it carries a
+	// node credential and no manager session.
+	var gatewayBudget llmgw.Budget
+	if dailyBudget != nil {
+		// The typed-nil trap, spelled out because it is invisible at the
+		// call site: a *llm.InMemoryBudget that is nil, boxed into the
+		// interface field, is not equal to nil — it is an interface holding a
+		// nil pointer, which passes every `== nil` check in llmgw and then
+		// dereferences itself on the first request of the day.
+		gatewayBudget = globalTokenBudget{inner: dailyBudget}
+	}
+	// The per-node cap wraps whichever budget was built above rather than
+	// replacing it, so a node can be refused for its own spend while the
+	// cluster ceiling stays in force — and, when no global cap is configured
+	// at all, the per-node cap can still be configured on its own.
+	if cfg.LLM.EdgeDailyTokenLimit > 0 {
+		gatewayBudget = llmgw.NewAttributedBudget(
+			gatewayBudget, cfg.LLM.EdgeDailyTokenLimit, cfg.LLM.EdgeDegradePercent)
+		log.Info("llm: per-node daily token budget enabled",
+			slog.Int("per_node_daily_limit", cfg.LLM.EdgeDailyTokenLimit),
+			slog.Int("degrade_percent", cfg.LLM.EdgeDegradePercent),
+			slog.Bool("cluster_cap_configured", gatewayBudget != nil),
+		)
+	}
+	llmGateway, err := llmgw.NewHandler(llmgw.Options{
+		Auth:           edgeAuthn,
+		Completer:      modelRegistry,
+		DefaultModeler: modelRegistry,
+		Budget:         gatewayBudget,
+		Limiter:        llmgw.NewLimiter(cfg.LLM.EdgeRequestsPerMinute),
+		Bounds: llmgw.CallBounds{
+			ProviderTimeout: time.Duration(cfg.LLM.CallTimeoutSeconds) * time.Second,
+			MaxOutputTokens: cfg.LLM.MaxOutputTokens,
+		},
+		Log: log,
+	})
+	if err != nil {
+		// The two things it refuses to be built without are both constructed
+		// two lines above, so this is unreachable today. It is checked anyway
+		// because the failure it guards — a gateway that serves model calls
+		// to anyone who found the URL — is the one failure on this page that
+		// costs money and gives nothing away in the logs.
+		fmt.Fprintf(os.Stderr, "llm gateway: %v\n", err)
+		os.Exit(1)
+	}
+	// modelEndpointResolver names the endpoint a node's agent should use.
+	//
+	// It reads the same default the gateway's own GET /v1/models reads, so
+	// the catalogue a node can discover and the endpoint it is told to use
+	// cannot disagree. That is the plan's 0.2 second sentence: the manager
+	// names the destination and the model slug, and the node picks them up
+	// on the heartbeat it already sends instead of every host's env being
+	// written by hand.
+	//
+	// The URL is cfg.PublicURL + the gateway's own base path, exactly as
+	// pluginEndpointResolver builds the Loki/Tempo push URLs. The suffix is
+	// not decoration: the agent resolves a custom provider's baseUrl as the
+	// completions root, so without /v1 the request would land one segment
+	// too high and 404 on a manager that is otherwise perfectly healthy.
+	modelEndpoint := modelEndpointResolver{publicURL: cfg.PublicURL, models: modelRegistry}
 	edgeSvc := managersvcedge.New(edgeUC, nil, log)
 
 	// Plugin runtime config storage. UC notifier
@@ -1098,7 +1337,7 @@ func main() {
 	// passing probe means the skill itself will work.
 	webSearchProbe := managerbizsetting.NewWebSearchProbe(managerbizsetting.NewWebSearchResolver(settingSvc))
 	integrationHandler = managerserverintegration.NewHandler(grafanaSvc, promTester, lokiProbe, tempoProbe, webSearchProbe)
-	integrationHandler.SetLLMRouter(llmRouter)
+	integrationHandler.SetLLMRouter(modelView)
 
 	// Prom-backed metric read handler (PR-F replacement for the MySQL
 	// fast path). When prom is disabled the handler still installs but
@@ -1193,6 +1432,35 @@ func main() {
 	})
 	webshellAuditRepo := managerwebshelldata.NewRepo(db)
 
+	// Node AI agents: the control plane's view of one PiG agent per node.
+	//
+	// Built before frontierbound.Install so the agent.event handler can
+	// route a node's pushed frames into the fleet. The fleet is the
+	// Dialer - its Call is the frontierbound client's Call - so nothing
+	// here knows the agent is a subprocess speaking a foreign RPC dialect.
+	nodeFleet, ferr := managerbiznodefleet.New(managerbiznodefleet.Options{Dial: fbClient})
+	if ferr != nil {
+		// Only a nil dial can do this, and fbClient is never nil. Logging
+		// rather than returning keeps a wiring mistake from taking down
+		// telemetry collection, which does not depend on any of this.
+		log.Error("node agent fleet unavailable; the console cannot reach node agents", slog.Any("err", ferr))
+	}
+	// The fleet is adapted rather than passed: decision 282 turned
+	// nodeagent's nine-method dependency on it into a port, and a port may not
+	// name the producer's types. See nodeagent_fleet_wiring.go for the two
+	// translations that costs.
+	nodeAgentSvc, err := managerbiznodeagent.New(managerbiznodeagent.Options{Fleet: nodeAgentFleetAdapter{fleet: nodeFleet}})
+	var nodeAgentHandler *managerservernodeagent.Handler
+	if err != nil {
+		// The console then simply has no node-agent routes. Nodes keep
+		// running their agents and keep answering their skill RPCs; what
+		// is lost is the console's ability to talk to them, which is a
+		// feature rather than the platform.
+		log.Error("node agent console surface unavailable", slog.Any("err", err))
+	} else {
+		nodeAgentHandler = managerservernodeagent.NewHandler(nodeAgentSvc)
+	}
+
 	// Edge change event usecase (A.3 follow-up). Receives batches of
 	// journald / dockerd / packagemgr events over the tunnel and
 	// persists into edge_change_events. The cleanup goroutine trims
@@ -1202,19 +1470,132 @@ func main() {
 	changeEventCleaner := changeeventbiz.NewCleaner(changeEventUC, log.With(slog.String("comp", "changeevent-cleaner")))
 	go changeEventCleaner.Run(rootCtx)
 
+	// The control-plane half of every node's toolset. Built here and
+	// filled in below: the aiops registry needs the tunnel client that
+	// Install brings up, so the two cannot be constructed in one step.
+	agentTools := &agentToolUpcall{
+		fleet: nodeFleet,
+		// Every tool this channel runs on a node's behalf is recorded
+		// here. It is the only place in the control plane that executes
+		// something on a node's say-so, and until it wrote a row the
+		// answer to "what did this host make us read" lived nowhere
+		// (决策 203).
+		audit: &agentToolAudit{emitter: auditUC},
+	}
+
+	// Plugin releases. Built after the fleet because a release drives the
+	// same tunnel the node agents use, and wired into HTTP below. The
+	// handler is constructed before the manager so the routes exist even
+	// on a manager whose tunnel failed to come up: those endpoints then
+	// answer 503 ("not configured") rather than 404, which is a different
+	// sentence for an operator.
+	pluginReleaseHandler := managerserverplugin.NewHandler(nil)
+	pluginFleet := &edgeInventoryFleet{svc: edgeSvc}
+	// The same adapter serves both the release lifecycle and the console's
+	// "what is this node actually running" read. They share it rather than
+	// each building one so a node that answers a release but not an
+	// inventory — or the other way round — is impossible by construction
+	// rather than by two adapters happening to be configured alike.
+	pluginNodeFleet := managersvcplugin.NewNodeFleet(fbClient)
+	pluginReleaseMgr := managersvcplugin.NewManager(pluginFleet, pluginNodeFleet,
+		log.With(slog.String("comp", "plugin-release"))).
+		// The compatibility matrix reads the same edge inventory the
+		// release does, so a matrix and a release are looking at one
+		// snapshot of the fleet rather than two taken at different moments.
+		WithVersions(&edgeVersionInventory{svc: edgeSvc})
+	pluginReleaseHandler.SetService(pluginReleaseMgr)
+	pluginReleaseHandler.SetInventory(pluginNodeFleet)
+
+	// The release driver. Without it a rolling release only moves when a
+	// person presses Advance, so an operator who starts one and walks away
+	// leaves a package on the canary and a fleet that will not hear about
+	// it. It is built unconditionally and started further down: the
+	// release manager has no releases at boot, so a driver running over an
+	// empty map costs one map lookup a tick.
+	pluginReleaseDriver, err := managersvcplugin.NewDriver(pluginReleaseMgr,
+		managersvcplugin.Options{
+			Interval:   pluginReleaseDriverInterval,
+			StallAfter: pluginReleaseStallAfter,
+			Log:        log.With(slog.String("comp", "plugin-release-driver")),
+		})
+	if err != nil {
+		log.Error("plugin release: driver", slog.Any("err", err))
+		os.Exit(1)
+	}
+
+	// The root side of the cluster channel. Built here rather than next to
+	// the routes because it needs the tunnel client, and mounted even when
+	// the tunnel is disabled: a root that has lost its way to its children
+	// still has to be able to say who it has enrolled and what it last sent
+	// them, or an operator's only view of a federation outage is a console
+	// with the page missing.
+	federation, err := newFederationWiring(fbClient, log.With(slog.String("comp", "federation")))
+	if err != nil {
+		log.Error("federation: wiring", slog.Any("err", err))
+		os.Exit(1)
+	}
+
+	// The other side of the same channel, and it needs the plugin fleet
+	// above because a child refuses, before any node is asked, to offer a
+	// package its root did not publish. nil for every process that is not
+	// configured as a child, which is all of them until an operator says
+	// otherwise.
+	federationChild, err := newFederationChildWiring(cfg, pluginNodeFleet,
+		log.With(slog.String("comp", "federation-child")))
+	if err != nil {
+		log.Error("federation: child wiring", slog.Any("err", err))
+		os.Exit(1)
+	}
+	if federationChild != nil {
+		federationChild.Start(rootCtx)
+		defer func() {
+			if cerr := federationChild.Close(); cerr != nil {
+				log.Warn("federation: child channel close", slog.Any("err", cerr))
+			}
+		}()
+	}
+
 	if err := managersvcfb.Install(rootCtx, fbClient, managersvcfb.Wiring{
 		EdgeAuthn:      edgeAuthn,
 		EdgeUC:         edgeUC,
 		MetricIngester: metricIngestSvc,
 		PromIngester:   promWiring,
 		PluginConfigUC: pluginConfigUC,
-		WebshellRouter: webshellRouter,
 		ChangeEventUC:  changeEventUC,
+		// AgentEvents routes a node's pushed agent frames to the console
+		// that asked for them. Nil-safe: with it unset the node agents
+		// still run and still take commands, they just cannot deliver a
+		// turn, which the console shows as a conversation with no output.
+		AgentEvents: nodeFleet,
+		// AgentTools lets a node's agent ask the control plane to run the
+		// tools the node cannot: the topology graph and the alert rules.
+		AgentTools: agentTools,
+		// AutonomyReplay is where a node hands over the decisions it made
+		// on its own while the control plane was away, so the chain here —
+		// the tamper-evident one, whose key never leaves this process —
+		// records what the fleet did during the outage. The node's own
+		// spool is its account; this is what makes it evidence.
+		AutonomyReplay: managersvcfb.NewAutonomyReplay(auditUC),
+		// 决策 126：节点自己写下的账本行进链的最后一跳。与上面那条同源
+		// 不同行——自治行是一次自愈决策的十三个字段，而这里的行是节点上
+		// 三个不同组件（策略闸门、PiG runstate、插件安装器）各自认为值得
+		// 记录的东西，所以它需要自己的转换与自己的形状规则。
+		NodeLedger: managersvcfb.NewNodeLedger(auditUC),
+		// ModelEndpoint is how a node learns which model endpoint to use
+		// without being hand-provisioned. Non-secret: the node presents
+		// its own tunnel credential pair to the gateway, so this answer
+		// carries only a URL and a slug.
+		ModelEndpoint: modelEndpoint,
 		// DeviceResolver wires the post-split edge_id → device_id
 		// resolution path (push pipeline). The biz junction repo is the
 		// source of truth.
 		DeviceResolver: edgeDeviceRepo,
-		Log:            log.With(slog.String("comp", "frontierbound")),
+		// ClusterLink answers a child cluster's cluster.hello. The
+		// binding it makes is the only thing that lets a publish become
+		// a push, and it is checked on every publish — a token the root
+		// issued is not a binding until the holder has connected.
+		ClusterLink: federation.link,
+		Log:         log.With(slog.String("comp", "frontierbound")),
 	}); err != nil {
 		log.Error("frontierbound: install handlers", slog.Any("err", err))
 		os.Exit(1)
@@ -1233,8 +1614,26 @@ func main() {
 		webshellStreamerAdapter{c: fbClient},
 		webshellRouter,
 		webshellAuditAdapter{repo: webshellAuditRepo},
-		deviceRepo,
-		edgeRepo,
+		// The device usecase, not edgeDeviceRepo. Both answer the same
+		// question from the same junction table — which edge owns a device
+		// as its host — and the usecase is the one that states the host
+		// relation, so passing the repo made every caller of this port
+		// re-choose it. It also meant this handler talked to the store
+		// directly: the biz layer was in the dependency graph of main and
+		// nowhere else, and a store whose wiring is missing shows up as a
+		// nil dereference at the first shell rather than as a wiring error.
+		deviceUC,
+		// The edge usecase, for the reason the line above gives for the
+		// device one. This argument used to be edgeRepo, so the handler
+		// asked the GORM store for a node's presence directly and the
+		// edge biz layer was bypassed at exactly the one call site that
+		// decides whether an operator may open a shell. It answered the
+		// same question from the same row, so nothing about the running
+		// system changed — but the port it holds is now
+		// domain.EdgeStatusQuery, and only the usecase can satisfy that.
+		// The repository is not assignable to it, so this line failing to
+		// compile is the wiring guard, not a comment (decision 251).
+		edgeUC,
 		log.With(slog.String("comp", "webshell")),
 	)
 	webshellHandler.SetAuthz(authzMW)
@@ -1289,16 +1688,32 @@ func main() {
 	if cfg.Traces.URL != "" {
 		traceQuerier = pkgtracequery.New(cfg.Traces.URL, log.With(slog.String("comp", "aiops-tracequery")))
 	}
-	toolsReg := aiopstools.NewRegistry(fbClient, edgeUC, deviceUC, promQuerier, logQuerier, traceQuerier, alertUC, log)
+	// The one tool-registry wiring for this binary, as a value rather than
+	// as a constructor call: the fields that exist now are filled now, and
+	// the ones that only exist after the approval queue, the alert channel
+	// store and the LLM client are filled further down. See
+	// cmd/opskeeper/toolwiring.go for why it is a value.
+	toolWiring := toolRegistryWiring{
+		Caller:  fbClient,
+		Edges:   edgeUC,
+		Devices: deviceUC,
+		Prom:    promQuerier,
+		Logs:    logQuerier,
+		Trace:   traceQuerier,
+		Alerts:  alertUC,
+		Log:     log,
+	}
+	toolsReg := toolWiring.buildRegistry()
+	agentTools.reg = toolsReg
 	repairPreviewRepository := repairpreviewcontrol.NewSQLRepository(db)
 	hitlProposalRepo := managerdatahitlstore.NewRepo(db)
 	hitlProposalSvc := managerbizhitl.NewService(hitlProposalRepo)
 	hitlProposalHandler := managerserverhitl.NewHandler(hitlProposalSvc)
-	toolsReg.SetRecoveryAuditRepo(hitlRecoveryAuditRepo{repo: hitlProposalRepo})
-	toolsReg.SetRepairPreviewGate(repairpreviewcontrol.NewGate(
+	toolWiring.RecoveryAudit = hitlRecoveryAuditRepo{repo: hitlProposalRepo}
+	toolWiring.RepairPreview = repairpreviewcontrol.NewGate(
 		repairPreviewRepository,
 		strings.TrimSpace(os.Getenv("OPSKEEPER_REPAIR_PREVIEW_WORKLOAD_FINGERPRINT")),
-	))
+	)
 	hostFixtureURL := strings.TrimSpace(os.Getenv("OPSKEEPER_HOST_FIXTURE_URL"))
 	hostFixtureToken := strings.TrimSpace(os.Getenv("OPSKEEPER_HOST_FIXTURE_TOKEN"))
 	if hostFixtureURL != "" || hostFixtureToken != "" {
@@ -1306,7 +1721,7 @@ func main() {
 			log.Error("host fixture client config requires both URL and token")
 			os.Exit(1)
 		}
-		toolsReg.SetHostFixtureTerminator(aiopstools.NewHostFixtureClient(hostFixtureURL, hostFixtureToken))
+		toolWiring.HostTerminator = aiopshost.NewHostFixtureClient(hostFixtureURL, hostFixtureToken)
 	}
 	poolFixtureURL := strings.TrimSpace(os.Getenv("OPSKEEPER_POOL_FIXTURE_URL"))
 	poolFixtureToken := strings.TrimSpace(os.Getenv("OPSKEEPER_POOL_FIXTURE_TOKEN"))
@@ -1316,7 +1731,7 @@ func main() {
 			log.Error("pool fixture client config requires both URL and token")
 			os.Exit(1)
 		}
-		toolsReg.SetPoolRecoveryExecutor(aiopstools.NewPoolFixtureClient(poolFixtureURL, poolFixtureToken))
+		toolWiring.PoolRecovery = recovery.NewPoolFixtureClient(poolFixtureURL, poolFixtureToken)
 	}
 	demoAPIToken := strings.TrimSpace(os.Getenv("OPSKEEPER_DEMO_API_TOKEN"))
 	if poolFixtureURL != "" && poolFixtureToken != "" && demoAPIToken != "" {
@@ -1336,13 +1751,23 @@ func main() {
 			log.Error("demo repair preview executor config invalid", slog.Any("err", err))
 			os.Exit(1)
 		}
+		demoRepo := managerdemodata.NewRepo(db)
 		demoScenarioUsecase := managerbizdemo.NewUsecaseWithPreviewWorkflow(
-			managerdemodata.NewRepo(db), alertRepo, managerbizdemo.NewPoolFixtureClient(poolFixtureURL, poolFixtureToken),
+			demoRepo, alertRepo, managerbizdemo.NewPoolFixtureClient(poolFixtureURL, poolFixtureToken),
 			repairPreviewRepository,
 			expectedReplayProfile,
 			workflowPublisher,
 		)
 		demoScenarioUsecase.SetPreviewExecutor(previewExecutor)
+		// Decision 113: the alert ingest path asks "does this firing belong
+		// to a running scenario?" through a port, and the scenario owner
+		// answers. The connection is made here, at the composition root,
+		// and only when the demo is actually configured — which is exactly
+		// when the hardcoded branch in the alert store used to find rows.
+		// Both halves of the dependency are set together so a half-wired
+		// scenario (a usecase with no storage) is impossible.
+		demoScenarioUsecase.SetFiringCorrelationRepository(demoRepo)
+		alertUC.SetFiringCorrelator(demoScenarioUsecase)
 		archiveTenantID := strings.TrimSpace(os.Getenv("OPSKEEPER_DEFAULT_INCIDENT_TENANT_ID"))
 		if archiveTenantID == "" {
 			archiveTenantID = "1"
@@ -1355,7 +1780,7 @@ func main() {
 	} else if demoAPIToken != "" {
 		log.Warn("demo scenario API disabled: pool fixture URL/token is required")
 	}
-	toolsReg.SetPluginConfigLister(pluginConfigUC)
+	toolWiring.PluginConfig = pluginConfigUC
 	gitArtifacts, err := newGitArtifactRuntime(os.Getenv("OPSKEEPER_GIT_ARTIFACT_STORE_PATH"), log)
 	if err != nil {
 		log.Error("git-artifact runtime init failed", slog.Any("err", err))
@@ -1367,16 +1792,16 @@ func main() {
 		}
 	}()
 	toolsReg.AppendExternalBaseTool(gitArtifacts.tool)
-	toolsReg.SetConfigManager(manageraiopsconfig.NewAlertRuleManager(alertSvc))
+	toolWiring.ConfigManager = newAlertRuleManager(alertSvc)
 	// query_change_events (HLD-013 Phase 2) — RCA "what changed near T".
 	// *audit.Usecase satisfies aiopstools.AuditLister via ListChanges.
-	toolsReg.SetAuditLister(auditUC)
+	toolWiring.AuditLister = auditUC
 	// A.3 follow-up: feed the edge changewatcher side of query_change_events.
-	toolsReg.SetEdgeChangeLister(changeEventUC)
+	toolWiring.EdgeChanges = changeEventUC
 	// Populate deployment-level facts for the get_topology tool. Channel
 	// counter pulls from the alert repo's enabled-channel listing so the
 	// number reflects what notify_router actually fans out to.
-	toolsReg.SetTopologyInfo(aiopstools.TopologyInfo{
+	toolWiring.TopologyInfo = aiopstools.TopologyInfo{
 		ManagerVersion:     version,
 		ConfiguredPromURL:  cfg.Prom.QueryURL,
 		ConfiguredLokiURL:  cfg.Logs.URL,
@@ -1388,11 +1813,16 @@ func main() {
 			}
 			return len(rows), nil
 		},
-	})
+	}
 	// Wire the topology graph usecase so expand_topology /
 	// find_topology_node show up in the BaseTool roster. nil-safe — the
 	// two BaseTools are gated on this exact field.
-	toolsReg.SetTopologyGraph(topologyUC)
+	// The port is an interface now, so a bare `&adapter{uc: nil}` would
+	// satisfy the nil check that gates the two BaseTools and then panic on
+	// first use. Guard at the one place the concrete usecase is in hand.
+	if topologyUC != nil {
+		toolWiring.TopologyGraph = &topologyGraphAdapter{uc: topologyUC}
+	}
 	aiopsAgent := aiopsagent.New(
 		llmClient,
 		toolsReg,
@@ -1402,9 +1832,16 @@ func main() {
 	)
 	aiopsUsage := managerbizaiops.NewUsageUsecase(aiopsRepo, log)
 
-	// PR-9 of optional new graph-based agent kernel. Default
-	// stays "legacy" so chat behaviour is unchanged out of the box;
-	// operators opt into the new path via OPSKEEPER_AGENT_KERNEL=graph.
+	// The PiG-backed agent kernel, and the default is the embedded SDK.
+	//
+	// Unset means "nobody chose", which is the product's decision to make
+	// and it is PiG's coding.Session (decision 171). A value we cannot read
+	// means "somebody chose something we do not know", which is not ours to
+	// overrule — that falls back to the pre-2.0 loop and says so here, in
+	// the log, at the one moment an operator can still see it.
+	//
+	// The old "graph" spelling is retired but still accepted, and resolves
+	// to the same kernel as "pig".
 	// When the env is set we build:
 	//   - RoutingChatModel (PR-1) wrapping the existing llmRouter, one
 	//     per provider id ("openai" | "anthropic" | "zhipu" | "gemini").
@@ -1414,8 +1851,17 @@ func main() {
 	//     (silent on missing dirs — fresh installs boot fine).
 	//   - chatruntime.Runtime, the cutover entry the service routes to.
 	// Mismatch / build errors fall back to legacy with a logged warning.
-	kernel := managersvcaiops.ParseKernel(os.Getenv("OPSKEEPER_AGENT_KERNEL"))
-	log.Info("aiops agent kernel selected", slog.String("kernel", string(kernel)))
+	rawKernel := strings.TrimSpace(os.Getenv("OPSKEEPER_AGENT_KERNEL"))
+	kernel := managersvcaiops.ParseKernel(rawKernel)
+	if rawKernel != "" && !managersvcaiops.IsKnownKernel(rawKernel) {
+		log.Warn("aiops: OPSKEEPER_AGENT_KERNEL is not a kernel this build knows; "+
+			"staying on the pre-2.0 loop rather than guessing",
+			slog.String("value", rawKernel),
+			slog.String("known", "legacy|graph|pig|pig-sdk"))
+	}
+	log.Info("aiops agent kernel selected",
+		slog.String("kernel", string(kernel)),
+		slog.Bool("defaulted", rawKernel == ""))
 
 	// Knowledge base + git-repo integration (RAG Phase-1). Wire BEFORE
 	// buildAIOpsRuntime so the BaseTool bag picks up query_knowledge —
@@ -1457,7 +1903,7 @@ func main() {
 	var (
 		knowledgeUC *managerbizknowledge.Usecase
 		// qdrantClient 在更广作用域声明，供 chatdiagnose KB wire-up 复用
-		//（internal/manager/data/chatdiagnose/store.NewQdrantPatternRepo 需要同一个 client）
+		//（core/manager/data/chatdiagnose/store.NewQdrantPatternRepo 需要同一个 client）
 		qdrantClient = qdrantx.New(qdrantURL, log.With(slog.String("comp", "qdrant")))
 	)
 	{
@@ -1483,7 +1929,7 @@ func main() {
 		} else {
 			knowledgeUC = uc
 			knowledgeUC.WithRecallRepository(incidentcontrol.NewSQLRepository(db))
-			toolsReg.SetKnowledgeSearcher(knowledgeUC)
+			toolWiring.Knowledge = knowledgeUC
 			// GitHub-PAT-via-GIT_ASKPASS resolver wiring
 			// removed. SSH-style repos use ssh_identities; HTTPS auth
 			// returns in P3 via credential.helper.
@@ -1558,8 +2004,32 @@ func main() {
 		// aiopsRuntime is what the chat service consumes.
 		chatRT *aiopschatruntime.Runtime
 	)
-	if kernel == managersvcaiops.KernelGraph {
-		rt, rterr := buildAIOpsRuntime(rootCtx, cfg, llmClient, llmRouter, toolsReg, aiopsRepo, fbClient, edgeUC, deviceUC, reg, log, bootstrapSkillReg, bootstrapAgentReg, llmSettingsResolver)
+	// Kernel gate for the PiG loop: mutating calls whose approval is already
+	// owned by the tool itself run, everything else is asked through the
+	// human inbox. Built before the runtime because the runtime's kernel
+	// needs it, and extended at the MCP registrar below, where those tools
+	// and their risk classes are created.
+	kernelGate := agentkernel.NewDeferredGate(
+		agentkernel.NewInboxGate(NewInboxUsecase(approvalUC)),
+		selfSettledToolNames(),
+	)
+
+	// readerGate is the reader-tier gate the console tool chain passes
+	// through. It is declared here and assigned below, next to the label
+	// store it reads: main builds the chat runtime before Data-Guard is
+	// assembled, so the two halves of the answer do not exist at the same
+	// moment as the question. Nil here is "no tiers configured", and the
+	// chain runs ungated in that case.
+	var readerGate ports.SensitivityGate
+	if kernel.UsesChatRuntime() {
+		rt, rterr := buildAIOpsRuntime(rootCtx, cfg, llmClient, toolsReg, aiopsRepo, fbClient, edgeUC, deviceUC, reg, log, bootstrapSkillReg, bootstrapAgentReg, llmSettingsResolver, kernelWiring{
+			Kernel:      kernel,
+			Models:      modelRegistry,
+			Gate:        kernelGate,
+			Audit:       auditUC,
+			PiGRuntime:  pigRuntime,
+			Sensitivity: readerGate,
+		}, dailyBudget)
 		if rterr != nil {
 			log.Warn("aiops runtime build failed — falling back to legacy kernel", slog.Any("err", rterr))
 			kernel = managersvcaiops.KernelLegacy
@@ -1578,10 +2048,8 @@ func main() {
 			// — chatruntime.filterToolsForAgent strips them
 			// unconditionally via coordinatorOnlyTools (see
 			// chatruntime/worker.go).
-			toolsReg.SetWorkerSpawner(
-				chatruntimeSpawnerShim{rt: rt},
-				agentRegistryShim{inner: rt.AgentRegistry()},
-			)
+			toolWiring.WorkerSpawner = chatruntimeSpawnerShim{rt: rt}
+			toolWiring.Subagents = agentRegistryShim{inner: rt.AgentRegistry()}
 			// SendMessage / TaskStop are control-plane micro-ops; 15s
 			// is plenty. AgentTool is the odd one out: synchronous
 			// dispatch blocks until the worker LLM finishes its full
@@ -1629,7 +2097,7 @@ func main() {
 	// Service-account user_id: superuser admin (id=1 on every install
 	// thanks to bootstrap). Future: take from cfg.
 	const imBridgeServiceUserID uint64 = 1
-	imbridgeAgentAdapter := managerbizimbridge.NewAiopsAdapter(aiopsSvc, imBridgeServiceUserID, llmSettingsResolver, log)
+	imbridgeAgentAdapter := newImbridgeAgentAdapter(aiopsSvc, imBridgeServiceUserID, llmSettingsResolver, log)
 	imbridgeSvc := managerbizimbridge.NewBridge(imbridgeRepo, imbridgeAgentAdapter, imBridgeServiceUserID, log)
 	imbridgeHandler := managerserverimbridge.NewHandler(imbridgeSvc, imbridgeRepo, imbridgeUC, log)
 
@@ -1637,7 +2105,7 @@ func main() {
 	// goroutine per (enabled, stream-mode) ImApp; reconciles every
 	// 30s against the DB. Factories are registered separately so we
 	// don't drag in the Feishu / DingTalk SDKs from this file —
-	// they live under internal/manager/biz/imbridge/provider/{feishu,
+	// they live under core/manager/biz/imbridge/provider/{feishu,
 	// dingtalk}/stream and self-register via stream_supervisor.go's
 	// RegisterFactory hook. Without a factory the supervisor just
 	// logs "no factory for provider — skipping" and the webhook path
@@ -1672,7 +2140,7 @@ func main() {
 	// Provider catalog → /v1/aiops/models. The router has the canonical
 	// list; the handler reads from it via a narrow interface so wiring
 	// stays one-way.
-	aiopsHandler.SetModelCatalog(llmRouter)
+	aiopsHandler.SetModelCatalog(modelView)
 	// LLM client for /v1/aiops/query-translate (NL → LogQL/TraceQL/PromQL).
 	// Optional helper — endpoint 503s when nil; SPA hides the ✨ button.
 	aiopsHandler.SetLLMClient(llmClient)
@@ -1725,7 +2193,7 @@ func main() {
 	// investigatorChain so each new-fire fans out to both. Either side
 	// can be nil — the chain skips nil.
 	var legacyInv managerbizalert.Investigator
-	if hasConfiguredLLMProvider(llmRouter) {
+	if llmSync.Default() != "" {
 		legacy := aiopsinvestigator.New(
 			llmClient,
 			toolsReg,
@@ -1769,7 +2237,7 @@ func main() {
 			// operator override for rare cases.
 			sumProvider := os.Getenv("OPSKEEPER_INVESTIGATOR_SUMMARIZER_PROVIDER")
 			sumModel := os.Getenv("OPSKEEPER_INVESTIGATOR_SUMMARIZER_MODEL")
-			rcaInvConcrete = investigator.NewUsecase(invRepo, concreteRt, llmClient, investigator.Config{
+			rcaInvConcrete = investigator.NewUsecase(invRepo, investigationRunner{runtime: concreteRt}, llmClient, investigator.Config{
 				Enabled:            true,
 				MinSeverity:        firstNonEmpty(os.Getenv("OPSKEEPER_INVESTIGATOR_MIN_SEVERITY"), "warning"),
 				DedupWindow:        5 * time.Minute,
@@ -1781,21 +2249,24 @@ func main() {
 				MaxConcurrent:      maxCC,
 				// Fall-back language for auto-fire + backfill (no request
 				// context, no Accept-Language). Manual triggers override per
-				// request. Default "en" so a fresh deployment matches the
-				// English SPA by default; ops sets OPSKEEPER_DEFAULT_LOCALE=zh
-				// for an explicitly Chinese-default install.
-				// See [[feedback_ai_output_locale]].
-				DefaultLocale: firstNonEmpty(os.Getenv("OPSKEEPER_DEFAULT_LOCALE"), "en"),
+				// request. The fallback used to be "en", argued as "match
+				// the English SPA" — but the SPA localises itself from the
+				// operator's timezone and a zh-CN console was still getting
+				// English AI prose, because the default only ever reached
+				// the headless paths. It is now the same DefaultLocale the
+				// four locale resolvers share; OPSKEEPER_DEFAULT_LOCALE still
+				// overrides it. See [[feedback_ai_output_locale]].
+				DefaultLocale: firstNonEmpty(os.Getenv("OPSKEEPER_DEFAULT_LOCALE"), aiopschatprompt.DefaultLocale),
 			}, log)
 			// Same InvestigationRepo also implements the
 			// related-alerts query (same DB handle, different method).
 			rcaInvConcrete = rcaInvConcrete.
 				WithRelatedQuerier(invRepo).
-				// Salvage seam: when the worker hits the eino
-				// MaxStep cap, read its partial trail back from
+				// Salvage seam: when the worker hits the turn
+				// cap, read its partial trail back from
 				// chat_messages and synthesise a low-confidence
 				// report instead of an empty failure.
-				WithMessageReader(aiopsRepo)
+				WithMessageReader(transcriptReader{repo: aiopsRepo})
 			rcaInv = rcaInvConcrete
 			log.Info("alert: structured RCA investigator wired",
 				slog.String("summarizer_provider", firstNonEmpty(sumProvider, "llm_default")),
@@ -1825,15 +2296,15 @@ func main() {
 		reportGen = managerbizreport.NewWorkerGenerator(
 			reportRepo,
 			managerreportdata.NewFactsCollector(db, reportProm),
-			reportRT,
+			reportRunner{rt: reportRT},
 			managerbizreport.GeneratorConfig{
-				DefaultLocale: firstNonEmpty(os.Getenv("OPSKEEPER_DEFAULT_LOCALE"), "en"),
+				DefaultLocale: firstNonEmpty(os.Getenv("OPSKEEPER_DEFAULT_LOCALE"), aiopschatprompt.DefaultLocale),
 				PublicURL:     cfg.PublicURL,
 			},
 			log,
 		).
 			WithDeliverer(reportDelivererShim{channels: alertRepo, router: notifyRouter}).
-			WithReadyCheck(reportLLMReady(llmSettingsResolver))
+			WithReadyCheck(reportLLMReady(llmSync))
 		reportSchedulerReady = true
 		log.Info("report: generator wired")
 	} else {
@@ -1842,7 +2313,7 @@ func main() {
 	}
 	reportUC := managerbizreport.NewUsecase(reportRepo, reportGen, uuid.NewString).
 		WithReadRepo(reportRepo).
-		WithDefaultLocale(firstNonEmpty(os.Getenv("OPSKEEPER_DEFAULT_LOCALE"), "en"))
+		WithDefaultLocale(firstNonEmpty(os.Getenv("OPSKEEPER_DEFAULT_LOCALE"), aiopschatprompt.DefaultLocale))
 	if reportSchedulerReady {
 		reportScheduler = managerbizreport.NewScheduler(reportUC, log)
 		// Worker is registered with leader.Manager further down; for
@@ -1979,39 +2450,79 @@ func main() {
 	// loop-recovery-integration: RecoveryStateStoreDB satisfies both
 	// loop.RecoveryStateStore and aiops/tools.RecoveryStateStore (same shape).
 	var _ managerbizloop.RecoveryStateStore = loopRecoveryStateStore
-	var _ aiopstools.RecoveryStateStore = loopRecoveryStateStore
+	var _ recovery.RecoveryStateStore = loopRecoveryStateStore
 	// loop-recovery-integration: DB-backed RecoveryStateStore when
 	// sqlDB != nil (retry_count multi-instance shared); InMemory fallback
 	// for DB-less dry-run / CI.
-	var verifyStateStore aiopstools.RecoveryStateStore
+	var verifyStateStore recovery.RecoveryStateStore
 	if loopRecoveryStateStore != nil {
 		verifyStateStore = loopRecoveryStateStore
 	} else {
-		verifyStateStore = aiopstools.NewInMemoryRecoveryStateStore()
+		verifyStateStore = recovery.NewInMemoryRecoveryStateStore()
 	}
 	// VerifyRecoveryTool — default VerifyRecoveryConfig + dry-run
 	// MetricQuerier (production-side querier lands with metric adapter).
-	verifyRecoveryTool := aiopstools.NewVerifyRecoveryTool(
-		aiopstools.NewDryRunMetricQuerier(),
+	verifyRecoveryTool := recovery.NewVerifyRecoveryTool(
+		recovery.NewDryRunMetricQuerier(),
 		verifyStateStore,
 		log.With(slog.String("comp", "verify-recovery")),
-		aiopstools.DefaultVerifyRecoveryConfig(),
+		recovery.DefaultVerifyRecoveryConfig(),
 	)
 	// LLMCaller 注入 5 phase worker（llm-worker-integration）。
-	// llmRouter 在 main.go 上面已构造（line ~701）。
+	// llmClient 是 main.go 上面的 PiG completer（见模型平面装配块）。
 	var loopLLMCaller managerbizloop.LLMCaller
-	if llmRouter != nil {
+	if llmClient != nil {
 		loopLLMOptions := []managerbizloop.Option{
 			managerbizloop.WithLogger(log.With(slog.String("comp", "loop-llm"))),
 		}
 		if strings.Contains(cfg.OpenAI.Model, "qwen3") {
 			loopLLMOptions = append(loopLLMOptions, managerbizloop.WithQwenNoThink())
 		}
-		loopLLMCaller = managerbizloop.NewLLMCaller(llmRouter, loopLLMOptions...)
+		loopLLMCaller = managerbizloop.NewLLMCaller(llmClient, loopLLMOptions...)
 	}
+	// 修复动作派发：把 approved phase 的 RemediationOption 真正打到工具上。
+	//
+	// 这条链路此前不存在——approved phase 问完 pause hook 就直接返回
+	// ApprovedExecAdvance，什么都没执行。派发需要三样东西：读上游修复选项的
+	// loader、能按名字查/调工具的 registry、以及一个已连接的 adapter。
+	//
+	// 没有 DSN 时不装配任何东西：UnavailableInvoker 会让 approved phase 以
+	// 明确原因失败，而不是推进一个"看起来修好了"的 run。静默跳过比报错更糟，
+	// 因为 recovered 阶段会拿没变过的指标去验证，然后把结论写进复盘。
+	var loopRemediationLoader managerbizloop.RemediationOptionLoader
+	var loopRemediationInvoker managerbizloop.RemediationInvoker
+	// Every adapter that has a DSN configured is connected into one
+	// registry, so an action is dispatchable when its adapter is deployed
+	// rather than when the binary was built for it. OPSKEEPER_LOOP_PG_DSN
+	// keeps its old meaning; the other four are additive.
+	middlewareReg := middlewareregistry.NewRegistry()
+	adapterClosers := wireLoopRemediationAdapters(rootCtx, log, middlewareReg)
+	// The node's agent reaches the same adapters through the upcall
+	// channel. It is the same registry rather than a second one, because a
+	// node that could reach an adapter the loop cannot (or the other way
+	// round) would be two answers to "is this deployment connected to
+	// PostgreSQL" with no way to tell which one was meant.
+	agentTools.middleware = middlewareReg
+	for _, closeAdapter := range adapterClosers {
+		defer closeAdapter()
+	}
+	// The investigator is assembled after the adapter registry, because it
+	// probes the domain through it: without a probe source the toolset sees
+	// one metric and a log line, which cannot tell a bloated table from a
+	// stuck vacuum from a slow query.
 	var loopInvestigatorToolset managerbizloop.InvestigatorToolset = managerbizloop.NoopInvestigatorToolset{}
 	if promQuerier != nil || logQuerier != nil {
-		loopInvestigatorToolset = managerbizloopinvestigatorreal.New(promQuerier, logQuerier, log)
+		// The labels source is what lets a remediation dispatch name the
+		// object it acts on. Without it the evidence chain holds only a
+		// metric and a log line, and every write action refuses at
+		// dispatch for want of a pod name, queue or unit the firing alert
+		// already carried.
+		loopInvestigatorToolset = managerbizloopinvestigatorreal.NewWithLabels(
+			promQuerier, logQuerier, managerbizloop.NewAlertLabelsAdapter(loopAlertReader{repo: alertRepo}), log).
+			// The probes are how the investigation learns which table is
+			// bloating and which node is NotReady, instead of inferring
+			// it from a restart rate that looks the same either way.
+			WithProbes(middlewareReg)
 	} else {
 		loopInvestigatorToolset = managerbizloop.NewInvestigatorToolsetAdapter(log)
 	}
@@ -2029,6 +2540,22 @@ func main() {
 			}
 		}
 	}
+	if toolCount := len(middlewareReg.ListTools("")); toolCount > 0 {
+		causes := managerbizloop.ContractRootCauseLoader{Contracts: loopContractRepo}
+		loopRemediationLoader = managerbizloop.RootCauseRemediationLoader{Loader: causes}
+		loopRemediationInvoker = managerbizloop.RegistryInvoker{
+			Tools: middlewareReg,
+			// Arguments the option does not carry (a pid, a role) come
+			// from the evidence the investigation recorded, never from a
+			// default. Actions with no evidence-backed extractor still
+			// refuse through the invoker's own missing-argument check.
+			ArgResolver: managerbizloop.EvidenceArgResolver{Causes: causes},
+		}
+		log.Info("loop: remediation dispatch wired", slog.Int("tools", toolCount))
+	} else {
+		log.Warn("loop: no remediation adapter DSN is set; the approved phase cannot dispatch any remediation",
+			slog.String("hint", "set OPSKEEPER_LOOP_PG_DSN / _REDIS_DSN / _K8S_DSN / _MQ_DSN / _HOST_DSN"))
+	}
 	// KB-first wire-up (chatruntime-kb-implementation)
 	//  - PatternMeta: MySQL GORM UPSERT（metadata）
 	//  - QdrantPatternRepo: Qdrant cosine search（向量 + payload）
@@ -2037,7 +2564,7 @@ func main() {
 	//  - EmbedderAdapter: bridge pkg/embedding → chatdiagnose.Embedder
 	var (
 		chatDiagKB managerbizchatdiagnose.KBLookup
-		// compositeRepo 在外层声明，供 postmortem worker 的 PatternWriter 复用
+		// compositeRepo 在外层声明，供 postmortem worker 的 PatternLearner 复用
 		compositeRepo *managerdatachatdiagnosestore.CompositePatternRepo
 	)
 	chatDiagAudit := managerbizchatdiagnose.NewAuditAdapter(auditUC)
@@ -2092,7 +2619,7 @@ func main() {
 	if loopRecoveryStateStore != nil {
 		loopStateStoreForWorkers = loopRecoveryStateStore
 	} else {
-		loopStateStoreForWorkers = aiopstools.NewInMemoryRecoveryStateStore()
+		loopStateStoreForWorkers = recovery.NewInMemoryRecoveryStateStore()
 	}
 	if sqlDB != nil {
 		loopCorrelatedGroupLoader = managerbizloop.NewCorrelatedGroupLoaderAdapter(
@@ -2107,29 +2634,64 @@ func main() {
 	approvedDecisionLoader := managerbizloop.NewDBApprovedDecisionLoader(
 		managerdataloopstore.NewContractRepoDB(db), log,
 	)
+	// The postmortem phase worker does not learn by itself: it reports the
+	// committed postmortem and the knowledge base's owner derives the row.
+	// Kept as a nil interface (not a nil-valued one) when the KB is not
+	// available, so the worker skips write-back instead of calling through.
+	var patternLearner managerbizloop.PatternLearner
+	if compositeRepo != nil {
+		patternLearner = managerbizchatdiagnose.NewPatternLearner(compositeRepo)
+	}
 	loopWorkers, err := managerbizloop.DefaultPhaseWorkerFactory(managerbizloop.PhaseWorkerDeps{
 		// loop-repository-integration + loop-recovery-integration + agentteams-opskeeper-integration:
 		// all narrow deps on real adapters when DB available.
-		VerifyCaller:                aiopstools.VerifyRecoveryCallerAdapter{Tool: verifyRecoveryTool},
+		VerifyCaller:                recovery.VerifyRecoveryCallerAdapter{Tool: verifyRecoveryTool},
 		StateStore:                  loopStateStoreForWorkers,
 		ApprovedRefLoader:           approvedDecisionLoader,
 		FlowRunner:                  managerbizloop.NoopFlowRunner{},
 		PauseHook:                   managerbizloop.NoopPauseHook{},
 		Logger:                      log.With(slog.String("comp", "loop")),
 		LLMCaller:                   loopLLMCaller,
-		AlertRepo:                   managerbizloop.NewAlertRepoAdapter(alertRepo, log),
+		AlertRepo:                   managerbizloop.NewAlertRepoAdapter(loopAlertReader{repo: alertRepo}, log),
 		CurrentDetectionEventLoader: managerbizloop.NewContractDetectionEventLoader(loopContractRepo),
 		InvestigatorToolset:         loopInvestigatorToolset,
 		CorrelatedGroupLoader:       loopCorrelatedGroupLoader,
 		GitArtifactSink:             loopGitSinkAdapter,
 		UpstreamContractLoader:      loopContractLoaderAdapter,
 		// chatruntime-kb-implementation: KB write-back hook for postmortem.
-		// nil 默认跳过 KB 写回；后续 Day 5+ 集成期注入 *chatdiagnosestore.CompositePatternRepo。
-		PatternWriter:          compositeRepo,
+		// nil 默认跳过 KB 写回。
+		//
+		// The nil test is on the concrete pointer, not on the interface. When
+		// Qdrant or the embedder is missing, compositeRepo stays a nil
+		// *CompositePatternRepo; handing that to an interface field makes the
+		// field non-nil, and the first postmortem of the run then calls Save
+		// on a nil receiver and dereferences c.meta. The previous wiring had
+		// exactly that shape (decision 114).
+		PatternLearner:         patternLearner,
 		ApprovedCritiqueLoader: managerbizloop.NoopApprovedCritiqueLoader{},
+		RemediationLoader:      loopRemediationLoader,
+		RemediationInvoker:     loopRemediationInvoker,
 	})
 	if err != nil {
 		log.Error("loop: phase worker factory", slog.Any("err", err))
+	}
+	// Cost crystallisation (plan item 7). Whether it is on, and what the
+	// console reads, are decided in one function so all three can be tested
+	// from a process that is not a booted control plane; see
+	// loop_crystallize.go for what the three decisions are.
+	crystallization, cerr := newLoopCrystallization(middlewareReg, alertRepo, aiopsHandler, log)
+	// The last hop of the crystallisation path: a promoted draft that a human
+	// reviewed and published can be released from the surface that produced
+	// it, instead of being carried by hand to the release page by name. The
+	// release itself is the existing one — same manager, same canary, same
+	// halt-and-rollback, same audit. This only removes the transcription step
+	// between two pages that each already existed and neither knew about.
+	aiopsHandler.SetDraftReleaser(crystallizedReleaser{mgr: pluginReleaseMgr})
+	switch {
+	case cerr != nil:
+		log.Error("loop: crystallize learner init failed; cost crystallisation disabled", slog.Any("err", cerr))
+	case crystallization.enabled():
+		log.Info("loop: cost crystallisation wired", slog.Int("tools", crystallization.tools))
 	}
 	loopOrchestrator, err := managerbizloop.NewOrchestrator(managerbizloop.OrchestratorDeps{
 		// Locker: MySQL GET_LOCK/RELEASE_LOCK adapter (data/loop/store.NewLockerDB)
@@ -2140,13 +2702,15 @@ func main() {
 		ContractRepo:           loopContractRepo,
 		WorkerRegistry:         managerbizloop.NewWorkerRegistry(loopWorkers),
 		Logger:                 log.With(slog.String("comp", "loop")),
+		Crystallizer:           crystallization.crystallizer,
+		Triggers:               crystallization.triggers,
 	})
 	if err != nil {
 		log.Error("loop: orchestrator init", slog.Any("err", err))
 	}
 	loopMCPAdapter := managerbizloop.NewMCPAdapter(
 		loopOrchestrator,
-		aiopstools.VerifyRecoveryCallerAdapter{Tool: verifyRecoveryTool},
+		recovery.VerifyRecoveryCallerAdapter{Tool: verifyRecoveryTool},
 		managerbizloop.NewContractMCPRecoveryContextLoader(loopContractRepo),
 	)
 	// Chatdiagnose orchestrator adapter wraps loop.Orchestrator so the
@@ -2176,7 +2740,15 @@ func main() {
 		// production wire-up when sqlDB is set).
 		chatDiagRepo = managerbizchatdiagnose.NewInMemoryConversationRepo()
 	}
-	chatDiagRuntime := managerbizchatdiagnose.NewChatRuntimeAdapter(chatRT)
+	// The nil check is load-bearing, not defensive: a nil *Runtime put
+	// straight into the interface field would compare unequal to nil inside
+	// ReAct and panic on the first diagnostic of a boot with no LLM
+	// configured. See the note on chatDiagnoseReAct.ReAct.
+	chatDiagReAct := chatDiagnoseReAct{}
+	if chatRT != nil {
+		chatDiagReAct.rt = chatRT
+	}
+	chatDiagRuntime := chatDiagReAct
 	chatDiagSvc := managerbizchatdiagnose.NewChatDiagnoseService(
 		chatDiagRepo,
 		chatDiagKB,
@@ -2194,7 +2766,7 @@ func main() {
 	loopHTTPHandler, err := managerserverloop.NewHandler(
 		loopOrchestrator,
 		loopEventRepo,
-		aiopstools.VerifyRecoveryCallerAdapter{Tool: verifyRecoveryTool},
+		recovery.VerifyRecoveryCallerAdapter{Tool: verifyRecoveryTool},
 	)
 	if err != nil {
 		log.Error("loop: http handler init", slog.Any("err", err))
@@ -2213,6 +2785,7 @@ func main() {
 	if errDB == nil {
 		healthDB = sqlDB
 	}
+	healthRules, healthIncidents := newAlertHealthProbe(alertSvc)
 	systemHealthSvc := managersvcsystemhealth.New(managersvcsystemhealth.Config{
 		Version:             version,
 		PromEnabled:         cfg.Prom.Enabled,
@@ -2233,8 +2806,8 @@ func main() {
 		Grafana:   grafanaSvc,
 		Loki:      lokiProbe,
 		Tempo:     tempoProbe,
-		Rules:     alertSvc,
-		Incidents: alertSvc,
+		Rules:     healthRules,
+		Incidents: healthIncidents,
 		Edges:     edgeSvc,
 		LLM:       llmSettingsResolver,
 	})
@@ -2265,7 +2838,7 @@ func main() {
 	}
 
 	// L2 skill framework: builtin Executors registered via init() in
-	// internal/skill/builtin (imported above). Service dispatches via
+	// core/floor/skill/builtin (imported above). Service dispatches via
 	// frontierbound.Client; audit goes to MySQL skill_executions.
 	skillSvc := managerbizskill.New(
 		fbClient,
@@ -2353,7 +2926,23 @@ func main() {
 		SignaturePinnedKey:   mpPinnedKey,
 		DevMode:              mpDevMode,
 	}, log.With(slog.String("comp", "marketplace")))
-	marketplaceHandler := managerservermarketplace.NewHandler(mpUC)
+	// Legacy container -> PiG package conversion (PLAN D2). The route is
+	// admin-only and writes converted packages under the import root, which
+	// is where an operator reviews them before publishing through the
+	// release routes. Until OPSKEEPER_PLUGIN_IMPORT_DIR names a directory
+	// the route answers 503: a converter with nowhere reviewed to write is
+	// not half a feature, it is one that would put packages somewhere
+	// nobody chose.
+	//
+	// The converter now holds a port instead of calling the agent runtime's
+	// loader directly, and this is the one place the two are joined. The
+	// adapter is named rather than inlined because a seam test needs to
+	// hand the route a real converter too, and a method value on an
+	// anonymous struct would have made that impossible to write
+	// (decision 252).
+	pluginImporter := managerbizpluginimport.New(aiopschatruntime.ContainerLoader{})
+	marketplaceHandler := managerservermarketplace.NewHandler(
+		mpUC, pluginImporter.Import, os.Getenv("OPSKEEPER_PLUGIN_IMPORT_DIR"))
 	// HLD-017 generic secret vault: the single semantics-agnostic credential
 	// store installed skills (and future external-MCP clients) inject from.
 	secretUC := managerbizsecret.NewUsecase(managersecretdata.NewRepo(db))
@@ -2371,7 +2960,7 @@ func main() {
 	}
 	wrappedLoopMCPTools := make([]aiopstoolsbase.BaseTool, 0)
 	wrappedMCPTools := make(map[string]aiopstoolsbase.BaseTool)
-	for _, tool := range managerbizloop.NewMCPBaseTools(rootCtx, loopMCPAdapter) {
+	for _, tool := range aiopstools.NewMCPBaseTools(rootCtx, loopMCPAdapter) {
 		wrapped := aiopstoolsdec.Wrap(tool, loopMCPDeps)
 		wrappedLoopMCPTools = append(wrappedLoopMCPTools, wrapped)
 		if info, infoErr := wrapped.Info(rootCtx); infoErr == nil && info != nil {
@@ -2384,55 +2973,6 @@ func main() {
 		Limiter:    aiopstoolsdec.NewTokenBucketLimiter(0),
 		Registerer: reg,
 	}
-	mcpBaseBag := toolsReg.BuildBaseTools()
-	mcpBaseBag = aiopstools.AppendHostFilesTools(mcpBaseBag, fbClient, edgeUC, deviceUC, log)
-	mcpBaseTools := make([]mcpclient.Tool, 0)
-	for _, tool := range mcpBaseBag.AllTools() {
-		if tool == nil {
-			continue
-		}
-		info, err := tool.Info(rootCtx)
-		if err != nil {
-			log.Warn("loop: inspect MCP BaseTool metadata", slog.Any("err", err))
-			continue
-		}
-		if info == nil || info.Name == "" {
-			continue
-		}
-		wrapped := aiopstoolsdec.Wrap(tool, mcpBaseDeps)
-		wrappedMCPTools[info.Name] = wrapped
-		mcpBaseTools = append(mcpBaseTools, mcpclient.Tool{
-			Name:        info.Name,
-			Description: info.Description,
-			InputSchema: info.Parameters,
-		})
-	}
-	invokeLoopMCPTool := func(ctx context.Context, tenantID, name string, arguments json.RawMessage) (json.RawMessage, error) {
-		tool, exists := wrappedMCPTools[name]
-		if !exists {
-			return nil, managerbizloop.ErrMCPToolNotFound
-		}
-		output, err := tool.InvokableRun(ctx, string(arguments), aiopstoolsbase.WithTenant(tenantID))
-		if err != nil {
-			return nil, err
-		}
-		return json.RawMessage(output), nil
-	}
-	if err := mcpHandler.SetLoopTools(loopMCPAdapter, mcpBaseTools, invokeLoopMCPTool); err != nil {
-		log.Error("loop: MCP adapter init", slog.Any("err", err))
-		os.Exit(1)
-	}
-	mcpHandler.SetAuditEmitter(auditUC)
-	toolClasses := make(map[string]string, len(wrappedMCPTools))
-	for name, tool := range wrappedMCPTools {
-		info, err := tool.Info(rootCtx)
-		if err != nil || info == nil {
-			log.Error("loop: inspect MCP tool metadata", slog.String("tool", name), slog.Any("err", err))
-			os.Exit(1)
-		}
-		toolClasses[info.Name] = info.Class
-	}
-	mcpHandler.SetLoopToolMetadata(toolClasses)
 	// HLD-018 + flow: MCP tools are schema-typed callables, so they're
 	// first-class deterministic flow nodes (unlike SKILL.md skills). Wire a
 	// LIVE source into the flow palette + dispatcher now that mcpUC exists —
@@ -2447,7 +2987,8 @@ func main() {
 	// HLD-017 propose-confirm inbox: human approval queue for dangerous
 	// actions (agent cloud-shell, etc.). Additive — empty until a producer
 	// proposes; producers register their execute-on-approve executor.
-	approvalUC := managerbizapproval.NewUsecase(managerapprovaldata.NewRepo(db), log.With(slog.String("comp", "approval")))
+	// approvalUC is built at the top of main (next to auditUC) because the
+	// chat runtime's kernel gate consumes it; see the marker there.
 	approvalHandler := managerserverapproval.NewHandler(approvalUC)
 	// HLD-029 Data-Guard 业务层防护（路径 A P1-3 阶段 1）：人工打标 / 启发式 / 继承。
 	if err := internaldataguardstore.Migrate(db); err != nil {
@@ -2460,6 +3001,38 @@ func main() {
 		log.With(slog.String("comp", "dataguard")),
 	)
 	dataguardHandler := managerserverdataguard.NewHandler(dgLabelMgr)
+	// The reader-tier gate every tool call now passes through (decision 361).
+	//
+	// It is assembled here because this is the one place allowed to hold both
+	// halves: the label store, which knows how sensitive a resource is, and
+	// the iam enforcer, which knows whether this caller may read at that
+	// level. Until now both halves existed and neither was called from the
+	// other side of the wall between them.
+	readerGate = newSensitivityGate(
+		dgLabelMgr,
+		authzEnf,
+		iambizauthz.NewSensitivityTierRepo(db),
+		log.With(slog.String("comp", "sensitivity")),
+	)
+	// The write half of the same promise: an approval whose target carries a
+	// sensitivity label is raised to the class that label demands, which is
+	// what makes a Restricted resource cost two signatures (decision 363).
+	//
+	// Wired here rather than at construction because the label store is
+	// assembled here — and an approval usecase with no escalator is a
+	// deployment whose approvals are classified by their producers alone.
+	if esc := newSensitivityEscalator(dgLabelMgr, log.With(slog.String("comp", "escalate"))); esc != nil {
+		approvalUC.WithEscalator(esc)
+		log.Info("dataguard: sensitivity escalation armed on the approval path")
+	}
+	if readerGate != nil {
+		log.Info("dataguard: reader-tier gate armed on the console tool chain")
+		// The two surfaces that run the tool bag without going through the
+		// chat runtime are wired here, because the gate is built here and a
+		// gate that covers two of four doors is a gate an operator
+		// discovers the hard way.
+		flowInvoker.gate = readerGate
+	}
 	_ = internaldataguard.Public // keep import for Sensitivity type alias
 	// HLD-017 cloud_bash producer: register the execute-on-approve executor
 	// (resolve the bound credential → inject into the Runner sandbox → run)
@@ -2474,6 +3047,23 @@ func main() {
 		workspaceRoot = "/var/lib/opskeeper/workspace"
 	}
 	wsMgr := workspace.New(workspaceRoot)
+	// Eagerly create the workspace root so an unwritable state dir surfaces at
+	// STARTUP with the env var that fixes it — not at execute time, after a
+	// human already approved a change and the chat is blocked on it. The
+	// workspace default is a container path (/var/lib/opskeeper) that a
+	// non-root local/bare-metal run cannot write; serve_page and the
+	// marketplace skills root already warn at startup for the same reason
+	// (see toolwiring.apply and the marketplace wiring). An empty
+	// OPSKEEPER_WORKSPACE_ROOT disables the workspace (temp-dir fallback),
+	// so there is nothing to check in that case.
+	if workspaceRoot != "" {
+		if err := os.MkdirAll(workspaceRoot, 0o750); err != nil {
+			log.Warn("cloud_bash workspace: mkdir root failed; approved cloud_bash commands will fail to execute",
+				slog.String("dir", workspaceRoot),
+				slog.String("hint", "set OPSKEEPER_WORKSPACE_ROOT to a writable path"),
+				slog.Any("err", err))
+		}
+	}
 	approvalUC.RegisterExecutor("cloud_bash", func(ctx context.Context, payloadJSON string) (string, error) {
 		var p cloudBashPayload
 		if err := json.Unmarshal([]byte(payloadJSON), &p); err != nil {
@@ -2593,32 +3183,88 @@ func main() {
 		})
 		return string(out), nil
 	})
-	toolsReg.SetCloudBashProposer(cloudBashProposerShim{uc: approvalUC})
-	toolsReg.SetHostBashProposer(hostBashProposerShim{uc: approvalUC})
-	// send_im_message: the assistant can proactively push to a configured
-	// channel (飞书/钉钉/…), reusing the same BuildSenderFromChannel path the
-	// alert notifier + flow notify node use.
-	toolsReg.SetIMSender(imSenderShim{channels: alertRepo, router: notifyRouter})
-	// serve_page: the assistant can host a generated HTML report at an
-	// internal /pages/<token> URL. Pages live on the persistent volume; the
-	// route is registered on the mux below.
-	pagesDir := "/var/lib/opskeeper/pages"
-	if d := os.Getenv("OPSKEEPER_PAGES_DIR"); d != "" {
-		pagesDir = d
+	// Everything that decides what the tool bag contains is in
+	// toolRegistryWiring.apply — the one place those setters run, so a test
+	// can assert a capability the roadmap calls delivered is actually in the
+	// bag. See toolwiring.go for why that seam had to exist.
+	toolWiring.Approval = approvalUC
+	toolWiring.Channels = alertRepo
+	toolWiring.Router = notifyRouter
+	toolWiring.DB = db
+	toolWiring.LLM = modelRegistry
+	toolWiring.PagesDir = os.Getenv("OPSKEEPER_PAGES_DIR")
+	pageStore := toolWiring.apply(toolsReg)
+	// The MCP surface is assembled HERE, not where mcpHandler was built.
+	// Everything that changes what the registry yields — SetHostBashProposer,
+	// SetCloudBashProposer, SetIMSender, SetPageStore — runs after the handler
+	// exists, so a list assembled earlier is a snapshot of an earlier
+	// platform: cloud_bash, send_im_message and serve_page end up in the
+	// registry and in /skills while the MCP tools/list never hears of them.
+	// The chat tool bag had the identical defect (see the comment below) and
+	// gets the identical treatment: read the registry once, at the point where
+	// it is complete. Visibility is still decided per caller by the handler
+	// (tool class -> casbin action, worker role -> MCPAuthorizer), so moving
+	// the assembly changes what exists, not who may call it.
+	mcpBaseBag := toolsReg.BuildBaseTools()
+	mcpBaseBag = aiopshost.AppendHostFilesTools(mcpBaseBag, fbClient, edgeUC, deviceUC, log)
+	mcpBaseTools := make([]mcpclient.Tool, 0)
+	for _, tool := range mcpBaseBag.AllTools() {
+		if tool == nil {
+			continue
+		}
+		info, err := tool.Info(rootCtx)
+		if err != nil {
+			log.Warn("loop: inspect MCP BaseTool metadata", slog.Any("err", err))
+			continue
+		}
+		if info == nil || info.Name == "" {
+			continue
+		}
+		wrapped := aiopstoolsdec.Wrap(tool, mcpBaseDeps)
+		wrappedMCPTools[info.Name] = wrapped
+		mcpBaseTools = append(mcpBaseTools, mcpclient.Tool{
+			Name:        info.Name,
+			Description: info.Description,
+			InputSchema: info.Parameters,
+		})
 	}
-	pageStore := filePageStore{dir: pagesDir, log: log.With(slog.String("comp", "serve_page"))}
-	if err := os.MkdirAll(pagesDir, 0o755); err != nil {
-		log.Warn("serve_page: mkdir pages dir failed; serve_page disabled", slog.String("dir", pagesDir), slog.Any("err", err))
-	} else {
-		toolsReg.SetPageStore(pageStore)
+	invokeLoopMCPTool := func(ctx context.Context, tenantID, name string, arguments json.RawMessage) (json.RawMessage, error) {
+		tool, exists := wrappedMCPTools[name]
+		if !exists {
+			return nil, managerbizloop.ErrMCPToolNotFound
+		}
+		output, err := aiopstoolsdec.WithSensitivity(tool, readerGate).InvokableRun(ctx, string(arguments), aiopstoolsbase.WithTenant(tenantID))
+		if err != nil {
+			return nil, err
+		}
+		return json.RawMessage(output), nil
 	}
+	if err := mcpHandler.SetLoopTools(loopMCPAdapter, mcpBaseTools, invokeLoopMCPTool); err != nil {
+		log.Error("loop: MCP adapter init", slog.Any("err", err))
+		os.Exit(1)
+	}
+	mcpHandler.SetAuditEmitter(auditUC)
+	toolClasses := make(map[string]string, len(wrappedMCPTools))
+	for name, tool := range wrappedMCPTools {
+		info, err := tool.Info(rootCtx)
+		if err != nil || info == nil {
+			log.Error("loop: inspect MCP tool metadata", slog.String("tool", name), slog.Any("err", err))
+			os.Exit(1)
+		}
+		toolClasses[info.Name] = info.Class
+	}
+	mcpHandler.SetLoopToolMetadata(toolClasses)
+	log.Info("mcp: host tool surface assembled",
+		slog.Int("tools", len(mcpBaseTools)),
+		slog.Int("loop_tools", len(wrappedLoopMCPTools)),
+		slog.Int("classified", len(toolClasses)))
 	// The chat runtime's tool bag was compiled far above (line ~1274)
 	// BEFORE the cloud_bash proposer existed, so that BuildBaseTools didn't
 	// yield cloud_bash. SetCloudBashProposer fixes /v1/skills and any FRESH
 	// bag, but the already-built coordinator/worker graph still lacks the
 	// tool — and because the system prompt tells the LLM about cloud_bash,
-	// it issues a call that eino can't route, failing the whole stream with
-	// "tool cloud_bash not found in toolsNode indexes". Bolt it onto the
+	// it issues a call the loop cannot route, failing the call with "tool
+	// cloud_bash not found". Bolt it onto the
 	// live bag here, exactly like the AgentTool trio above. The coordinator
 	// (coordinatorToolNames) and specialist-ops (persona Tools list) filters
 	// both whitelist cloud_bash, so this single append reaches both.
@@ -2646,9 +3292,14 @@ func main() {
 			Limiter:    aiopstoolsdec.NewTokenBucketLimiter(0),
 			Registerer: reg,
 		}
+		// host_bash and cloud_bash return a host's own output: on a host someone
+		// else controls that text is theirs, so it goes to the model fenced, by
+		// the same table BuildBaseTools marks from (the tools here are bolted on
+		// after the bag was built).
+		chatFencer := promptguard.NewFencer()
 		chatRT.AppendToolBag([]aiopstoolsbase.BaseTool{
-			aiopstoolsdec.Wrap(aiopstools.NewBashToolWithProposer(fbClient, edgeUC, deviceUC, hostBashProposerShim{uc: approvalUC}, log), cbDeps),
-			aiopstoolsdec.Wrap(aiopstools.NewCloudBashTool(cloudBashProposerShim{uc: approvalUC}, log), cbDeps),
+			aiopstoolsdec.Wrap(aiopstools.MarkUntrustedOutput(aiopstools.NewBashToolWithProposer(fbClient, edgeUC, deviceUC, hostBashProposerShim{uc: approvalUC}, log), chatFencer), cbDeps),
+			aiopstoolsdec.Wrap(aiopstools.MarkUntrustedOutput(aiopstools.NewCloudBashTool(cloudBashProposerShim{uc: approvalUC}, log), chatFencer), cbDeps),
 			aiopstoolsdec.Wrap(aiopstools.NewInstallSkillTool(installSkillProposerShim{uc: approvalUC}, log), cbDeps),
 			aiopstoolsdec.Wrap(aiopstools.NewServePageTool(pageStore, log), quickDeps),
 			aiopstoolsdec.Wrap(aiopstools.NewSendIMMessageTool(imSenderShim{channels: alertRepo, router: notifyRouter}, log), quickDeps),
@@ -2707,7 +3358,33 @@ func main() {
 			}
 			if len(mcpTools) > 0 {
 				chatRT.AppendToolBag(mcpTools)
+				// Declare each MCP tool settled at the gate. Their risk class
+				// is inferred from the server's own naming (MCPToolClass), so
+				// a name like mcp__k8s__delete_pod is write-class — and it
+				// already owns its approval: a trusted server's call runs
+				// directly, an untrusted one queues through ProposeMCPCall.
+				// Declaring them here, where they are created, is what keeps
+				// the declaration next to the decision.
+				names := make([]string, 0, len(mcpTools))
+				for _, t := range mcpTools {
+					if info, ierr := t.Info(rootCtx); ierr == nil && info != nil {
+						names = append(names, info.Name)
+					}
+				}
+				kernelGate.Add(names...)
 				log.Info("mcp tools bolted onto chat runtime bag", slog.Int("mcp_tool_count", len(mcpTools)), slog.Int("tool_count", chatRT.ToolCount()))
+			}
+		}
+		// Last: assert every mutating tool in the FINAL bag has a declared
+		// approval owner. The bag has just stopped growing (the coordination
+		// trio, the proposer-backed shell tools and the MCP servers are all
+		// bolted on above), so this is the first moment the check can see
+		// cloud_bash and friends — and the last moment before the process
+		// starts answering turns with them.
+		if kernel == managersvcaiops.KernelPig {
+			if cerr := checkMutatingToolsDeclared(rootCtx, chatRT.Tools(), kernelGate); cerr != nil {
+				log.Error("aiops: refusing to serve the PiG kernel", slog.Any("err", cerr))
+				return
 			}
 		}
 	}
@@ -2722,12 +3399,22 @@ func main() {
 		slog.Bool("pinned_pubkey", mpPinnedKey != ""),
 	)
 
-	// Wire the multi-provider config resolver into the manager-scoped
-	// web_search built-in. Default provider is SearXNG (zero-config,
-	// docker-internal). The skill returns a skipped_reason envelope
-	// when the chosen provider is missing a key / unreachable, so this
-	// is safe to call even before any operator configures the integration.
-	skillbuiltin.SetWebSearchConfigResolver(managerbizsetting.NewWebSearchResolver(settingSvc))
+	// Build the manager-scoped web_search built-in with its dependencies
+	// and put it back in the catalogue. Default provider is SearXNG
+	// (zero-config, docker-internal). The skill returns a skipped_reason
+	// envelope when the chosen provider is missing a key / unreachable, so
+	// this is safe to call even before any operator configures the
+	// integration.
+	//
+	// Replace rather than mutate: the executor init() registered has no
+	// resolver and would answer every call with "SearXNG at its default
+	// URL, no key" for the life of the process. A registered instance that
+	// can be reconfigured after the fact is the thing this line used to do,
+	// through a package-level setter, and it is the reason the skill could
+	// not be tested in parallel.
+	skillcore.Replace(skillbuiltin.NewWebSearch(skillbuiltin.WebSearchDeps{
+		Resolver: managerbizsetting.NewWebSearchResolver(settingSvc),
+	}))
 
 	// Subprocess skill loader: walks each allowlist root and registers
 	// SubprocessSkills for every skill.json found. Empty dir list =
@@ -2759,7 +3446,7 @@ func main() {
 	// skill_bridge) are silently bypassed. Idempotent.
 	{
 		invBag := toolsReg.BuildBaseTools()
-		invBag = aiopstools.AppendHostFilesTools(invBag, fbClient, edgeUC, deviceUC, log)
+		invBag = aiopshost.AppendHostFilesTools(invBag, fbClient, edgeUC, deviceUC, log)
 		toolsReg.RegisterBaseToolsAsSkills(invBag, log.With(slog.String("comp", "inventory-bridge")))
 		// Re-merge so flow `tool` nodes can run tools registered after the
 		// invoker was first built — cloud_bash (its proposer is wired above)
@@ -2838,6 +3525,8 @@ func main() {
 	// without JWT. Network policy (docker-internal only) is the gate;
 	// nginx must NOT proxy_pass external traffic to /internal/auth/*.
 	edgeAuthHandler.Register(mux)
+	// A node reaches this one with its own credential, not a console session.
+	llmGateway.Register(mux)
 
 	// All BC HTTP lives under /api. Public iam routes (login / refresh)
 	// skip the auth middleware; everything else goes through it via
@@ -2915,13 +3604,7 @@ func main() {
 				w.Header().Set("content-type", "application/json")
 				_ = json.NewEncoder(w).Encode(map[string]any{"items": items, "total": len(items)})
 			})
-			protected.Delete("/v1/pages/{id}", func(w http.ResponseWriter, r *http.Request) {
-				if err := pageStore.Delete(r.Context(), chi.URLParam(r, "id")); err != nil {
-					http.Error(w, err.Error(), http.StatusBadRequest)
-					return
-				}
-				w.WriteHeader(http.StatusNoContent)
-			})
+			protected.Delete("/v1/pages/{id}", deleteHostedPage(pageStore))
 			// Authed in-app read of a page (the SPA fetches this with its bearer
 			// and renders it via iframe srcdoc — the page is NOT public).
 			protected.Get("/pages/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -2939,21 +3622,7 @@ func main() {
 			})
 			// Mint a TTL-bounded public share link for a page (off-platform,
 			// login-free) — mirrors POST /v1/reports/{id}/share.
-			protected.Post("/v1/pages/{id}/share", func(w http.ResponseWriter, r *http.Request) {
-				id := chi.URLParam(r, "id")
-				if _, err := pageStore.readPageHTML(id); err != nil {
-					http.NotFound(w, r)
-					return
-				}
-				exp := time.Now().Add(pageShareTTL)
-				tok := mintPageShareToken(cfg.JWT.Secret, id, exp)
-				w.Header().Set("content-type", "application/json")
-				_ = json.NewEncoder(w).Encode(map[string]any{
-					"share_token": tok,
-					"path":        "/api/p/" + tok,
-					"expires_at":  exp.UTC().Format(time.RFC3339),
-				})
-			})
+			protected.Post("/v1/pages/{id}/share", shareHostedPage(pageStore, cfg.JWT.Secret))
 			iamHandler.RegisterProtected(protected)
 			edgeHandler.Register(protected)
 			webshellHandler.Register(protected)
@@ -2964,6 +3633,9 @@ func main() {
 			logsHandler.Register(protected)
 			tracesHandler.Register(protected)
 			aiopsHandler.Register(protected)
+			if nodeAgentHandler != nil {
+				nodeAgentHandler.Register(protected)
+			}
 			alertHandler.Register(protected)
 			loopHTTPHandler.Register(protected)
 			managerserverloop.RegisterAdminRoutes(protected, managerserverloop.AdminRouteDeps{
@@ -2983,6 +3655,12 @@ func main() {
 			settingHandler.Register(protected)
 			integrationHandler.Register(protected)
 			marketplaceHandler.Register(protected)
+			pluginReleaseHandler.Register(protected)
+			// Every route here is admin: enrolment mints a credential
+			// that lets a remote process act for a cluster, and a
+			// publish puts new code onto hosts this root does not
+			// administer directly.
+			federation.handler.Register(protected)
 			secretHandler.Register(protected)
 			// /v1/mcp/servers 等 admin CRUD 仍走 protected（admin auth）
 			// /v1/mcp（Worker JSON-RPC 入口）/v1/state/*/v1/hitl/* 走 Bearer GatewayKey
@@ -3013,23 +3691,45 @@ func main() {
 				os.Getenv("OPSKEEPER_MINIO_BUCKET"),
 				os.Getenv("OPSKEEPER_MINIO_SECURE") == "true",
 			)
+			// The identity source is a constructor argument, not a setter.
+			// Before the cut these routes called mcpauth.FromContext as a
+			// package function, which is a dependency no port can narrow;
+			// now that the read is a port, an unconditional port passed
+			// through a setter is a port a boot path can forget. As an
+			// argument the compiler asks for it at every construction site.
+			//
+			// ContextIdentity is a zero-size struct, so there is nothing to
+			// keep in sync — it reads the same request context the
+			// authenticator below fills.
 			agentteamsHandler := managerserveragentteams.NewHandler(
 				agentteamsMinIO, nil,
 				os.Getenv("OPSKEEPER_SKILLS_DIR"),
+				mcpauth.ContextIdentity{},
 			)
 			if knowledgeUC != nil {
 				agentteamsHandler.SetKnowledgeWriter(knowledgeUC)
 			}
 			agentteamsHandler.SetIncidentRecorder(incidentcontrol.NewSQLRepository(db))
-			agentteamsHandler.SetAlertIncidentResolver(alertUC)
+			// The adapter, not the usecase. The port is declared in the
+			// agentteams package and names nothing from alert; the adapter is
+			// what turns "a filter and twenty-five columns" into "the two
+			// columns a recovery closure needs", and doing it here would have
+			// put the alert entity back on the consumer's side of the
+			// boundary it was just cut from.
+			agentteamsHandler.SetAlertIncidentResolver(managerbizalert.OpenAlertResolver{UC: alertUC})
 			_ = agentteamsHigress // 用于 cmd/opskeeper/auth_agentteams.go 的 Bearer 中间件
 
 			// Plugin 生命周期管理：filesystem registry + Bearer-auth CRUD/sync
 			pluginRegistry := managerserveragentteams.NewPluginRegistry(os.Getenv("OPSKEEPER_PLUGINS_DIR"))
 			pluginSync := buildPluginSyncClient(os.Getenv("OPSKEEPER_PLUGIN_SYNC_MODE"), log)
 			pluginMaxZipBytes := parsePluginMaxZipBytes(os.Getenv("OPSKEEPER_PLUGIN_MAX_ZIP_BYTES"))
+			// Same source as the routes above, and for the same reason: the
+			// plugin routes log which consumer asked, so an unwired identity
+			// there writes an empty consumer name into the audit trail
+			// rather than refusing the request.
 			agentteamsPluginHandler := managerserveragentteams.NewPluginHandler(
 				pluginRegistry, pluginSync, nil, pluginMaxZipBytes,
+				mcpauth.ContextIdentity{},
 			)
 
 			bearerAuth := newAgentTeamsAuthenticator(nil, signer)
@@ -3131,6 +3831,20 @@ func main() {
 				}
 			}
 		}
+	})
+
+	// The plugin release driver. It returns ctx.Err() on cancellation so
+	// that stopping is never mistaken for finishing — its work is never
+	// finished — but every other background loop here returns nil on
+	// egCtx.Done() so that Ctrl-C is not reported as a failure. The
+	// translation happens at this call site rather than inside Run, which
+	// keeps Run honest for a caller that *wants* the distinction.
+	eg.Go(func() error {
+		err := pluginReleaseDriver.Run(egCtx)
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+		return err
 	})
 
 	// HLD-010: audit retention sweep — drops audit_logs rows older than
@@ -3280,8 +3994,97 @@ type hitlRecoveryAuditRepo struct {
 	repo *managerdatahitlstore.Repo
 }
 
+// investigationRunner and transcriptReader are the two places where the
+// alert domain's words meet the agent kernel's, and they live here rather
+// than in either domain. That placement is the point: decision 118 cut
+// the last aiops <-> alert cycle by giving biz/alert/investigator ports
+// stated in its own value types, and a translation still has to happen
+// somewhere. Putting it in the composition root means the alert domain
+// never learns the agent's struct names and the agent never learns the
+// alert domain's — and a reader looking for "how does an alert become an
+// investigation" finds both halves on one screen instead of hunting
+// through two packages.
+
+type investigationRunner struct {
+	runtime interface {
+		SpawnWorker(ctx context.Context, req aiopschatruntime.SpawnRequest) (*aiopschatruntime.Worker, error)
+		StopWorker(ctx context.Context, workerID string) error
+	}
+}
+
+func (r investigationRunner) RunInvestigation(
+	ctx context.Context,
+	req investigator.InvestigationRequest,
+) (investigator.InvestigationOutcome, error) {
+	// Background: false is the contract, not a preference: the caller
+	// owns the report row's lifecycle and needs the answer before it can
+	// choose between ready, failed and salvaged.
+	worker, err := r.runtime.SpawnWorker(ctx, aiopschatruntime.SpawnRequest{
+		AgentName:   req.AgentName,
+		Prompt:      req.Prompt,
+		Background:  false,
+		SessionKind: req.SessionKind,
+		OwnerUserID: req.OwnerUserID,
+	})
+	if err != nil {
+		return investigator.InvestigationOutcome{}, err
+	}
+	if worker == nil {
+		// The nil-worker guard that used to live in the alert usecase,
+		// written as a defensive check against a fake, belongs here:
+		// this is the only side that can produce that value. Turning it
+		// into an error keeps the old behaviour — the report row still
+		// reaches a terminal state — now that a value return can no
+		// longer smuggle a silent success past the caller.
+		return investigator.InvestigationOutcome{}, errors.New("investigation runner: runtime returned no worker")
+	}
+	return investigator.InvestigationOutcome{
+		WorkerID:  worker.ID,
+		SessionID: worker.SessionID,
+		Result:    worker.Result,
+		Err:       worker.Err,
+	}, nil
+}
+
+func (r investigationRunner) StopWorker(ctx context.Context, workerID string) error {
+	return r.runtime.StopWorker(ctx, workerID)
+}
+
+type transcriptReader struct {
+	repo managerbizaiops.SessionRepo
+}
+
+// ListMessages narrows a transcript row to the three fields the salvage
+// path reads. The row will keep gaining columns as the chat runtime
+// grows; this projection is what keeps those additions out of the alert
+// domain's contract. A nil element is dropped rather than mapped to a
+// zero value, so a hole in the transcript is a gap in the rendered
+// summary instead of a fake empty message attributed to the assistant.
+func (t transcriptReader) ListMessages(
+	ctx context.Context,
+	sessionID string,
+	limit int,
+) ([]investigator.TranscriptMessage, error) {
+	rows, err := t.repo.ListMessages(ctx, sessionID, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]investigator.TranscriptMessage, 0, len(rows))
+	for _, m := range rows {
+		if m == nil {
+			continue
+		}
+		out = append(out, investigator.TranscriptMessage{
+			Role:     m.Role,
+			Content:  m.Content,
+			ToolName: m.ToolName,
+		})
+	}
+	return out, nil
+}
+
 func recoveryApprovalQueryFromRequest(
-	request aiopstools.RecoveryProposalRequest,
+	request recovery.RecoveryProposalRequest,
 	now time.Time,
 ) managerdatahitlstore.RecoveryApprovalQuery {
 	return managerdatahitlstore.RecoveryApprovalQuery{
@@ -3290,12 +4093,12 @@ func recoveryApprovalQueryFromRequest(
 		Kind:       request.Kind,
 		Action:     request.Action,
 		Resource:   request.Resource,
-		Execution:  request.Execution,
+		Execution:  recoveryExecutionTo(request.Execution),
 		Now:        now,
 	}
 }
 
-func (r hitlRecoveryAuditRepo) ReserveApprovedProposal(ctx context.Context, request aiopstools.RecoveryProposalRequest) error {
+func (r hitlRecoveryAuditRepo) ReserveApprovedProposal(ctx context.Context, request recovery.RecoveryProposalRequest) error {
 	return r.repo.ReserveApprovedForRecovery(
 		ctx,
 		recoveryApprovalQueryFromRequest(request, time.Now().UTC()),
@@ -3304,18 +4107,6 @@ func (r hitlRecoveryAuditRepo) ReserveApprovedProposal(ctx context.Context, requ
 
 func (r hitlRecoveryAuditRepo) CompleteReservedProposal(ctx context.Context, proposalID string, success bool, resultJSON string) error {
 	return r.repo.CompleteRecoveryExecution(ctx, proposalID, success, resultJSON, time.Now().UTC())
-}
-
-// llmResolverFunc is a tiny adapter from biz/setting.Service to the
-// llm.Resolver seam. Keeping it here (rather than in pkg/llm) avoids a
-// pkg/llm -> manager/biz/setting import that would invert the layer
-// direction.
-type llmResolverFunc struct {
-	svc *managerbizsetting.Service
-}
-
-func newLLMResolver(svc *managerbizsetting.Service) *llmResolverFunc {
-	return &llmResolverFunc{svc: svc}
 }
 
 // pluginEndpointResolver implements edgebiz.EndpointResolver: maps a
@@ -3335,6 +4126,41 @@ func newLLMResolver(svc *managerbizsetting.Service) *llmResolverFunc {
 // service name (loki, tempo, prometheus, grafana) — i.e. has no dot
 // and no port-without-host — as a marker that the admin hasn't
 // overridden the seed and we should fall through to PublicURL.
+// modelEndpointResolver implements the manager half of the plan's 0.2:
+// name the model endpoint once, cluster-wide, instead of provisioning each
+// host's environment by hand.
+//
+// It is a sibling of pluginEndpointResolver and reads the same two inputs
+// that one does — the manager's own public URL and a resolved model slug —
+// so a node is pointed at the gateway the console's model picker already
+// believes is the cluster default. When either is unknown it returns empty
+// strings rather than guessing: an empty answer is the node's signal to
+// leave its own configuration alone, which is the correct behaviour for a
+// manager that has no public URL yet.
+type modelEndpointResolver struct {
+	publicURL string
+	models    *pigmodel.Registry
+}
+
+// AgentEndpoint returns the base URL (suffix included) and the default model
+// slug. Both may be empty; see the type comment.
+func (r modelEndpointResolver) AgentEndpoint(ctx context.Context) (string, string) {
+	if r.publicURL == "" {
+		return "", ""
+	}
+	model := ""
+	if r.models != nil {
+		// The cluster default, resolved exactly as GET /v1/models resolves
+		// it. A failure here is not an error the heartbeat should carry: a
+		// node that cannot learn the slug still gets the endpoint and uses
+		// the endpoint's own default, which is a working deployment.
+		if resolved, _, err := r.models.Model(ctx, domain.ModelSelection{}); err == nil && resolved != nil {
+			model = resolved.ID
+		}
+	}
+	return strings.TrimRight(r.publicURL, "/") + "/v1", model
+}
+
 type pluginEndpointResolver struct {
 	publicURL string
 	loki      *managerbizsetting.LokiResolver
@@ -3422,33 +4248,38 @@ type edgeAuthAdapter struct {
 	authn *managerbizedge.AccessKeyAuthenticator
 }
 
+// globalTokenBudget adapts the console's daily-cap budget onto the node
+// gateway's two-method seam.
+//
+// It exists because the two consumers want different shapes of the same
+// question. The console's kernel asks per session and needs a user bucket;
+// the gateway asks per node and has no user at all, so it passes the global
+// bucket (user 0) — which is what the single-tenant deployment is, and is
+// still correct in a multi-tenant one because the daily cap stays a global
+// safety net (see config.LLMConfig.DailyTokenLimit).
+//
+// Both consumers hold the same *llm.InMemoryBudget, so a token spent by a
+// node is the same token the console sees against its ceiling.
+type globalTokenBudget struct {
+	inner *llm.InMemoryBudget
+}
+
+// Check reports whether the global daily bucket has room for one more call.
+func (b globalTokenBudget) Check(ctx context.Context, estPromptTokens int) error {
+	return b.inner.Check(ctx, 0, estPromptTokens)
+}
+
+// Record adds a settled call's tokens to the global daily bucket.
+func (b globalTokenBudget) Record(ctx context.Context, tokens int) error {
+	return b.inner.Record(ctx, 0, tokens)
+}
+
 func (a edgeAuthAdapter) AuthenticateEdge(ctx context.Context, accessKey, secretKey string) (uint64, error) {
 	sess, err := a.authn.Authenticate(ctx, accessKey, secretKey)
 	if err != nil {
 		return 0, err
 	}
 	return sess.EdgeID, nil
-}
-
-// Resolve implements llm.Resolver. Empty fields tell the LLM client to
-// fall back to its env-seeded cfg.OpenAI values.
-func (r *llmResolverFunc) Resolve(ctx context.Context) (string, string, string, error) {
-	if r == nil || r.svc == nil {
-		return "", "", "", nil
-	}
-	apiKey, _, err := r.svc.Get(ctx, settingmodel.CategoryLLM, settingmodel.KeyOpenAIAPIKey)
-	if err != nil {
-		return "", "", "", err
-	}
-	model, _, err := r.svc.Get(ctx, settingmodel.CategoryLLM, settingmodel.KeyOpenAIModel)
-	if err != nil {
-		return "", "", "", err
-	}
-	baseURL, _, err := r.svc.Get(ctx, settingmodel.CategoryLLM, settingmodel.KeyOpenAIBaseURL)
-	if err != nil {
-		return "", "", "", err
-	}
-	return apiKey, model, baseURL, nil
 }
 
 // firstNonEmpty returns the first non-empty string from its arguments,
@@ -3464,74 +4295,6 @@ func firstNonEmpty(vals ...string) string {
 	return ""
 }
 
-func knownLLMProviderIDs() []string {
-	return []string{
-		llm.ProviderOpenAI,
-		llm.ProviderAnthropic,
-		llm.ProviderZhipu,
-		llm.ProviderGemini,
-		llm.ProviderDeepSeek,
-		llm.ProviderKimi,
-		llm.ProviderCustom,
-	}
-}
-
-func reportLLMReady(resolver *managerbizsetting.LLMSettingsResolver) func(context.Context) error {
-	return func(ctx context.Context) error {
-		if resolver == nil {
-			return fmt.Errorf("%w: LLM provider not configured", errs.ErrNotWiredYet)
-		}
-		providers, resolvedDefault, err := resolver.ResolveProviders(ctx)
-		if err != nil {
-			return fmt.Errorf("resolve LLM providers: %w", err)
-		}
-		if id, _ := pickProviderDefault(providers, resolvedDefault); id != "" {
-			return nil
-		}
-		return fmt.Errorf("%w: LLM provider not configured", errs.ErrNotWiredYet)
-	}
-}
-
-type llmProviderCatalog interface {
-	Providers() []llm.ProviderInfo
-}
-
-func hasConfiguredLLMProvider(catalog llmProviderCatalog) bool {
-	return catalog != nil && len(catalog.Providers()) > 0
-}
-
-// pickProviderDefault mirrors llm.MultiClient's catalog default:
-// use the configured default when it names an available provider, otherwise
-// pick the first configured provider by stable provider id. Background graph
-// workers, including reports, rely on this to match /v1/aiops/models.
-func pickProviderDefault(providers []llm.ProviderConfig, preferred string) (string, string) {
-	preferred = strings.TrimSpace(preferred)
-	available := make([]llm.ProviderConfig, 0, len(providers))
-	for _, p := range providers {
-		if strings.TrimSpace(p.ID) == "" || strings.TrimSpace(p.APIKey) == "" {
-			continue
-		}
-		available = append(available, p)
-	}
-	if preferred != "" {
-		for _, p := range available {
-			if p.ID == preferred {
-				return p.ID, p.Model
-			}
-		}
-	}
-	sort.Slice(available, func(i, j int) bool { return available[i].ID < available[j].ID })
-	if len(available) > 0 {
-		return available[0].ID, available[0].Model
-	}
-	return "", ""
-}
-
-// dedupeModels returns vals with empty strings dropped and duplicates
-// removed, preserving first-seen order. The OpenAI model catalog is built
-// as [configuredModel, "gpt-4o", "gpt-4-turbo"]; out-of-box the configured
-// model defaults to "gpt-4o", which would otherwise list "gpt-4o" twice in
-// the SPA model picker.
 func dedupeModels(vals ...string) []string {
 	seen := make(map[string]struct{}, len(vals))
 	out := make([]string, 0, len(vals))
@@ -3548,6 +4311,119 @@ func dedupeModels(vals ...string) []string {
 	return out
 }
 
+// pigAgentDir picks the PiG configuration directory for this process.
+//
+// It holds no secret. OpsKeeper injects credentials into PiG's model
+// registry rather than performing a login, so the only thing PiG ever
+// writes here is the empty auth.json it creates on startup — the directory
+// is agent *configuration*, not a key store.
+//
+// OPSKEEPER_PIG_HOME is honoured so an operator debugging "which model did
+// the agent actually pick" can look at the directory rather than at a log
+// line. The fallback is a per-process temp directory rather than a fixed
+// path: two managers on one host must not share an agent directory, and a
+// fixed path under the working directory would be picked up by whatever
+// build artefact happened to be deployed there.
+func pigAgentDir(log *slog.Logger) string {
+	if dir := strings.TrimSpace(os.Getenv("OPSKEEPER_PIG_HOME")); dir != "" {
+		return dir
+	}
+	dir, err := os.MkdirTemp("", "opskeeper-pig-")
+	if err != nil {
+		// Not fatal, and not worth failing a boot over: NewRuntime creates
+		// the directory anyway, and a process that cannot make a temp dir
+		// is going to fail on its database long before it fails here.
+		log.Warn("pig: no temp dir for the agent configuration; falling back to ./.pig",
+			slog.Any("err", err))
+		return filepath.Join(".", ".pig")
+	}
+	log.Debug("pig: agent configuration directory", slog.String("dir", dir))
+	return dir
+}
+
+// newPigRuntime builds the process-wide PiG runtime: the model registry every
+// session resolves against, the extension runner, and the working directory
+// every turn runs in.
+//
+// It is a named function rather than an inline literal so that the working
+// directory can be asserted instead of read. The two fields below are the
+// two halves of the containment story — where the credentials live, and
+// where a tool's relative paths resolve — and both were wrong at least once
+// in a way that no caller could see (decisions 31, 171).
+func newPigRuntime(log *slog.Logger, abort context.Context) (*pigcoding.Runtime, error) {
+	return pigcoding.NewRuntime(pigcoding.RuntimeOptions{
+		AgentDir: pigAgentDir(log),
+		// CWD is the one field here that is a containment decision rather
+		// than a path. Every turn's relative paths resolve against it, and
+		// PiG discovers a session's skills, prompt templates and context
+		// files under it, so "." would mean "whatever directory the
+		// operator happened to start the manager from" — the repository in
+		// a developer checkout, the application root in a container — with
+		// any file dropped there participating in the control plane's
+		// prompt.
+		//
+		// SessionStartOptions.CWDOverride cannot fix this per turn: PiG only
+		// reads it when resuming a session whose stored cwd is gone.
+		// Measured in pigcontract (decision 171).
+		CWD:          pigWorkDir(log),
+		AbortContext: abort,
+	})
+}
+
+// pigWorkDir is the working directory every control-plane agent turn runs in.
+//
+// It is empty, it is 0700, and the process owns it. The alternative — running
+// every turn in the directory the manager was started from — is what this
+// replaced: in a developer checkout that is the repository, and in a
+// container it is the application root, so a relative path in a tool call
+// would resolve against OpsKeeper's own source tree.
+//
+// It is deliberately NOT the agent directory. That one holds the PiG
+// configuration (models.json, settings.json, auth state) and is read by the
+// runtime to build the provider catalog; a working directory that shares a
+// tree with the credential files is one path-resolution mistake away from
+// being an exfiltration route.
+//
+// A failure to create it is not fatal in the way a missing database is,
+// but it is not silently ignored either: falling back to "." would
+// reinstate the exact behaviour this function exists to remove, so the
+// fallback names the problem in the log and uses a fresh temp directory.
+func pigWorkDir(log *slog.Logger) string {
+	dir, err := os.MkdirTemp("", "opskeeper-pig-work-")
+	if err != nil {
+		log.Error("pig: no working directory for agent turns; relative paths "+
+			"will resolve against the process working directory, which is "+
+			"whatever directory the manager was started from",
+			slog.Any("err", err))
+		return "."
+	}
+	_ = os.Chmod(dir, 0o700)
+	log.Debug("pig: agent working directory", slog.String("dir", dir))
+	return dir
+}
+
+// reportLLMReady reports whether a report can actually be generated.
+//
+// It asks the Sync — the same published state an unpinned turn resolves
+// against — rather than re-deriving a default from the settings rows. A
+// readiness probe that computed its own answer was a second implementation
+// of "the default", and two implementations drift: the probe reported green
+// while the first report of the day failed, which is the worst possible split
+// because the operator sees the green one.
+func reportLLMReady(sync *llmpig.Sync) func(context.Context) error {
+	return func(context.Context) error {
+		if sync == nil || sync.Default() == "" {
+			return fmt.Errorf("%w: LLM provider not configured", errs.ErrNotWiredYet)
+		}
+		return nil
+	}
+}
+
+// dedupeModels returns vals with empty strings dropped and duplicates
+// removed, preserving first-seen order. The OpenAI model catalog is built
+// as [configuredModel, "gpt-4o", "gpt-4-turbo"]; out-of-box the configured
+// model defaults to "gpt-4o", which would otherwise list "gpt-4o" twice in
+// the SPA model picker.
 // chainInvestigators fans an incident out to multiple alert.Investigator
 // implementations (legacy ai_initial_diagnosis + new structured RCA).
 // nil entries are skipped; an all-nil input returns nil so the caller
@@ -3708,6 +4584,59 @@ func (s *chatruntimeReviewSpawner) SpawnReviewer(ctx context.Context, req aiopst
 	}, nil
 }
 
+// reportRunner is the second place where a domain's words meet the agent
+// kernel's, and for the same reason as investigationRunner above: decision
+// 253 gave biz/report a port stated in its own value types, and a
+// translation still has to happen somewhere. It lives in the composition
+// root so neither domain learns the other's struct names.
+//
+// It is deliberately a separate type from investigationRunner rather than a
+// second method on it. The two requests genuinely differ — this one carries
+// a Locale (a report is written for a person to read) and the alert domain's
+// does not (its transcripts are salvaged into a summary, not shown) — so one
+// shared type would have to carry both fields with one of them always zero,
+// which is the mirror image of the problem decision 253 just fixed.
+//
+// Background is hard-coded false and that is the contract both callers
+// share: the caller owns the row's lifecycle and has to choose a terminal
+// state before it can flip it.
+type reportRunner struct {
+	rt *aiopschatruntime.Runtime
+}
+
+func (r reportRunner) RunReporter(
+	ctx context.Context,
+	req managerbizreport.ReporterRequest,
+) (managerbizreport.ReporterOutcome, error) {
+	worker, err := r.rt.SpawnWorker(ctx, aiopschatruntime.SpawnRequest{
+		AgentName:   req.AgentName,
+		Prompt:      req.Prompt,
+		Background:  false,
+		SessionKind: req.SessionKind,
+		OwnerUserID: req.OwnerUserID,
+		Locale:      req.Locale,
+	})
+	if err != nil {
+		return managerbizreport.ReporterOutcome{}, err
+	}
+	if worker == nil {
+		// The nil-worker guard that used to live in the report generator,
+		// written as a defensive check against a fake, belongs here: this
+		// is the only side that can produce that value. Turning it into
+		// an error keeps the old behaviour — the report row still
+		// reaches a terminal state — now that a value return can no
+		// longer smuggle a silent success past the caller, which is what
+		// a nil worker with a nil error used to do.
+		return managerbizreport.ReporterOutcome{}, errors.New("report runner: runtime returned no worker")
+	}
+	return managerbizreport.ReporterOutcome{
+		SessionID: worker.SessionID,
+		WorkerID:  worker.ID,
+		Result:    worker.Result,
+		Err:       worker.Err,
+	}, nil
+}
+
 // reportDelivererShim implements bizreport.Deliverer over the alert
 // channel store + notify router, so biz/report stays free of the
 // notify / alert imports. For each channel id it loads the
@@ -3800,23 +4729,6 @@ func (s agentRegistryShim) HasAgent(name string) bool {
 	return ok
 }
 
-// providerInjectingClient wraps an llm.Client and stamps a fixed
-// Provider id into every ChatReq before forwarding. Used by
-// buildAIOpsRuntime to keep RoutingChatModel's per-provider inner
-// ChatModels routing through the existing MultiClient (which already
-// honours ChatReq.Provider) without writing N near-identical adapters.
-type providerInjectingClient struct {
-	inner    llm.Client
-	provider string
-}
-
-func (p *providerInjectingClient) Chat(ctx context.Context, req llm.ChatReq) (*llm.ChatResp, error) {
-	if req.Provider == "" {
-		req.Provider = p.provider
-	}
-	return p.inner.Chat(ctx, req)
-}
-
 // loadBootstrapRegistries walks ./agents + ./skills + the marketplace
 // skill root and returns populated registries. Called once at boot
 // regardless of kernel choice, so /v1/agents has data to render even
@@ -3860,9 +4772,42 @@ func loadBootstrapRegistries(log *slog.Logger) (*aiopschatruntime.SkillRegistry,
 	return skillReg, agentReg
 }
 
+// kernelWiring groups the extras the PiG loop needs.
+//
+// Grouped rather than added as four more positional parameters because they
+// are consumed together, by one branch: a caller either has a complete
+// kernel wiring or it is not selecting that loop at all.
+type kernelWiring struct {
+	// Kernel is what the operator selected. Every chatruntime kernel builds
+	// one — including the retired "graph" spelling, which no longer has a
+	// graph under it but does still mean "use chatruntime.Runtime".
+	Kernel managersvcaiops.Kernel
+	// Models is the settings-backed registry the one-shot completer already
+	// uses. The kernel resolves through the same object so a provider's
+	// transport and its prompt-cache session id are shared, not duplicated.
+	Models *pigmodel.Registry
+	// Gate decides whether a mutating call may run.
+	Gate *agentkernel.DeferredGate
+	// Audit receives the gate's decisions. The same ledger the rest of the
+	// control plane writes to.
+	Audit *managerbizaudit.Usecase
+	// PiGRuntime is the process-wide PiG container, required only by the
+	// SDK driver (KernelPigSDK). It is threaded rather than constructed
+	// here so that the runtime the sessions come from is provably the same
+	// one the model catalogue was published into and the same one an
+	// operator's plugins were loaded through. A second container would be
+	// a second extension runner, and a plugin that loaded into it would be
+	// invisible to a turn driven by the first.
+	PiGRuntime *pigcoding.Runtime
+	// Sensitivity is the reader-tier gate every console tool call passes
+	// through. Optional: nil leaves the chain ungated, which is a deployment
+	// with no Data-Guard tiers rather than one where everything is permitted.
+	Sensitivity ports.SensitivityGate
+}
+
 // buildAIOpsRuntime builds the chatruntime.Runtime when
-// OPSKEEPER_AGENT_KERNEL=graph. Returns (nil, err) on failure so the
-// caller can fall back to the legacy kernel without a panic.
+// OPSKEEPER_AGENT_KERNEL is graph or pig. Returns (nil, err) on failure so
+// the caller can fall back to the legacy kernel without a panic.
 //
 // coordinatorExtraToolNames are policy exceptions that are intentionally
 // coordinator-owned even though they are not registry core tools in every
@@ -3922,8 +4867,7 @@ func appendUniqueToolNames(names []string, extra ...string) []string {
 func buildAIOpsRuntime(
 	ctx context.Context,
 	cfg *config.Config,
-	llmClient llm.Client,
-	llmRouter *llm.MultiClient,
+	llmClient pigmodel.Completer,
 	toolsReg *aiopstools.Registry,
 	sessions managerbizaiops.SessionRepo,
 	fbClient *managersvcfb.Client,
@@ -3934,115 +4878,35 @@ func buildAIOpsRuntime(
 	skillReg *aiopschatruntime.SkillRegistry,
 	agentReg *aiopschatruntime.AgentRegistry,
 	resolver *managerbizsetting.LLMSettingsResolver,
+	wiring kernelWiring,
+	dailyBudget *llm.InMemoryBudget,
 ) (*aiopschatruntime.Runtime, error) {
-	// 1. RoutingChatModel — one inner per provider that exists. We
-	//    layer providerInjectingClient around the existing
-	//    llmRouter so each inner ChatModel routes its Chat() call
-	//    to the correct sub-Client. Models stamp their default model
-	//    name from cfg so a per-call model.WithModel still wins.
-	innerModels := map[string]einomodel.ChatModel{}
-	addInner := func(provider, defaultModel string) {
-		ic := &providerInjectingClient{inner: llmClient, provider: provider}
-		m, err := llm.NewClientChatModel(llm.ClientChatModelConfig{
-			Client: ic,
-			Model:  defaultModel,
-		})
-		if err != nil {
-			log.Warn("chatruntime: build inner ChatModel",
-				slog.String("provider", provider), slog.Any("err", err))
-			return
-		}
-		innerModels[provider] = m
-	}
-	// Build inners from the RESOLVED provider set (env + Settings-UI/DB),
-	// the same source the SPA model picker uses. Previously this gated on
-	// boot-time env keys only — so a provider configured via the UI (e.g.
-	// anthropic, with its key in the DB and an empty env var) showed in the
-	// picker but had no inner ChatModel, and picking it failed with
-	// "unknown provider". The per-call key is resolved by the
-	// resolver-backed llmClient, so registering the inner is all that's
-	// needed. defProv comes from the resolved default (DB default_provider).
-	defProv := cfg.LLM.Default
+	// 1. Model availability. The loop resolves its per-turn model through
+	//    the settings-backed PiG registry (pigRegistry) on every call, so
+	//    there are no per-provider inner ChatModels to compose here any
+	//    more: an admin key rotation lands on the next turn instead of at
+	//    the next restart.
+	//
+	//    What is still worth checking at boot is that the cluster has at
+	//    least one usable credential. Without one every turn fails with a
+	//    provider error, and the operator reads that as the product being
+	//    broken rather than as a missing key; refusing here lets main fall
+	//    back to the legacy loop and log which one is live.
 	if resolver != nil {
-		if provCfgs, resolvedDefault, rerr := resolver.ResolveProviders(ctx); rerr == nil {
-			for _, pc := range provCfgs {
-				addInner(pc.ID, pc.Model)
-			}
-			if id, _ := pickProviderDefault(provCfgs, resolvedDefault); id != "" {
-				defProv = id
-			}
+		provCfgs, _, rerr := resolver.ResolveProviders(ctx)
+		if rerr != nil {
+			log.Warn("chatruntime: resolve providers", slog.Any("err", rerr))
 		} else {
-			log.Warn("chatruntime: resolve providers for inner models", slog.Any("err", rerr))
-		}
-	}
-	// Safety net: if the resolver gave nothing (error / no rows), fall back
-	// to the boot-time env-keyed providers so the kernel still wires.
-	if len(innerModels) == 0 {
-		if cfg.OpenAI.APIKey != "" {
-			addInner(llm.ProviderOpenAI, firstNonEmpty(cfg.OpenAI.Model, "gpt-5.4"))
-		}
-		if cfg.LLM.Anthropic.APIKey != "" {
-			addInner(llm.ProviderAnthropic, firstNonEmpty(cfg.LLM.Anthropic.Model, "claude-sonnet-4-6"))
-		}
-		if cfg.LLM.Zhipu.APIKey != "" {
-			addInner(llm.ProviderZhipu, firstNonEmpty(cfg.LLM.Zhipu.Model, "glm-4.7"))
-		}
-		if cfg.LLM.Gemini.APIKey != "" {
-			addInner(llm.ProviderGemini, firstNonEmpty(cfg.LLM.Gemini.Model, "gemini-2.5-pro"))
-		}
-	}
-	// Pre-register an inner for every known provider id (incl. the generic
-	// "custom" endpoint) even if unconfigured at boot, so a provider whose key
-	// is added via the UI AFTER boot routes immediately — no restart. Only the
-	// inner's existence is boot-time; the per-call key/baseURL is resolved
-	// dynamically by llmClient. Unconfigured providers never reach the picker
-	// (the /v1/aiops/models catalog gates on ResolveProviders), so they're
-	// never selected; a stray call to one fails cleanly at key resolution.
-	for _, id := range knownLLMProviderIDs() {
-		if _, ok := innerModels[id]; !ok {
-			addInner(id, "") // model supplied per-call (picker / DefaultResolver)
-		}
-	}
-	if len(innerModels) == 0 {
-		return nil, fmt.Errorf("chatruntime: no LLM provider configured")
-	}
-	if defProv == "" {
-		defProv = llm.ProviderOpenAI
-	}
-	if _, ok := innerModels[defProv]; !ok {
-		// Default provider not configured — pick the first configured
-		// provider alphabetically so the result is deterministic across
-		// restarts (Go map iteration order is randomized).
-		keys := make([]string, 0, len(innerModels))
-		for k := range innerModels {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		defProv = keys[0]
-	}
-	// DefaultResolver lets calls that omit a provider (the RCA investigator
-	// worker, query_translate) track the LIVE configured default — the model
-	// the home-page picker writes to default_provider / <provider>_default_model
-	// — instead of the boot-time defProv. The chat picker pins a provider
-	// per-message and is unaffected. Resolved per-call (cheap: a settings read,
-	// and only on default-routed calls, which are low-frequency).
-	var defaultResolver func(context.Context) (string, string)
-	if resolver != nil {
-		defaultResolver = func(rctx context.Context) (string, string) {
-			provCfgs, resolvedDefault, rerr := resolver.ResolveProviders(rctx)
-			if rerr != nil {
-				return "", ""
+			usable := 0
+			for _, pc := range provCfgs {
+				if strings.TrimSpace(pc.APIKey) != "" {
+					usable++
+				}
 			}
-			return pickProviderDefault(provCfgs, resolvedDefault)
+			if usable == 0 {
+				return nil, fmt.Errorf("chatruntime: no LLM provider configured")
+			}
 		}
-	}
-	chatModel, err := llm.NewRoutingChatModel(llm.RoutingChatModelConfig{
-		Inner:           innerModels,
-		DefaultProvider: defProv,
-		DefaultResolver: defaultResolver,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("chatruntime: NewRoutingChatModel: %w", err)
 	}
 
 	// 2. Tool bag — Registry.BuildBaseTools + AppendHostFilesTools,
@@ -4060,7 +4924,7 @@ func buildAIOpsRuntime(
 	//    threshold the specialty tier auto-redacts and the LLM
 	//    fetches schemas via the always-loaded ToolSearch tool.
 	bag := toolsReg.BuildBaseTools()
-	bag = aiopstools.AppendHostFilesTools(bag, fbClient, edgeUC, deviceUC, log)
+	bag = aiopshost.AppendHostFilesTools(bag, fbClient, edgeUC, deviceUC, log)
 	baseTools := bag.SchemasForLLM()
 	reviewSpawner := &chatruntimeReviewSpawner{}
 	deps := aiopstoolsdec.Deps{
@@ -4088,7 +4952,7 @@ func buildAIOpsRuntime(
 	// without letting the coordinator turn into a full deep-dive worker.
 	// AgentTool / SendMessage / TaskStop survive automatically via the
 	// coordinatorOnlyTools carve-out (see filterToolsForAgent in
-	// internal/manager/biz/aiops/chatruntime/worker.go).
+	// core/manager/biz/aiops/chatruntime/worker.go).
 	//
 	// Coordinator whitelist:
 	//   - registered core tools from ToolBag metadata — query_* observability,
@@ -4116,43 +4980,20 @@ func buildAIOpsRuntime(
 		Source:   "builtin",
 	})
 
-	// 4. Callback deps. Persistence/Audit/Metrics use the same
-	//    SessionRepo + Registerer threaded everywhere. Budget gate is
-	//    wired when LLM.DailyTokenLimit > 0 — single global UTC-day cap
-	//    enforced against llm.InMemoryBudget (sufficient for the
-	//    private-MVP single-tenant scope).
-	cbDeps := aiopsgraphcb.Deps{
-		Persistence: aiopsgraphcb.PersistenceDeps{
-			Repo:       sessions,
-			Logger:     log.With(slog.String("comp", "chatruntime-persist")),
-			Registerer: reg,
-		},
-		Audit: aiopsgraphcb.AuditDeps{
-			Logger: log.With(slog.String("comp", "chatruntime-audit")),
-		},
-		Metrics: aiopsgraphcb.MetricsDeps{
-			Registerer: reg,
-		},
-	}
-	if cfg.LLM.DailyTokenLimit > 0 {
-		cbDeps.BudgetChecker = llm.NewInMemoryBudget(cfg.LLM.DailyTokenLimit)
-		log.Info("aiops: daily token budget enabled",
-			slog.Int("daily_limit", cfg.LLM.DailyTokenLimit),
-		)
-	}
+	// 4. Daily token budget. Built by main and passed in rather than built
+	//    here, because the node gateway is gated by the same instance — see
+	//    the construction site for why that matters. nil means the operator
+	//    set no cap, and nil is what the kernel's own nil-safe wrapper
+	//    expects.
 
 	// 5. Stitch the runtime.
-	// ctx + llmRouter are reserved for future runtime hooks (e.g.
-	// per-call provider catalog refresh). Reference them so unused-
-	// param lints stay quiet across edits.
 	_ = ctx
-	_ = llmRouter
-	// Coordinator-only redirect stubs (see redirect_stub.go). They
+	// Coordinator-only redirect stubs (see tools/toolcore/redirect.go). They
 	// catch hallucinated tool names so the LLM gets a "use AgentTool
 	// to dispatch" hint instead of crashing the graph with
 	// "tool not found in toolsNode".
 	coordStubs := make([]aiopstoolsbase.BaseTool, 0)
-	for _, t := range aiopstools.CoordinatorRedirectStubs() {
+	for _, t := range aiopstoolscore.CoordinatorRedirectStubs() {
 		// Same decorator chain as real tools so timeouts / audit
 		// behave consistently (the stub's body is trivial so the
 		// timeout is harmless, audit just records a no-op call).
@@ -4162,24 +5003,71 @@ func buildAIOpsRuntime(
 			Registerer: reg,
 		}))
 	}
+	// 5b. Agent kernel. When the deployment selected the PiG loop the
+	//     mutating-tool declaration is checked here, before the runtime
+	//     exists: a mutating tool nobody declared has no approval owner, and
+	//     discovering that at the first call would show up as a second
+	//     approval card for one action — indistinguishable, from the
+	//     console, from the product working as designed.
+	// The mutating-tool declaration check does NOT run here: this bag is
+	// still growing — the coordination trio, the proposer-backed shell tools
+	// and every MCP server are bolted on after this function returns. It
+	// runs in main() once the bag has stopped changing, which is the first
+	// moment it can see cloud_bash and friends.
+	var agentKernel pigagent.Agent
+	if wiring.Kernel.UsesChatRuntime() {
+		var runtimeRef *aiopschatruntime.Runtime
+		var kernelBudget agentkernel.TokenBudget
+		if dailyBudget != nil {
+			// Typed nil must not become a non-nil interface: NewBudget's
+			// guard is on the interface, and a *llm.InMemoryBudget boxed in
+			// one would pass it and then dereference nil on the first call.
+			kernelBudget = dailyBudget
+		}
+		k, kerr := newAgentKernel(agentKernelInput{
+			Models:     wiring.Models,
+			Gate:       wiring.Gate,
+			Sessions:   sessions,
+			Audit:      wiring.Audit,
+			Budget:     kernelBudget,
+			Model:      cfg.OpenAI.Model,
+			Driver:     wiring.Kernel,
+			PiGRuntime: wiring.PiGRuntime,
+			Logger:     log.With(slog.String("comp", "agentkernel")),
+			Registerer: reg,
+			// Same ceiling the graph path uses; a persona may lower it.
+			MaxIterations: 30,
+			AfterAssistantRow: func(sessionID, messageID string) {
+				// The runtime is captured, not passed: it does not exist
+				// yet, and by the time a row is written it does.
+				if runtimeRef != nil {
+					runtimeRef.FlushAssistant(sessionID, messageID)
+				}
+			},
+		})
+		if kerr != nil {
+			return nil, kerr
+		}
+		agentKernel = k
+		log.Info("aiops: agent kernel=pig (PiG loop)",
+			slog.String("selected", string(wiring.Kernel)),
+			slog.Bool("session_driver", wiring.Kernel.UsesPiGSession()),
+			slog.Int("settled_mutating_tools", len(wiring.Gate.Declared())))
+	}
+
 	rt, err := aiopschatruntime.NewRuntime(aiopschatruntime.Config{
+		Sensitivity:      wiring.Sensitivity,
 		SkillRegistry:    skillReg,
 		AgentRegistry:    agentReg,
 		Sessions:         sessions,
-		ChatModel:        chatModel,
+		Kernel:           agentKernel,
 		ToolBag:          wrapped,
 		CoordinatorStubs: coordStubs,
 		MentionResolver:  nil, // wired below if we have a searcher
 		BasePrompt:       opskeeperBasePrompt(),
 		HistoryLimit:     50,
-		GraphCfg: aiopsgraph.Config{
-			Model:         cfg.OpenAI.Model,
-			Temperature:   0.1,
-			MaxIterations: 30,
-			ToolTimeout:   15 * time.Second,
-		},
-		CallbackDeps: cbDeps,
-		Logger:       log.With(slog.String("comp", "chatruntime")),
+		MaxIterations:    30,
+		Logger:           log.With(slog.String("comp", "chatruntime")),
 	})
 	if err != nil {
 		return nil, err
@@ -4444,6 +5332,10 @@ func (s cloudBashProposerShim) ProposeAndAwait(ctx context.Context, command stri
 		Source:     "agent",
 		SessionID:  sessionID,
 		ProposedBy: userID,
+		// 这个工具自己声明 Class="read"，理由是"审批收件箱就是它的控制"。
+		// 对**这一次提案**来说，落地的是一条任意命令，所以它按 destructive
+		// 记账——双签规则看的正是这一行，而不是工具的自我声明。
+		RiskClass: string(domain.ClassDestructive),
 	})
 	if err != nil {
 		return "", err
@@ -4487,6 +5379,15 @@ func (s hostBashProposerShim) ProposeAndAwait(ctx context.Context, deviceIDs []u
 		Source:     "agent",
 		SessionID:  sessionID,
 		ProposedBy: userID,
+		RiskClass:  string(domain.ClassDestructive),
+		// 命中设备数由 payload 决定，而 payload 是审批执行时才读的；这里
+		// 记的是"面向设备"这一类，规则按它决定要不要双签。
+		BlastRadius: "devices",
+		// 一条命令打一批设备时，卡片上显示第一个，升级看全部。
+		// **只查第一个就是决策 361 那个洞**：十二台里那台被标了
+		// Restricted 的，只要排在第二位就绕过去了。
+		Target:            firstDeviceID(deviceIDs),
+		EscalationTargets: deviceIDStrings(deviceIDs),
 	})
 	if err != nil {
 		return "", err
@@ -4575,6 +5476,9 @@ func (s installSkillProposerShim) ProposeInstall(ctx context.Context, url, sourc
 		Source:     "agent",
 		SessionID:  sessionID,
 		ProposedBy: userID,
+		// 工具自己的 Info 就是 Class="destructive"：装一个 skill 等于装一段
+		// 会执行的代码。这里抄的是那份声明，不是另一次判断。
+		RiskClass: string(domain.ClassDestructive),
 	})
 	if err != nil {
 		return "", err
@@ -4601,6 +5505,25 @@ func (s mcpCallerShim) CallMCPTool(ctx context.Context, server, tool string, arg
 
 // mcpProposerShim queues an MCP call into the human approval inbox (default,
 // untrusted path) — same propose-confirm model as cloud_bash.
+// firstDeviceID is the one device a card shows; deviceIDStrings is the set
+// the escalation judges. Splitting them is the point: the display wants one
+// and the gate wants all of them, and a single field would have to be one or
+// the other.
+func firstDeviceID(ids []uint64) string {
+	if len(ids) == 0 {
+		return ""
+	}
+	return strconv.FormatUint(ids[0], 10)
+}
+
+func deviceIDStrings(ids []uint64) []string {
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, strconv.FormatUint(id, 10))
+	}
+	return out
+}
+
 type mcpProposerShim struct{ uc *managerbizapproval.Usecase }
 
 func (s mcpProposerShim) ProposeMCPCall(ctx context.Context, server, tool string, args map[string]any, sessionID string, userID uint64) (string, error) {
@@ -4631,6 +5554,12 @@ type flowToolInvoker struct {
 	// run directly, NO human approval). Wired post-construction once mcpUC
 	// exists. nil → mcp tool nodes error cleanly ("unknown tool").
 	mcp *flowMCPSource
+	// gate is the reader-tier check, wired post-construction for the same
+	// reason mcp is: the Data-Guard halves are not assembled yet when the
+	// invoker is built. nil → this surface runs ungated, which is a
+	// deployment without Data-Guard tiers rather than one where everything is
+	// readable.
+	gate ports.SensitivityGate
 }
 
 func newFlowToolInvoker(reg *aiopstools.Registry, registerer prometheus.Registerer) *flowToolInvoker {
@@ -4698,7 +5627,7 @@ func (s *flowToolInvoker) InvokeTool(ctx context.Context, name string, args json
 	if info, ierr := t.Info(ctx); ierr == nil && len(info.Parameters) > 0 {
 		argsStr = coerceArgsToSchema(argsStr, info.Parameters)
 	}
-	out, err := t.InvokableRun(ctx, argsStr)
+	out, err := aiopstoolsdec.WithSensitivity(t, s.gate).InvokableRun(ctx, argsStr)
 	if err != nil {
 		return nil, err
 	}
@@ -4952,26 +5881,26 @@ func (s flowAgentRunner) RunAgent(ctx context.Context, persona, prompt string) (
 	return w.Result, nil
 }
 
-// flowLLMRunner implements bizflow.LLMRunner over the routing llm.Client
-// — one chat completion, no tools, no agent loop. Provider/Model left
-// empty so the call follows the configured default (DefaultResolver),
-// same as the report extractor / RCA summarizer.
-type flowLLMRunner struct{ client llm.Client }
+// flowLLMRunner implements bizflow.LLMRunner over the PiG completer — one
+// completion, no tools, no agent loop. The selection is left empty so the
+// call follows the configured default provider, the same answer the report
+// extractor and the RCA summarizer get.
+type flowLLMRunner struct{ client pigmodel.Completer }
 
 func (s flowLLMRunner) RunLLM(ctx context.Context, system, user string) (string, error) {
 	if s.client == nil {
 		return "", fmt.Errorf("llm client not configured")
 	}
-	msgs := make([]llm.Message, 0, 2)
+	msgs := make([]pigai.Message, 0, 2)
 	if strings.TrimSpace(system) != "" {
-		msgs = append(msgs, llm.Message{Role: "system", Content: system})
+		msgs = append(msgs, pigmodel.SystemTurn(system))
 	}
-	msgs = append(msgs, llm.Message{Role: "user", Content: user})
-	resp, err := s.client.Chat(ctx, llm.ChatReq{Messages: msgs})
+	msgs = append(msgs, pigmodel.UserTurn(user))
+	reply, err := s.client.Complete(ctx, pigmodel.Request{Messages: msgs})
 	if err != nil {
 		return "", err
 	}
-	return resp.Assistant.Content, nil
+	return pigmodel.ReplyText(reply), nil
 }
 
 // imSenderShim implements aiopstools.IMSender (the send_im_message tool seam)
@@ -5694,10 +6623,10 @@ func (a deploymentHealthAdapter) Health(ctx context.Context) (managerserverversi
 	if a.svc == nil {
 		return managerserverversion.HealthSummary{Overall: "unknown", Note: "systemhealth not wired"}, nil
 	}
-	// systemhealth.Check takes a Caller; we pass zero-value because
-	// the Check method's caller usage is limited to optional admin
-	// gating paths we don't exercise from the deployment probe.
-	report, err := a.svc.Check(ctx, managersvcalert.Caller{})
+	// The probe takes no caller: the health report is the same for
+	// everyone, and the two alert questions it asks discard the identity
+	// they are handed. The admin gate lives in the route handler.
+	report, err := a.svc.Check(ctx)
 	if err != nil {
 		return managerserverversion.HealthSummary{Overall: "unknown", Note: err.Error()}, nil
 	}
@@ -5729,4 +6658,294 @@ func (a deploymentHealthAdapter) Health(ctx context.Context) (managerserverversi
 		}
 	}
 	return managerserverversion.HealthSummary(summary), nil
+}
+
+// edgeInventoryFleet adapts the edge service to the release manager's
+// inventory port.
+//
+// It returns every registered edge, including ones that are offline. That
+// is deliberate: a node that is down is a node whose install fails, and the
+// failure is named in the release's status. A release that quietly skipped
+// the offline nodes would leave the fleet uneven with nothing recording why
+// — and the operator would find out when a node came back and was the only
+// one without the package.
+type edgeInventoryFleet struct {
+	svc *managersvcedge.Service
+}
+
+// edgeVersionInventory is the compatibility matrix's only input.
+//
+// Both axes are the node's own self-reports, read from the row it last
+// registered or heartbeated — columns the control plane already keeps, so
+// the matrix costs one query and no tunnel traffic. That last part is the
+// whole design: nodefleet.Fleet.Health is a live per-node RPC, and asking
+// every node every time an operator opens a page is how a read becomes an
+// outage. So neither version is polled; both are reported.
+//
+// The PiG axis rides the heartbeat rather than register_edge, and that is
+// not a detail. It is the one version on a node that changes after the
+// handshake: an upgraded edge restarts onto a new binary and keeps
+// heartbeating, and a value captured at connect time would have frozen at
+// the old build forever — the matrix would cheerfully clear a package
+// against a node that had already moved. The heartbeat is already the
+// node's periodic "this is what I currently am" report, so the version
+// belongs on it by construction rather than by a second mechanism.
+//
+// A node that reports no PiG version — an edge predating the field, or a
+// build that declines to — leaves the column empty, and
+// pluginmanifest.CheckVersions fails closed on it: the node says it
+// "cannot tell", which is the truth rather than a verdict nobody earned.
+// No shipped package declares min_pig_version yet, so that refusal costs
+// nothing today; it becomes the correct answer the moment one does.
+type edgeVersionInventory struct {
+	svc *managersvcedge.Service
+}
+
+// NodeVersions implements managersvcplugin.Versions.
+func (v *edgeVersionInventory) NodeVersions(ctx context.Context) ([]managersvcplugin.NodeVersions, error) {
+	if v == nil || v.svc == nil {
+		return nil, fmt.Errorf("the edge service is not wired")
+	}
+	edges, err := v.svc.List(ctx, managerbizedge.ListFilter{})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]managersvcplugin.NodeVersions, 0, len(edges))
+	for _, e := range edges {
+		if e == nil {
+			continue
+		}
+		out = append(out, managersvcplugin.NodeVersions{
+			NodeID:      e.ID,
+			Name:        e.Name,
+			EdgeVersion: e.AgentVersion,
+			PigVersion:  e.PigVersion,
+		})
+	}
+	return out, nil
+}
+
+func (f *edgeInventoryFleet) EdgeIDs(ctx context.Context) ([]uint64, error) {
+	if f == nil || f.svc == nil {
+		return nil, fmt.Errorf("the edge service is not wired")
+	}
+	edges, err := f.svc.List(ctx, managerbizedge.ListFilter{})
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]uint64, 0, len(edges))
+	for _, e := range edges {
+		if e != nil {
+			ids = append(ids, e.ID)
+		}
+	}
+	return ids, nil
+}
+
+// agentToolUpcall adapts the aiops tool registry to the transport's
+// agent.tool handler.
+//
+// It is a composition-root adapter on purpose. The registry is the control
+// plane's tool surface and the handler is a transport concern; wiring them
+// together here keeps frontierbound from importing the aiops registry, and
+// keeps the registry from knowing that a node process is one of its
+// callers.
+type agentToolUpcall struct {
+	reg   *aiopstools.Registry
+	fleet *managerbiznodefleet.Fleet
+	// middleware is the second registry this handler dispatches from: the
+	// adapters that talk to PostgreSQL, Redis, Kubernetes and the brokers.
+	//
+	// Two registries rather than one because they are two different
+	// things. The aiops registry holds the tools that answer *about* the
+	// fleet — the graph, the alert table, the metric store. The middleware
+	// registry holds the tools that reach *into* the systems the control
+	// plane is connected to. Merging them would mean one registry whose
+	// entries have two different lifecycles: the aiops tools exist because
+	// the binary was built with them, and the middleware tools exist
+	// because an operator configured a DSN for them.
+	//
+	// It is nil on a deployment that wired no adapters, which is not an
+	// error: the node's package then offers tools that answer "not
+	// configured", which is the correct answer.
+	middleware *middlewareregistry.Registry
+
+	//
+	// audit is the record of what this channel ran on a node's behalf.
+	// Every exit below goes through it, including the two refusals, so
+	// that "the control plane did this for my host" is a question the
+	// ledger can answer (决策 203). nil-safe: a deployment with no audit
+	// repository still serves tool calls.
+	audit *agentToolAudit
+}
+
+// RunAgentTool runs one tool a node's agent asked for.
+//
+// The session is the node's claim about whose conversation this is, and it
+// is checked rather than believed. A node authenticated as edge A naming a
+// conversation that belongs to edge B gets the answer for nobody: without
+// this check, one compromised node could drive the control plane under
+// another node's operator, and the audit trail would attribute it to
+// whichever conversation it happened to guess.
+//
+// An empty session is allowed through, because a node talking to itself —
+// a health probe, a package install check — has no conversation to name and
+// is not thereby impersonating one.
+func (a *agentToolUpcall) RunAgentTool(ctx context.Context, edgeID uint64, sessionID, tool string, args json.RawMessage) (json.RawMessage, error) {
+	started := time.Now()
+	result, denied, reason, err := a.dispatchAgentTool(ctx, edgeID, sessionID, tool, args)
+	a.audit.record(ctx, agentToolCall{
+		EdgeID:    edgeID,
+		SessionID: sessionID,
+		Tool:      tool,
+		Surface:   agentToolSurface(tool),
+		Args:      args,
+		Result:    result,
+		Started:   started,
+		Duration:  time.Since(started),
+		Denied:    denied,
+		Reason:    reason,
+		Err:       err,
+	})
+	return result, err
+}
+
+// agentToolSurface names which of the two registries served the call, for
+// the audit row. A reader asking "what did the control plane run" needs to
+// know whether the answer came from a tool that knows about the fleet or
+// one that reaches into a customer's database, and inferring that from the
+// tool name prefix would make the ledger depend on a naming convention.
+func agentToolSurface(tool string) string {
+	if toolset.ParseFamily(tool) != "" {
+		return "middleware"
+	}
+	return "aiops"
+}
+
+// dispatchAgentTool is the whole of RunAgentTool's decision-making, kept
+// separate so that the audit write has exactly one place to happen. A
+// second `return` added to RunAgentTool later cannot skip it, which is the
+// failure mode this shape exists to prevent.
+func (a *agentToolUpcall) dispatchAgentTool(ctx context.Context, edgeID uint64, sessionID, tool string, args json.RawMessage) (json.RawMessage, bool, string, error) {
+	if a.reg == nil {
+		// A call in the window between the transport coming up and the
+		// registry being built. Refusing is right: a half-built registry
+		// would answer for the tools it happened to have registered so far.
+		return nil, true, "the control plane is still starting", fmt.Errorf(
+			"%s is not available: the control plane is still starting", tool)
+	}
+	if a.fleet != nil && sessionID != "" {
+		if _, ok := a.fleet.Stats(edgeID, sessionID); !ok {
+			return nil, true, "the node named a session it does not own", fmt.Errorf(
+				"%s was not run: this node has no open conversation %q, so the call cannot be attributed to an operator",
+				tool, sessionID)
+		}
+	}
+	// A middleware family goes to its own registry. Routing by prefix
+	// rather than by trying one registry and then the other is deliberate:
+	// a lookup-order fallback would let a middleware tool be shadowed by an
+	// aiops tool of the same name, and the two surfaces are reviewed by
+	// different people for different reasons.
+	if toolset.ParseFamily(tool) != "" {
+		return a.runMiddlewareTool(ctx, tool, args)
+	}
+
+	res, err := a.reg.Invoke(ctx, tool, args)
+	if err != nil {
+		// The error is the model's to read, so it is passed through
+		// rather than flattened into a transport failure. "no such tool"
+		// and "the alert service is down" are different sentences and the
+		// model reacts to them differently.
+		return nil, false, "", fmt.Errorf("%s: %w", tool, err)
+	}
+	return res.ResultJSON, false, "", nil
+}
+
+// runMiddlewareTool dispatches a middleware tool the node's agent asked for.
+//
+// Three checks stand between the request and the adapter, and none of them
+// is the allow-list — that already ran on the node, twice: once in the
+// courier extension before the call left the agent process, and again in the
+// broker, which consults the admitted manifests before it dispatches. What
+// is added here is the check the node cannot make for itself.
+//
+//   - The tool must be registered in this deployment. An adapter with no DSN
+//     registers nothing, so a package's declared tool can legitimately not
+//     exist here, and "not configured on this deployment" is a different
+//     sentence from "no such tool". The first one an operator can act on.
+//   - The tool must be a read. This channel has no approval queue: a call
+//     that arrives on it is dispatched immediately and attributed to a
+//     conversation, and the adapters in this registry also offer
+//     pg.kill_session, k8s.drain and redis.flushdb. Those are reachable
+//     through the closed loop's approved dispatch, where a reviewer sees
+//     the blast radius; offering them here would be a second door into the
+//     same room with nobody behind it.
+//   - The result must marshal. The agent reads JSON, and a tool that
+//     returned a channel or a function would otherwise surface as a
+//     transport error that reads like the control plane being down.
+//
+// The class is re-derived here rather than trusted from the manifest for
+// the reason the node's gate re-derives it: a manifest is a claim, and a
+// claim that can widen a channel is worth checking twice.
+func (a *agentToolUpcall) runMiddlewareTool(ctx context.Context, tool string, args json.RawMessage) (json.RawMessage, bool, string, error) {
+	if a.middleware == nil {
+		return nil, true, "no middleware adapters are configured on this control plane", fmt.Errorf(
+			"%s is a middleware tool and this control plane wired no adapters, so it cannot run", tool)
+	}
+	spec, ok := a.middleware.GetTool(tool)
+	if !ok {
+		return nil, true, "the adapter backing this tool is not configured", fmt.Errorf(
+			"%s is not available on this deployment: the %s adapter is not configured",
+			tool, toolset.ParseFamily(tool))
+	}
+	// The one refusal on this channel that is a security decision rather
+	// than a configuration fact, and so the one an operator most wants to
+	// see afterwards: a node's agent reaching for a write tool.
+	if !toolset.IsRead(spec.RiskLevel) {
+		return nil, true, "a write-classed tool was offered on a read-only channel", fmt.Errorf(
+			"%s is a %s tool and this channel does not carry writes; it is reachable through the "+
+				"approved remediation path, where the change is reviewed before it runs",
+			tool, spec.RiskLevel)
+	}
+	var parsed map[string]interface{}
+	if len(args) > 0 {
+		if err := json.Unmarshal(args, &parsed); err != nil {
+			return nil, false, "", fmt.Errorf("%s: the arguments were not an object: %w", tool, err)
+		}
+	}
+	// The caller's ctx, not context.Background(). Dropping it here meant a
+	// handler that wanted the tenant, the deadline or the request id had
+	// nothing to read them from, and the audit row written one frame up
+	// was the only thing that could say who asked.
+	out, err := a.middleware.CallTool(ctx, tool, parsed)
+	if err != nil {
+		return nil, false, "", fmt.Errorf("%s: %w", tool, err)
+	}
+	body, err := json.Marshal(out)
+	if err != nil {
+		return nil, false, "", fmt.Errorf("%s ran, but its result could not be encoded for the agent: %w", tool, err)
+	}
+	return body, false, "", nil
+}
+
+// recoveryExecutionTo converts the recovery tool's own parameter struct into
+// the hitl domain's, field by field (decision 277). The two shapes are
+// declared on either side of the boundary on purpose — the hitl one is what
+// gets marshalled and digested, so it cannot move — and the conversion is
+// explicit rather than a cast so that a field added on one side without the
+// other is a compile error here instead of an absent key in the digest.
+// recoverycontract_test.go in the recovery package holds the two shapes
+// against each other; this function is the other half of that pin.
+func recoveryExecutionTo(e recovery.RecoveryExecution) hitlmodel.RecoveryExecutionParameters {
+	return hitlmodel.RecoveryExecutionParameters{
+		Command:            e.Command,
+		DeviceID:           e.DeviceID,
+		Service:            e.Service,
+		Reason:             e.Reason,
+		IncidentID:         e.IncidentID,
+		FixtureManifestID:  e.FixtureManifestID,
+		PoolManifestID:     e.PoolManifestID,
+		PreviewRunID:       e.PreviewRunID,
+		PreviewCandidateID: e.PreviewCandidateID,
+	}
 }

@@ -18,8 +18,14 @@ OpsKeeper is an auditable operations platform for multi-agent incident response.
 
 | Path | Contents |
 |---|---|
-| `cmd/` | Go services and command-line tools |
-| `internal/` | control plane, manager, MCP, incident, audit, and evaluation logic |
+| `cmd/` | Go services and command-line tools (the assembly layer) |
+| `core/` | contracts: domain vocabulary, port interfaces, wire DTOs |
+| `core/pig/` | the PiG adapter — the only place `github.com/MichaelKinsy/PiG` may be imported |
+| `core/manager/` | the control plane: identity, approval, audit, topology, knowledge, adapters |
+| `core/edge/` | the node plane: agent supervision, policy gate, collectors, host tools |
+| `core/floor/` | infrastructure both planes share: config, logging, manifest, metrics, tunnel, skills |
+| `core/harness/` | evaluation: golden cases, judge, leaderboard, projections |
+| `sdk/` | the third-party plugin surface |
 | `web/` | OpsKeeper web console |
 | `plugins/agentteams-plugin-installer/` | AgentTeams Dashboard installer plugin |
 | `plugins/opskeeper-teamharness/` | Worker/Manager integration plugin and MCP proxy |
@@ -31,7 +37,7 @@ OpsKeeper is an auditable operations platform for multi-agent incident response.
 
 Requirements:
 
-- Go 1.25+
+- Go 1.26+
 - Node.js 20+, npm 10+, and pnpm 9+
 - Python 3.11+
 - zip, tar, and standard POSIX shell tools
@@ -39,10 +45,16 @@ Requirements:
 Backend:
 
 ```bash
-go build ./...
-go test ./... -count=1
+go build ./...            # the root module is the assembly layer only
+make module-test          # build + test every module (core, pig, edge, floor, manager, harness, sdk)
+make module-check         # the module/BC boundary checker the module system cannot express
 make build
 ```
+
+The repository is seven Go modules plus five PiG extension modules. `go test
+./...` from the root covers the root module alone; `make module-test` runs the
+rest, and a golden-case corpus that was never run reports the same thing as a
+corpus that passed — which is why the Makefile target exists.
 
 Web console:
 

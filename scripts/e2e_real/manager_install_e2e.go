@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/vincent-wuhan/opskeeper/internal/agentteams"
+	"github.com/vincent-wuhan/opskeeper/core/manager/agentteams"
 )
 
 func main() {

@@ -2,6 +2,23 @@
 .gitignore
 .dockerignore
 
+# The developer's Go workspace is a file about THIS machine, and it wins over
+# the module graph: a go.work in the build directory is what `go build` obeys,
+# ahead of every replace in every go.mod. Ours carries
+#
+#     replace github.com/MichaelKinsy/PiG => <某人的绝对路径>
+#
+# so any developer who has a sibling PiG checkout gets an image build that only
+# works on their laptop, and the build dies with
+#
+#     reading <某人的绝对路径>/go.mod: no such file or directory
+#
+# The portable replacement chain already lives in the go.mod files, which are
+# what an image should be built from. It is gitignored for the same reason it is
+# excluded here: it is not part of the source, it is part of one checkout.
+go.work
+go.work.sum
+
 local/
 .cache/
 tmp/

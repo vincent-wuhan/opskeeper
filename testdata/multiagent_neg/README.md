@@ -10,6 +10,6 @@
 - **T10**: key 内 role 段乱填 → backend 接受（角色一致性未校验）
 - **T11**: 跨租户 → backend 接受（无 tenant 隔离）
 
-修复见 `internal/manager/server/mcp/middleware/auth.go`（F1-F5）。
+修复见 `core/manager/server/mcp/middleware/auth.go`（F1-F5）。
 
 `results.json` 是 2026-08-27 真实运行的 11 个 HTTP 响应。

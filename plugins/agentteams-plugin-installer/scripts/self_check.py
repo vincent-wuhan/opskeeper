@@ -70,7 +70,12 @@ def main() -> int:
     if backend_env:
         backend = Path(backend_env)
     else:
-        backend = Path(__file__).resolve().parents[3] / "internal" / "manager" / "server" / "agentteams" / "plugin_http.go"
+        # The manager module moved from internal/manager to core/manager in the
+        # 2.0 module split. This path was not moved with it, so `make
+        # verify-plugins` had been failing in CI since that split and nothing
+        # noticed: ci.yml had never run. Found by the first CI run this
+        # repository ever executed (decision 165).
+        backend = Path(__file__).resolve().parents[3] / "core" / "manager" / "server" / "agentteams" / "plugin_http.go"
     check(backend.is_file(), f"backend handler: {backend} (set OPSKEEPER_BACKEND_HANDLER_PATH to override)")
     if backend.is_file():
         text = backend.read_text()
@@ -100,7 +105,7 @@ def main() -> int:
     if test_env:
         test_path = Path(test_env)
     else:
-        test_path = Path(__file__).resolve().parents[3] / "internal" / "manager" / "server" / "agentteams" / "plugin_http_test.go"
+        test_path = Path(__file__).resolve().parents[3] / "core" / "manager" / "server" / "agentteams" / "plugin_http_test.go"
     check(test_path.is_file(), f"backend test exists: {test_path} (set OPSKEEPER_BACKEND_TEST_PATH to override)")
 
     print("=" * 60)

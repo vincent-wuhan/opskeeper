@@ -25,7 +25,7 @@ api/
 - `uint64` for IDs, `google.protobuf.Timestamp` for times, `string` for tokens.
 - Every RPC gets its own Request / Response type (even if empty) for forward-compat.
 - `org_id` is NEVER a user-supplied request field — it comes from JWT claims /
-  URL path via `internal/pkg/auth` middleware (ADR-003). It MAY appear in
+  URL path via `core/base/pkg/auth` middleware (ADR-003). It MAY appear in
   response messages as a read-only echo.
 - `optional` is used sparingly; omit unless explicit presence is load-bearing.
 - Each service's messages live in a single `.proto` file (don't split).

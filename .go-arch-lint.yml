@@ -2,107 +2,1090 @@
 # 运行：make arch-lint
 #
 # 顶层规则：
-#   - iam / manager / edgeagent 三大 BC 两两禁止互 import
-#   - internal/pkg/** 不得 import 任何 BC
+#   - iam / manager 两大 BC 两两禁止互 import（edgeagent 已迁出为 core/edge 模块）
+#   - core/base/pkg/** 与 core/floor/** 不得 import 任何 BC
 #   - 同一 BC 内部 service 层禁止越过 biz 直接 import 同 BC 的 data 层
 #     （go-arch-lint v3 支持以独立组件 + deps 表达，见下方 iam_service / manager_service 等）
 #
 # ADR-005 枢轴备注：iam 下只剩 user 子域（org/membership 已删）；data 目录
 # 由 mysql/ 重命名为 sqlite/。组件 glob 使用 `**`，无需逐级更新。
 
+# 决策 74 起，这份文件多了一条不变式，由 `make module-check` 强制：
+#
+#   **每一条 mayDependOn 都必须有至少一个真实 import 在用它。**
+#
+# 原因是这份文件的授权是组件粒度的。`manager_biz: mayDependOn
+# [manager_service]` 说的是「biz 整棵树可以看 service 整棵树」——作为
+# 架构陈述这是对的，但一旦某条边**只是因为某一个文件需要**才被加进来，
+# 它就顺带授权了之后所有同类导入，而没有任何东西会提醒：授权加上去的
+# 那天它有用，-import 被删掉之后它就成了一条永久静默的口子。
+#
+# 决策 74 之前，本文件有 104 条这样的授权，一条 import 都没有。删掉它们
+# 之后 go-arch-lint 仍然零告警（它对自己的配置是权威），而这份文件第一次
+# 变成了对代码的陈述，而不是一份没人行使过的权限清单。
+#
+# 越权方向另有一层：模块内「层与层」的逆向边（biz → service、model →
+# data 之类）由 modulecheck 的 layerInversion 台账逐文件记名，理由写在
+# 台账里。组件粒度在这里不成立，因为记组件等于没记。
 version: 3
 workdir: .
 
+# Vendor imports are not what this file is about: it encodes *component*
+# direction. The vendor graph is the go.mod's business, and turning the
+# per-component vendor check on here would add a second list to maintain for
+# no architectural statement. Project-component direction stays fully
+# enforced.
+allow:
+  depOnAnyVendor: true
+  # 依赖注入 / setter 注入分析默认关，而且必须显式关。
+  #
+  # 打开它时，工具会顺着构造函数把「谁被装配进谁」也算成一条依赖，然后用
+  # mayDependOn 这把尺子去判——但那把尺子管的是 **import**，不是 **装配**。
+  # 结果有两类假阳性：
+  #   1. 六边形结构本身：core/ports 的接口在 cmd 里由 manager_biz 的实现
+  #      满足，工具判成 "oxcore_ports 依赖 manager_biz"，而这正是端口存在
+  #      的意义（import 方向仍然只有 manager → core）。
+  #   2. cmd 是装配层：把 cmd 里定义的类型注入 manager_biz，判成
+  #      "manager_biz 依赖 cmd"，方向恰好相反。
+  #
+  # 关掉不等于承认没问题。它抓到的 41 条里有几条是真问题（core/base/pkg 与
+  # core/floor/skill 通过包级 Set*Resolver 反向拿到 manager/biz/setting 的
+  # 实现，绕过了 import 图）。用 mayDependOn 修这类问题等于给 core/floor/skill
+  # 发一张 import manager 的许可证——修法是拆掉包级 setter，那是 manager
+  # 迁移（决策 57）范围内的活，已经逐条记在 docs/opskeeper2-architecture.md
+  # 的「当前真实缺口」里。
+  deepScan: false
+
 components:
-  iam_service:     { in: internal/iam/service/** }
-  iam_biz:         { in: internal/iam/biz/** }
-  iam_data:        { in: internal/iam/data/** }
-  iam_model:       { in: internal/iam/model/** }
-  iam_server:      { in: internal/iam/server/** }
+  iam_service:     { in: core/manager/iam/service/** }
+  iam_biz:         { in: core/manager/iam/biz/** }
+  iam_data:        { in: core/manager/iam/data/** }
+  iam_model:       { in: core/manager/iam/model/** }
+  iam_server:      { in: core/manager/iam/server/** }
 
-  manager_service: { in: internal/manager/service/** }
-  manager_biz:     { in: internal/manager/biz/** }
-  manager_data:    { in: internal/manager/data/** }
-  manager_model:   { in: internal/manager/model/** }
-  manager_server:  { in: internal/manager/server/** }
+  manager_service: { in: core/manager/service/** }
+  # The release floor, cut out of the manager module. These five carry the
+  # same layer rules as their manager_* siblings — a file move does not
+  # change what a layer is allowed to see — and each mayDependOn below is
+  # the set the moved files actually import today, not the sibling's whole
+  # list, because a grant with no import behind it is a standing permission
+  # (see the decision-74 note at the top of this file).
+  oxdomains_service: { in: core/domains/service/** }
+  oxdomains_biz:     { in: core/domains/biz/** }
+  oxdomains_data:    { in: core/domains/data/** }
+  oxdomains_model:   { in: core/domains/model/** }
+  oxdomains_server:  { in: core/domains/server/** }
+  # 决策 123：根侧的集群通道。子集群侧是 manager_federation_child，这一边是它
+  # 的对端。依赖面被压到 oxdomains_biz（注册表与发布器）和 oxfloor（规则与
+  # 线上类型）两处，因为这一层的全部职责就是「记住哪个已认证的调用方可以
+  # 代表哪个子集群，然后把两个方向的调用发过去」。它一旦认得别的
+  # 包，绑定表就会开始替那些包做判断，而绑定表不是做判断的地方——
+  # 判断在注册表和子集群自己的接收器里。
+  manager_federation_link: { in: core/domains/service/federationlink/** }
+  manager_biz:     { in: core/manager/biz/** }
+  manager_data:    { in: core/manager/data/** }
+  manager_model:   { in: core/manager/model/** }
+  manager_server:  { in: core/manager/server/** }
 
-  edgeagent_service: { in: internal/edgeagent/service/** }
-  edgeagent_biz:     { in: internal/edgeagent/biz/** }
-  edgeagent_data:    { in: internal/edgeagent/data/** }
-  edgeagent_model:   { in: internal/edgeagent/model/** }
+  oxedge_service: { in: core/edge/service/** }
+  oxedge_biz:     { in: core/edge/biz/** }
 
-  shared_pkg: { in: internal/pkg/** }
+  shared_pkg: { in: core/base/pkg/** }
+  # 决策 66：llm 的 PiG 实现从 shared_pkg 里搬出来了。搬之前 shared_pkg 的
+  # mayDependOn 里挂着 oxpig_model 例外，理由是"PiG 支撑的 llm.Client 必须落在
+  # 控制面"——现在这个实现有自己的组件，例外可以删掉，shared_pkg 也就重新变回
+  # 一个不认识 agent 内核的底座。
+  shared_llmpig: { in: core/domains/llmpig/** }
   api:        { in: api/** }
   cmd:        { in: cmd/** }
 
+  # The rest of the shared floor. These trees are used by more than one
+  # bounded context (core/floor/skill by the node plane, the middleware
+  # adapters by manager and cmd, dataguard by iam and manager), which is what
+  # makes them floor rather than anybody's business layer. `internal/pkg`
+  # was the only one declared until now, so every import of the others read
+  # as "a component reached an undeclared package".
+  #
+  # They moved from internal/* to core/manager/* when the control plane's
+  # infrastructure went with the manager module (decision 62). The component
+  # names are unchanged because the rules they encode are unchanged; only
+  # the paths and the module underneath them are new.
+  # core/floor is the seventh module (decision 60): the infrastructure both
+  # planes need. It is a separate go module, so the Go toolchain already
+  # prevents it from reaching a bounded context; this component records the
+  # same fact where the rest of the directions are written down.
+  oxfloor: { in: core/floor/** }
+  shared_middleware:  { in: core/manager/middleware/** }
+  shared_knowledge:   { in: core/manager/knowledge/** }
+  shared_control:     { in: core/domains/control/** }
+  shared_dataguard:   { in: core/manager/dataguard/** }
+  shared_agentteams:  { in: core/manager/agentteams/** }
+  shared_observability: { in: core/manager/observability/** }
+  shared_migrate:     { in: core/manager/migrate/** }
+  shared_migrator:    { in: core/manager/migrator/** }
+  shared_higress:     { in: core/manager/higress/** }
+
+  # The node plane's own trees outside service/biz/model: the collectors,
+  # the plugins, the sandbox policies and the webshell. They are the node's
+  # data plane, and cmd/opskeeper-edge assembles them.
+  #
+  # The whole node plane moved from core/edge to the edge module
+  # (decision 61). The component names keep their shape because the rules
+  # they encode are unchanged; only the paths and the Go module underneath
+  # them are new.
+  oxedge_runtime:
+    in:
+      - core/edge/agentmodel/**
+      - core/edge/bash/**
+      - core/edge/changewatcher/**
+      - core/edge/cmdpolicy/**
+      - core/edge/collector/**
+      - core/edge/host_files/**
+      - core/edge/plugins/**
+      - core/edge/restart_service/**
+      - core/edge/skill/**
+      - core/edge/webshell/**
+
+  # Tooling and tests are their own components: a test that wires two
+  # planes together is not a violation of the planes' boundary, it is the
+  # place the boundary is exercised.
+  tests:   { in: tests/** }
+  scripts: { in: scripts/** }
+
+  # ---------------- OpsKeeper 2.0 modules ----------------
+  # These are separate go modules, not just subtrees. The Go module
+  # system already prevents cross-module import cycles; these rules
+  # document and enforce the intended direction so a violation is caught
+  # at review time rather than by a build failure that names the wrong
+  # thing.
+  #
+  #   core        the contract layer. Depends on nothing.
+  #   pig         the PiG adapter. The ONLY component permitted to
+  #               import github.com/MichaelKinsy/PiG.
+  #   plugin_sdk  the third-party plugin surface. Depends on core only.
+  # oxextension_container is the plugin loader (决策 271). Its only project
+  # edge is core/domain, for the port types the host implements — see the
+  # `deps:` entry below.
+  oxextension_container: { in: core/extension/biz/container/** }
+  oxcore_domain: { in: core/domain/** }
+  oxcore_ports:  { in: core/ports/** }
+  oxcore_wire:   { in: core/wire/** }
+  oxpig_model:   { in: core/pig/pigmodel/** }
+  oxpig_agent:   { in: core/pig/pigagent/** }
+  # oxpig_ai is the re-export surface for PiG's message and stream
+  # vocabulary (决策 67). It exists because the alternative was every host
+  # file importing github.com/MichaelKinsy/PiG/ai directly, which the module
+  # graph forbids — and the tempting fix, widening that rule, trades a real
+  # invariant for a quieter build. Every declaration in it is a type alias,
+  # so a caller that builds a pigai.Message hands PiG an ai.Message: a name
+  # is added, not a shape. Adding an entry here is a claim that PiG's
+  # definition of the concept is OpsKeeper's too, which is why the list is
+  # short and written out by hand.
+  oxpig_ai:      { in: core/pig/pigai/** }
+  # oxpig_coding embeds PiG's `coding` SDK — Services, Runtime, Session. It
+  # is the agent path; oxpig_model is the one-shot completion path. The two
+  # are separate components because their lifetimes are: a Runtime is
+  # process-wide and owns the extension runner, a Completer is per-call.
+  oxpig_coding:  { in: core/pig/pigcoding/** }
+  # oxpig_mcp is PiG's native MCP tool shape: a ports.MCPCatalogue turned
+  # into agent.AgentTool values. It is a leaf with no importer, and that is
+  # decision 85's verdict rather than an oversight — the control plane's MCP
+  # already reaches the session through the basetool path, so composing this
+  # one too would produce two tools of the same capability and only one of
+  # them gated. Its position is the node's `pig --mode rpc`. It is its own
+  # component so that "nothing imports it" is a fact this file states, not a
+  # fact nobody checked: a future wiring that reaches it has to add the grant
+  # and say so.
+  oxpig_mcp:     { in: core/pig/pigmcp/** }
+  # The tool-schema bridge and the scripted test stub. Both are leaves over
+  # oxpig_model with no OpsKeeper dependency of their own.
+  oxpig_tools:   { in: core/pig/pigtools/** }
+  oxpig_test:    { in: core/pig/pigtest/** }
+  oxpig_rpc:     { in: core/pig/pigrpc/** }
+  oxedge_pigsup:    { in: core/edge/pigsupervisor/** }
+  oxedge_policygate: { in: core/edge/policygate/** }
+  oxedge_gatesocket: { in: core/edge/gatesocket/** }
+  oxedge_toolbroker: { in: core/edge/toolbroker/** }
+  # 决策 98：节点自治仲裁器。它是本仓唯一一个「可以在没有人同意的情况下
+  # 执行命令」的组件，所以它的依赖面被压到只有契约层：能加进来的东西越少，
+  # 越不会有人在半年后往里面加一个「顺手」的执行路径。
+  oxedge_autonomy: { in: core/edge/autonomy/** }
+  # 决策 99：节点上唯一的落盘缓冲原语。自治审计、遥测 WAL、变更事件三处共用
+  # 一份实现，所以它必须是这三条路径里依赖面最小的一个——只依赖标准库。
+  # 谁往里面加一个「顺手」的 import，这个组件就会长出一条谁也没评审过的边，
+  # 而它下面是节点唯一一份没有备份的本地数据。
+  oxedge_spool:       { in: core/edge/spool/** }
+  # 决策 126：节点自己的账本。它是本仓唯一一份「AI 在这台机器上做了什么」
+  # 的落盘证据，所以它的依赖面被压到只有契约层加那份共享 spool：不 import
+  # tunnel，不 import manager（链在控制面，节点连它的类型都不需要知道）。
+  # **决策 326 把「线上的形状转换放在 cmd/opskeeper-edge 的装配根里」这半句
+  # 撤掉了**，理由不是它错了，而是它有一个当时看不见的代价：那份转换是这条
+  # 路上唯一一处「ports 词表 → 线形状」的映射，而它住在 package main 里，
+  # 于是**两头的测试都够不着它**——每一跳都有测试，整条路没有。转换被单独
+  # 拆成下面那个组件，账本本身的依赖面一个字没动，那段论证也就继续成立。
+  oxedge_auditlog:    { in: core/edge/auditlog/** }
+  # 决策 326：一个函数、一个组件。节点账本行从 ports 词表变成线上形状的那一步。
+  # 它必须同时认得这两样东西（core/ports 与 core/floor/tunnel），所以它不能
+  # 待在任何一个只认得其中一样的地方——放在装配根里它对测试不可见，放在
+  # auditlog 里它会把那份「依赖面越小越好」的论证作废。它不 import manager，
+  # 因为**节点连链长什么样都不需要知道**：它交出去的是一行内容，链接是中心
+  # 盖章的，一个能自己签链的节点就是一个能伪造链的节点。
+  oxedge_auditwire:   { in: core/edge/auditwire/** }
+  # 子集群侧的策略联邦代理：回答根下发的策略、汇报自己在 enforce 哪一版。
+  # 它的依赖面刻意只有 oxfloor——规则在 floor/federation，线上类型在
+  # floor/tunnel，磁盘上的策略树由本包自己管。它不从 core/edge 的任何其他
+  # 包取东西，因为这层代理的职责就是「在根不在的时候照常工作」：它一旦
+  # 认得 agent 的运行期、采集器或遥测 WAL，它的答案就不再只由策略状态决定，
+  # 而「答案只由策略状态决定」正是这一层存在的全部理由。
+  #
+  # 决策 125：它原来在 core/edge/federation，而 make module-check 抓到
+  # 装配根为了接子集群侧去 import 它——也就是说 manager 在组装自己的控制
+  # 平面时伸手进了 edge 模块。包里没有一行边缘代理代码（它拨号、答两个
+  # RPC、存一棵策略树），依赖闭包只有 floor 的两块，所以搬到 manager
+  # 侧做 federationlink 的对端，而不是给 cmd 开一条例外。
+  manager_federation_child: { in: core/domains/service/federationchild/** }
+  # 决策 99：遥测写前日志。它是节点唯一一份「写下来是为了以后再发」的数据，
+  # 而写下来这件事本身没有第二个可去的地方——所以它只允许看见落盘原语与
+  # 线上类型，不得直接 import 隧道客户端。发不发是装配根的决定，不是这里
+  # 的决定；一个能自己发出去的 WAL 会在装配根不知道的时候把数据送出去。
+  oxtelemetry_wal:   { in: core/edge/telemetrywal/** }
+  oxpig_wire:       { in: core/pig/pigwire/** }
+  oxplugin_sdk:     { in: sdk/** }
+  oxharness_schema:    { in: core/harness/schema/** }
+  oxfaults_injector:  { in: core/faults/injector/** }
+  oxharness_judge:     { in: core/harness/judge/** }
+  oxharness_runner:    { in: core/harness/runner/** }
+  oxharness_leaderboard: { in: core/harness/leaderboard/** }
+  oxharness_projection: { in: core/harness/projection/** }
+  oxharness_vocabulary: { in: core/harness/vocabulary/** }
+  # 决策 266：三轴派生。它此前住在 cmd/opskeeper-eval，于是 core/harness/runner
+  # 够不到它（runner 不 import cmd），那条评分路径上的每个 case 都没有三轴。
+  # 它只依赖 schema —— 读 case，不认识 judge，也不认识任何 harness 之外的东西。
+  oxharness_axes:      { in: core/harness/axes/** }
+  oxedge_agentprofile:  { in: core/edge/agentprofile/** }
+  oxpig_profile:        { in: core/pig/pigprofile/** }
+  oxpig_ext:            { in: core/pig/extensions/** }
+  # The compiled PiG contract. A leaf: it imports no OpsKeeper package
+  # and nothing imports it, so it constrains only itself.
+  oxpig_contract:       { in: core/pig/pigcontract/** }
+
 # 允许依赖的正向清单（未列出 = 禁止）
 deps:
+  # ---------------- 插件面 → 契约层 ----------------
+  #
+  # 决策 271 把容器加载器从 core/manager/biz/aiops/chatruntime 切到
+  # core/extension，切成一个独立的 go module。它全部的项目内依赖只有一条：
+  # core/domain——因为 ContainerLoader 要实现 domain.ContainerLoader 这个
+  # 端口，ContainerKind / LoadWarning 也要和端口签名对齐。
+  #
+  # 刻意**没有**的：core/manager（加载器是纯解析，需要的是文件系统和一个
+  # YAML 解析器；一旦它需要控制面替它决定什么，它就不是加载器而是一次对
+  # 控制面的请求）、core/pig、core/floor、core/base。第三方只允许
+  # gopkg.in/yaml.v3，而这条限制的真正执行者是 core/extension/go.mod 的
+  # require 表，不是这份 yml——模块系统是编译期的事实，arch-lint 是评审期
+  # 的提醒，两者都要有。
+  oxextension_container:
+    mayDependOn: [oxcore_domain]
+  # ---------------- BC → 2.0 契约层 ----------------
+  #
+  # 下面每个 BC 都被允许依赖 oxcore_*。这不是把边界放松，而是把已经存在
+  # 的事实写下来：BC 里有 51 个文件 import core/{domain,ports,wire}，在
+  # 2.0 之前这份配置把它们全部标成违规，而工具根本没装，所以没有人发现。
+  # 一份会拒绝仓库里 51 处合法导入的规则不是边界，是噪声——它真正的代价
+  # 是让人学会忽略红色。
+  #
+  # BC 仍然**不得**依赖另一个 BC，也不得依赖任何 oxedge_ 实现
+  # （manager_biz 的 pig 例外逐条写在下面），因为那才是边界本身。
+  # （显式列出而不是用 YAML 锚点：锚点展开成的是嵌套数组，
+  #   go-arch-lint 拿到的是 [["oxcore_domain", ...]] 而不是三个名字，
+  #   每一条都会静默失配。冗长但正确的配置，胜过一个看着干净、
+  #   实际上不生效的配置。）
+
   # ---------------- iam BC ----------------
   iam_server:
-    mayDependOn: [iam_service, iam_biz, iam_model, shared_pkg, api]
+    # 决策 109：这里原来挂着的 manager_biz / manager_model / manager_server
+    # 三条已经删掉。它们只服务于一件事：core/manager/iam/server/http.go 要能给一行
+    # 审计记录命名（动作、资源、结果），而审计链在 manager 的 biz 层（决策 35），
+    # 于是叶子 BC 只能反向 import 上层的三个包。现在行的形状改放在 shared_pkg 下的
+    # core/base/pkg/audit：只剩「怎么写一行」这个形状，写入的咽喉（biz/audit）
+    # 一点都没动。
+    #
+    # 为什么这不是把封装换个地址：原来那三条不是循环，只是因为 biz/audit 恰好没有
+    # import iam。现在 iam 依赖的是一个不依赖任何 BC 的树节点，而依赖方向由 Go 模块图
+    # 和 arch-lint 双重强制，不再靠「那个包没回头引用我」这个巧合。
+    #
+    # 保留的机制：决策 74 加的 dead-grant 检查会在授权无对应 import 时报错，所以上面
+    # 三条一删，就不会留下「可能有用」的死授权。
+    mayDependOn:
+      - iam_biz
+      - iam_model
+      - iam_service
+      - shared_pkg
   iam_service:
     # 关键：service 不得直接依赖 iam_data（必须走 biz）
-    mayDependOn: [iam_biz, iam_model, shared_pkg, api]
+    mayDependOn: [iam_biz, iam_model]
   iam_biz:
-    mayDependOn: [iam_model, shared_pkg]
+    # !!! 已知债务：arch-lint 的 mayDependOn 是组件粒度白名单，同组件新增同类导入不会再报警。
+    # 每条都对应真实违例文件，manager/iam 迁移到 core/manager 时随条目一起删除：
+    #   - iam_data: core/manager/iam/biz/sso/service.go 直接 import iam/data/sso（biz 越过端口拿实现）
+    mayDependOn: [iam_data, iam_model, shared_dataguard, shared_pkg]
   iam_data:
     mayDependOn: [iam_biz, iam_model, shared_pkg]
   iam_model:
-    mayDependOn: [shared_pkg]
-
+    # 决策 229 开了第一条：model.go 引用 core/base/pkg/tenantctx 的角色常量，
+    # 不再自己声明 `RoleAdmin = "admin"`。iam 是角色词汇的定义方（它拥有
+    # users.role 与 RoleCanMutate），而这个字符串同时被十几个 handler 读，
+    # 过去有六处各自复制一份、靠注释要求"保持同步"。把声明放在
+    # Tenant.Role 旁边、也就是 core/base/pkg 这棵每个 BC 都能 import 的树里，
+    # 两边就不必互相 import：iam/model 用别名保留自己的拼写（它的调用方遍布
+    # 控制面），imbridge 那条边因此整个消失。shared_pkg 不认识任何 BC，依赖它
+    # 不会把业务语义带进底座。
+    mayDependOn:
+      - shared_pkg
+    #
+    # `anyVendorDeps` rather than `anyProjectDeps` is the whole point.
+    # The schema refuses a rule with an empty mayDependOn and no flags
+    # at all, and the two flags are opposites: anyProjectDeps opens
+    # this component to every other project component, which is the
+    # exact hole this file is here to close. anyVendorDeps says the
+    # opposite — this component may reach third-party libraries (the
+    # repository already allows that globally) and may reach no project
+    # component whatsoever.
+    #
+    # Before decision 74 these components carried dozens of grants that
+    # no import used, so arch-lint was reporting a boundary far wider
+    # than the one the code had. Deleting the unused grants is what
+    # turns the file back into a statement about the architecture
+    # rather than a list of permissions nobody exercised.
+    anyVendorDeps: true
   # ---------------- manager BC ----------------
   manager_server:
-    mayDependOn: [manager_service, manager_biz, manager_model, shared_pkg, api]
-  manager_service:
-    mayDependOn: [manager_biz, manager_model, shared_pkg, api]
-  manager_biz:
-    mayDependOn: [manager_model, shared_pkg]
-  manager_data:
-    mayDependOn: [manager_biz, manager_model, shared_pkg]
-  manager_model:
-    mayDependOn: [shared_pkg]
-
-  # ---------------- edgeagent BC ----------------
-  edgeagent_service:
-    mayDependOn: [edgeagent_biz, edgeagent_model, shared_pkg, api]
-  edgeagent_biz:
-    mayDependOn: [edgeagent_model, shared_pkg]
-  edgeagent_data:
-    mayDependOn: [edgeagent_biz, edgeagent_model, shared_pkg]
-  edgeagent_model:
-    mayDependOn: [shared_pkg]
-
-  # ---------------- 共享 ----------------
-  shared_pkg:
-    # 不得依赖任何 BC（业务无关）
-    mayDependOn: []
-  api:
-    mayDependOn: []
-
-  # ---------------- 装配层 ----------------
-  # cmd/opskeeper 装配 iam + manager，cmd/opskeeper-edge 装配 edgeagent；
-  # go-arch-lint v3 无"按子目录分 cmd"的原生表达，这里合并授权，
-  # 由人工 review 与 CODEOWNERS 把住"cmd/opskeeper-edge 不 import iam/manager"。
-  cmd:
+    # !!! 已知债务：arch-lint 的 mayDependOn 是组件粒度白名单，同组件新增同类导入不会再报警。
+    # 决策 229 撤掉 iam_model：它唯一的行使者是 server/imbridge/http.go 里的
+    # `iammodel.RoleAdmin`，而那条 import 已经不存在了——角色词汇下沉到
+    # core/base/pkg/tenantctx（Tenant.Role 字段的声明处），imbridge 改读
+    # tenantctx.RoleAdmin。授权留着就是一条没人行使的口子（决策 74 的同一条
+    # 判据），而它恰恰会为下一条 manager/server → iam 的 import 免费放行，
+    # 所以撤掉它本身就是这一刀的一部分。
     mayDependOn:
-      - iam_server
-      - iam_service
-      - iam_biz
-      - iam_data
-      - iam_model
+      - manager_biz
+      - manager_model
       - manager_server
       - manager_service
+      # 决策 226：oxdomains_biz / oxdomains_model 撤掉。它们唯一的使用者是
+      # server/{audit,middleware,plugin} 三个只依赖 audit 自己的读侧/写侧
+      # 目录，随整簇搬去了 core/domains。授权留着就是两条没人行使的口子，
+      # 而 core/manager/server 这一层今天确实不认识 domains 的 biz 与
+      # model——它要认识，得先有第二条 manager → domains 的边，那是
+      # 另一刀的事。
+      # 决策 238 把 oxcore_domain 加回来，而它被撤掉过（决策 223）。
+      # 撤掉的理由是「唯一的使用者随 flow / nodeagent 搬走了」，这次使用者
+      # 是一个新的：server/mcp 的审计 sink。为了命名两个没有行为的事件形状，
+      # 它此前 import 整个 biz/aiops/tools/decorators（治理、评审闸、限流、
+      # 不可信输出标记全在那个包里），那正是 mcp → aiops 这条边存在的
+      # 全部理由。形状下沉到 core/domain 之后这条 import 没有了，于是这条
+      # 授权第一次有了行使者——按决策 74 的同一条判据，有人行使的口子
+      # 才留下，没人行使的必须撤。
+      - oxcore_domain
+      - oxcore_ports
+      # 决策 271：server/marketplace/import.go 探一次容器类型来判断导入
+      # 源长什么样（.claude-plugin / openclaw / 裸 skills 目录）。这个判断
+      # 过去借道 chatruntime 借来，于是 HTTP 层为了读一个枚举认识了一整个
+      # Agent 运行时；改读插件面之后这条边只剩枚举本身。
+      - oxextension_container
+      # 决策 67：query_translate 端点直接发一次补全（不建 Session），
+      # http.go 读回 stored-ledger 的用量。这两处与控制面其他调用方看到
+      # 的是同一套 PiG 类型，所以授权与 biz 层相同——HTTP 层没有第二个
+      # 词汇可用，也不该有。
+      - oxpig_ai
+      - oxpig_model
+      - shared_agentteams
+      - shared_control
+      - shared_dataguard
+      - shared_pkg
+      - oxfloor
+  manager_service:
+    mayDependOn:
+      - manager_biz
+      - manager_model
+      - manager_service
+      # 决策 235：systemhealth 的节点可达性探针不再 import biz/edge 的
+      # ListFilter 与 model/edge 的 Edge，改持 core/domain 里的
+      # domain.EdgeQuery 端口。这条授权只为 service/systemhealth 一个文件
+      # 而加，理由与 decision 74 记的那 104 条相反：那一批是零 import 的
+      # 幽灵授权，这一条有真实 import 行使它，且 modulecheck 的
+      # 「每条 mayDependOn 至少被一个真实 import 使用」不变式会守着它。
+      - oxcore_domain
+      - oxcore_ports
+      - oxfloor
+      - shared_pkg
+  # 决策 123：根侧集群通道的授权面是 manager_service 那几条的子集。
+  # 单独写出来而不是「它归 oxdomains_service 管」是有意的——它读的是
+  # biz/federation 的注册表和 floor 的线上类型，一旦哪天它开始 import
+  # 别的 domains 包，应当在这里被拦下并要求一次说明，而不是被
+  # oxdomains_service 那张宽表默默放行。
+  manager_federation_link:
+    # 决策 275 删掉 oxdomains_biz：这条边原本授权 link.go 里那个
+    # `fedbiz.Member` 返回类型与 `var _ fedbiz.Pusher = (*Links)(nil)`，
+    # 两者都已不在——前者变成 link 自 declarations 的 Enrolled 投影，
+    # 后者搬到了 cmd/opskeeper/federation_wiring.go（那里同时握着端口两端，
+    # 而它不是限界上下文）。**这条授权是 modulecheck 报出来的，不是人翻出来的**：
+    # 它有一条死授权检测器（"the grant is dead — delete it, or it keeps
+    # authorising the next import for free"）。**决策 273 删 oxdomains_model
+    # 那条时是靠人工遍历 import 做的，而这条工具当时就在仓库里**——记在这里，
+    # 因为「有工具而没用」和「没有工具」是两种不同的欠账，后者不可修。
+    mayDependOn:
+      - oxfloor
+  # manager_biz 额外允许 pigagent/pigwire：内核的宿主绑定（决策 30）必须
+  # 拿到 PiG 的事件与内核类型，而 core/pig 不能反向依赖根模块——所以这层
+  # 适配只能落在根模块里。这是"PiG 变更收口到一个模块"与"core/pig 不
+  # 依赖根模块"两条规则交叉后的唯一落点。
+  #
+  # 决策 67 把这个落点从"根模块自己 import PiG"改成"根模块 import
+  # core/pig 的 re-export"。manager_biz 现在多三个允许项：
+  #   - oxpig_model: 一次补全的请求与回复就是 PiG 的 ai 类型（决策 67）
+  #   - oxpig_ai:    同样的原因，只是通过 alias 面。两者都不是"顺手加的"
+  #     例外，而是删掉了 ports.LLMRequest/LLMResponse 之后的直接后果：
+  #     控制面不再有第二套模型词汇可写。
+  #   - oxpig_coding: 装配层之外，biz 不建 Session，所以这里只授权
+  #     manager_biz 自身没有用到的部分是为了让"控制面知道 PiG 词汇"这条
+  #     规则保持组件粒度可读——真要在 biz 里建 Session，应该先讨论把它
+  #     提到 chatruntime，而不是靠白名单放行。
+  manager_biz:
+    # !!! 已知债务：arch-lint 的 mayDependOn 是组件粒度白名单，同组件新增同类导入不会再报警。
+    # 每条都对应真实违例文件，manager/iam 迁移到 core/manager 时随条目一起删除：
+    #   - manager_data: biz 直接 import data/*/store：proposal/expiry.go、audit/chain.go、audit/usecase.go、edge/changeevent/usecase.go、loop/contractloader/contractloader.go
+    #   - manager_service: 决策 280 删掉。core/manager/biz/imbridge/adapter.go
+    #     反向 import manager/service/aiops，而那个适配器整个搬去了装配根
+    #     （§4.214），所以这条授权今天没有任何 import 在行使。留着就是
+    #     一条没人行使、却能放行下一个同类导入的口子。
+    mayDependOn:
       - manager_biz
       - manager_data
       - manager_model
-      - edgeagent_service
-      - edgeagent_biz
-      - edgeagent_data
-      - edgeagent_model
+      - oxcore_domain
+      - oxcore_ports
+      - oxcore_wire
+      # 决策 273 删掉 oxdomains_model：core/manager 对 core/domains/model/**
+      # 的 import 归零了，最后一条是 biz/aiops/tools/alerting 那个
+      # query_change_events 的 `[]auditmodel.Log` 返回类型。**这一条是整条
+      # 授权的最后一个使用者**，所以删它不是收紧，是清账——留着它等于
+      # 授权一件已经没有人做的事，而白名单的死条款比缺少白名单更坏：
+      # 它让下一次真正的越界看起来像「本来就有许可」。
+      #
+      # 顺带一个可核对的读数：**core/manager（935 个文件）现在完全不 import
+      # core/domains/model**。model 层从此只被 core/domains 自己和装配根读。
+      # 决策 226 当年撤掉的是 manager_biz / manager_model 的 oxdomains_biz
+      # 与 oxdomains_model 两条，理由是「它们唯一的使用者是 core/domains 自己」；
+      # 七年之后剩下的最后一条也被这一刀收走，**同一个理由成立了两次**。
+      # oxextension_container: 插件容器加载器（决策 271）。chatruntime、
+      # biz/marketplace 与 biz/pluginimport 从 chatruntime 里那套重复声明
+      # 改成直接 import 它之后，控制面到插件面只有这一条边，而不是三条
+      # 各自指向 chatruntime 的边。加载器本身不认识控制面——它的
+      # mayDependOn 只有 oxcore_domain，方向由 core/extension/go.mod 兜底。
+      - oxextension_container
+      - oxpig_agent
+      - oxpig_ai
+      - oxpig_model
+      # pigtools 是宿主治理记录（ToolSchema：class / origin / when_to_use）
+      # 到模型可见声明（ai.ToolSchema）的唯一桥。放在 core/pig 而不是
+      # 控制面，是因为模型的工具 schema 是 PiG 的类型，而"哪些工具有风险"
+      # 是 OpsKeeper 的——桥本身必须同时知道两边。
+      - oxpig_tools
+      - shared_control
+      - shared_dataguard
+      - shared_knowledge
+      - shared_observability
       - shared_pkg
-      - api
+      - oxfloor
+  manager_data:
+    mayDependOn:
+      - manager_biz
+      - manager_model
+      - shared_knowledge
+      - shared_pkg
+      - oxfloor
+  # manager_model 现在不依赖任何东西。决策 109 给它挂过 shared_pkg（model/audit
+  # 的词表是 core/base/pkg/audit 的常量别名），决策 226 抬走了 model/audit，
+  # 决策 227 又抬走了 model/metric——它是这一层唯一认得 core/floor 的文件，
+  # 因为指标行存的正是一份 tunnel 线上类型。两条授权于是先后死了，**死的
+  # 是边，不是理由**：别名仍然只有一处定义，指标行仍然只认那一个类型，
+  # 只是都不再由这一层说。按 decision 99 的老规矩，依赖为零要**省略整块**
+  # 而不是写 `mayDependOn: []`——go-arch-lint 的 spec 校验把空表读成
+  # 格式错误，然后拒绝运行整份文件。
 
-# 注：go-arch-lint 的 schema 字段（version / components / deps）按 v3
-# 主流文档书写；若 CI 报 schema 错，按实际版本微调字段名即可。
+  # ---------------- edge module (was the edgeagent BC) ----------------
+  # These four components are the node plane's own layers. They no longer
+  # live in the root module, so the Go toolchain now refuses a node file
+  # that reaches the control plane; what is left for these rules is the
+  # intra-module direction, which the toolchain does not check.
+  oxedge_service:
+    mayDependOn: [oxedge_biz, oxfloor]
+  oxedge_biz:
+    mayDependOn: [oxedge_runtime, oxcore_ports, oxcore_wire, oxfloor, oxtelemetry_wal]
+  # 决策 200 删掉了 oxedge_model 这个组件，连同它下面那条 oxedge_biz 的授权。
+  # 它原来声明 core/edge/model/**，而那个目录里的 HostMetric / ProcessInfo 是
+  # tunnel.HostMetricPoint 的早期副本：节点侧真正在用的是 core/floor/tunnel 的
+  # 那个类型，经 core/edge/collector 的 CollectorOutput.HostPoint 上线。
+  # 最后一个引用它的是三个写明「Phase 1 返回零值」的采集桩，那三个桩本轮也删了，
+  # 于是这个组件连声明的目录都不存在了。
+  #
+  # 留这一段是因为它身上挂着一份解释：为什么「什么都不许依赖」要用
+  # `anyVendorDeps: true` 而不是 `mayDependOn: []`（spec 校验会把后者读成配置错误
+  # 并拒绝运行整份文件），以及决策 74 删掉 104 条无人行使的授权正是为了让这份文件
+  # 重新变成一句关于架构的话。现在用这个写法的组件还有 oxedge_spool、
+  # oxtelemetry_wal 等五个。
+  # ---------------- OpsKeeper 2.0 module direction ----------------
+  # core is the root of the new graph: it may not depend on anything, not
+  # even on shared_pkg. A contract that reaches into infrastructure forces
+  # every plugin to resolve that infrastructure.
+  #
+  # "May depend on nothing" is expressed by *omitting* the rule, not by
+  # writing `mayDependOn: []`: go-arch-lint's spec validator refuses a rule
+  # with an empty list and no `anyProjectDeps`/`anyVendorDeps` flag, calling
+  # it a misconfiguration. That is why oxcore_domain, oxcore_wire and api
+  # have no entry below. It also means every rule that *is* written must
+  # list its own component - this linter does not treat a component as
+  # implicitly allowed to import itself.
+  oxcore_ports:
+    mayDependOn: [oxcore_domain, oxcore_wire]
+
+  # pig adapts the contracts onto PiG. The rule that actually contains PiG
+  # is enforced by scripts/modulecheck: only files inside the pig module may
+  # import github.com/MichaelKinsy/PiG. That is the boundary worth having,
+  # because a PiG API break then lands in one module instead of the
+  # repository.
+  #
+  # Requiring pig to be unreachable from everywhere else was the wrong
+  # version of the same idea: the root module's llm client and the kernel's
+  # host bindings have to reach the adapter somewhere, and both of them sit
+  # in the root module by construction (core/pig may not import it back).
+  #
+  # pigmodel reaches core's ports as well as its domain, because chat.go
+  # there is where a request becomes a transcript: the host names a request
+  # in ports vocabulary and never learns the PiG shape it turns into. That is
+  # the whole point of the boundary - the conversion is a PiG concern, and a
+  # host that had to perform it would hold a PiG type.
+  #
+  # The reverse direction is what the module graph forbids and this file
+  # cannot express: it has no way to say "no file in the ROOT module may
+  # import PiG", because the root module has no component here to attach the
+  # rule to. scripts/modulecheck covers that half, across every module,
+  # discovered from the go.mod files rather than from a list.
+  oxpig_model:
+    mayDependOn: [oxcore_domain, oxcore_ports]
+  # oxpig_coding joins the list for SessionKernel (decision 86), which drives
+  # a turn through coding.Session instead of agent.Agent. The two drivers
+  # share the mapper, the policy gate, the prompt assembly and the tool
+  # adapters, so the second one is a file in this component rather than a
+  # parallel one — splitting them would have meant two policies to keep in
+  # step, which is the exact failure the shared runState exists to prevent.
+  #
+  # The arrow is one-way and the module graph enforces it: oxpig_coding
+  # grants no project dependency at all (anyVendorDeps below), so pigcoding
+  # cannot reach back into pigagent. That is what lets the agent component
+  # depend on the embedding layer without creating a cycle.
+  # oxpig_model was on this list because Deps carried a pigmodel.Completer.
+  # Nothing read that field and nothing filled it — the model is resolved per
+  # request from the kernel's own registry — so the import went with it and
+  # the grant went with the import. Re-adding it "in case" is how a boundary
+  # stops being a boundary: the check that removed this one is the same
+  # modulecheck that would have to notice the next import, and it only
+  # notices because the grant is not there to authorise it.
+  oxpig_agent:
+    mayDependOn: [oxcore_domain, oxcore_ports, oxcore_wire, oxpig_coding]
+  # pigai is aliases over PiG's ai package and nothing else. The list is its
+  # own name and nothing else: it reaches no OpsKeeper package, which is what
+  # makes it safe for every other component to import without a cycle. (The
+  # tool requires a non-empty list; a self-reference is how "depends on
+  # nothing" is written.)
+  oxpig_ai:
+    mayDependOn: [oxpig_ai]
+  # pigcoding is the embedding layer. It reaches PiG's coding/ai/agent
+  # packages and the core contracts, and it depends on pigmodel for the
+  # request/registry vocabulary a Session's caller already speaks.
+  oxpig_coding:
+    # No project grants: nothing in this component imports another
+    # project component today.
+    #
+    # `anyVendorDeps` rather than `anyProjectDeps` is the whole point.
+    # The schema refuses a rule with an empty mayDependOn and no flags
+    # at all, and the two flags are opposites: anyProjectDeps opens
+    # this component to every other project component, which is the
+    # exact hole this file is here to close. anyVendorDeps says the
+    # opposite — this component may reach third-party libraries (the
+    # repository already allows that globally) and may reach no project
+    # component whatsoever.
+    #
+    # Before decision 74 these components carried dozens of grants that
+    # no import used, so arch-lint was reporting a boundary far wider
+    # than the one the code had. Deleting the unused grants is what
+    # turns the file back into a statement about the architecture
+    # rather than a list of permissions nobody exercised.
+    anyVendorDeps: true
+  oxpig_tools:
+    mayDependOn: [oxcore_ports]
+  # pigmcp talks to the contract layer only: it needs ports.MCPCatalogue and
+  # the JSON Schema vocabulary that comes with it, and deliberately needs
+  # nothing else. In particular it may not reach oxpig_agent — a bridge that
+  # could build a session could register its own tools outside the gate.
+  oxpig_mcp:
+    mayDependOn: [oxcore_ports]
+  oxpig_test:
+    mayDependOn: [oxcore_domain, oxpig_model]
+  # pigrpc adapts the node agent's RPC client. It is the only place a
+  # supervisor-adjacent component is allowed to learn that a node agent is
+  # a `pig --mode rpc` subprocess.
+  oxpig_rpc:
+    mayDependOn: [oxcore_ports]
+
+  # edge is the node plane. It depends on core's contracts and nothing else
+  # internal: a node that reached the control plane could grow a second
+  # source of truth for identity and approval, which is exactly the split
+  # the module graph exists to keep.
+  oxedge_pigsup:
+    mayDependOn: [oxcore_ports]
+  # The node's policy gate. It reaches contracts and nothing else: an
+  # allow-list that could import an implementation is an allow-list that
+  # can be edited by the thing it is meant to constrain.
+  # The host's own policy engine and the host's own tool broker both read
+  # the declared per-tool ceilings, and the default that makes "the package
+  # declared nothing" mean "the host default" rather than "unlimited" lives
+  # with the shared host infrastructure in floor/skill. The edge module
+  # depends on floor by design — see core/edge/go.mod — so these two rules
+  # name the edge half of that dependency rather than leaving it implicit in
+  # every other edge component.
+  oxedge_policygate:
+    mayDependOn: [oxcore_domain, oxcore_ports, oxcore_wire, oxfloor]
+  # The unix-socket gate the agent process reaches across. It depends on
+  # policygate's decision types (GateResult, Decision), which is the one
+  # internal edge-to-edge edge, published deliberately so the socket and
+  # the in-process gate cannot disagree about what a grant means.
+  oxedge_gatesocket:
+    mayDependOn: [oxcore_domain, oxcore_wire, oxedge_policygate]
+  # The broker executes what the gate admitted. It may not import
+  # policygate: reaching a decision is the gate's job, and a broker that
+  # could decide could approve its own calls.
+  oxedge_toolbroker:
+    mayDependOn: [oxcore_wire, oxfloor]
+  # 仲裁器只依赖契约层与落盘缓冲。刻意不给 oxfloor（skill/spill 那一侧）：
+  # 自治动作的 argv 由调用方的 Runner 执行，本包不持有任何执行能力，持有
+  # 执行能力的地方才需要被约束。
+  #
+  # 决策 99 之后多出的 oxedge_spool 边只通向一个纯文件原语，不通向任何执行
+  # 能力——能加进来的东西越少，越不会有人在半年后往里面加一条「顺手就能跑起来」
+  # 的路径。
+  oxedge_autonomy:
+    mayDependOn: [oxcore_domain, oxedge_spool]
+  # 决策 126：只依赖 ports 的词表和共享 spool。少一条边就少一次「顺手把
+  # 线上协议的类型引进账本层」的机会——那份类型一进来，这份文件就开始知道
+  # 控制面长什么样，而它下面躺着的是节点上唯一一份没有备份的本地数据。
+  oxedge_auditlog:
+    mayDependOn: [oxcore_ports, oxedge_spool]
+  # 词表加线上形状，就这两样。少一条边就少一次「顺手把链、仓储或 manager
+  # 的类型引进节点侧」的机会——而这个组件存在的全部意义就是**不碰任何存储**。
+  oxedge_auditwire:
+    mayDependOn: [oxcore_ports, oxfloor]
+  # 只有 floor。少一条边就少一个「顺手在这里把策略树换成随便什么目录」的
+  # 机会——那条路径的检查写在 Store.bound 里，但依赖面本身就是第二道检查。
+  manager_federation_child:
+    mayDependOn: [oxfloor]
+  # 落盘缓冲只依赖标准库：文件、json、时间。这不是「暂时还没用到别的」，而是
+  # 这个组件存在的理由——它下面躺着节点唯一一份没有副本的本地数据，依赖面越小，
+  # 它能被拉去做什么就越可预测。
+  # `mayDependOn: []` 不表达「谁都不许依赖」。go-arch-lint 的 spec 校验会
+  # 把它读成配置错误并**拒绝运行整份文件**——上面那段注释（「用省略规则来
+  # 表达『什么都不依赖』」）说的正是这件事，而决策 99 落地时这里写反了。
+  # 后果不是一条规则失效，是 `make arch-lint-run` 从 8fefe7b 起一次也没跑
+  # 通过：本应由它拦住的越界，那几天一条都没被拦住。
+  #
+  # anyVendorDeps 是文档给出的写法，也是 oxedge_spool 等组件已经在用的写法：
+  # 允许第三方库（.go-arch-lint.yml 全局本就允许），不允许任何本项目组件。
+  oxedge_spool:
+    anyVendorDeps: true
+  oxtelemetry_wal:
+    # 只到落盘原语与线上契约。刻意不给 oxedge_runtime / oxedge_biz：日志不该
+    # 知道 agent 怎么采样、也不该自己调隧道。少两条边，就少两个「顺手在这里
+    # 直接发出去」的机会。
+    mayDependOn: [oxedge_spool, oxfloor]
+  # pigwire translates PiG's stream into the frozen SSE frames. It reaches
+  # the contract layer only - the translation is the whole component.
+  oxpig_wire:
+    mayDependOn: [oxcore_ports, oxcore_wire]
+
+  # sdk is what third-party plugins compile against. It may not reach any
+  # internal implementation, or a plugin would inherit OpsKeeper's whole
+  # dependency graph.
+  oxplugin_sdk:
+    mayDependOn: [oxcore_domain]
+
+  # harness is the evaluation plane. It depends on the contract layer and
+  # on nothing else internal: a golden-case corpus that could import an
+  # implementation would make "run the regression" depend on the server's
+  # dependency graph. The model call it needs arrives as ports.Completer,
+  # injected by the caller.
+  oxharness_schema:
+    # No project grants: nothing in this component imports another
+    # project component today.
+    #
+    # `anyVendorDeps` rather than `anyProjectDeps` is the whole point.
+    # The schema refuses a rule with an empty mayDependOn and no flags
+    # at all, and the two flags are opposites: anyProjectDeps opens
+    # this component to every other project component, which is the
+    # exact hole this file is here to close. anyVendorDeps says the
+    # opposite — this component may reach third-party libraries (the
+    # repository already allows that globally) and may reach no project
+    # component whatsoever.
+    #
+    # Before decision 74 these components carried dozens of grants that
+    # no import used, so arch-lint was reporting a boundary far wider
+    # than the one the code had. Deleting the unused grants is what
+    # turns the file back into a statement about the architecture
+    # rather than a list of permissions nobody exercised.
+    anyVendorDeps: true
+  # 决策 297：注入器从 core/harness 搬到 core/faults。harness 的 go.mod 把
+  # "reaches no database" 写成了不变量，而注入器是唯一一个必须握着一个数据库
+  # 客户端的组件——PG 锁链是一组持有行锁的会话，慢查询是一次 pg_sleep，
+  # 长事务是一个永不提交的 BEGIN。它们不是故障的描述，是故障本身。
+  #
+  # 它对 harness 的唯一依赖是 schema.InjectStep（它从语料格式里读注入步骤），
+  # 对外则是那个装配它的 CLI。够不到控制面：一个能被控制面指挥的注入器，
+  # 就等于一条绕开审批往生产注入的路。
+  oxfaults_injector:
+    mayDependOn: [oxfaults_injector, oxharness_schema]
+  # 决策 67：harness 从"只依赖 core + 标准库"放宽到"依赖 core + core/pig"。
+  # 放宽的理由不是方便——judge 收到的是 PiG 的 *AssistantMessage 并从内容块
+  # 里读文本，在 harness 外面再声明一个单方法接口、背后放一个手写的响应结构，
+  # 只会得到第二套词汇，而 PiG 的消息类型照样得 import。真正保住的是
+  # "不引入 provider SDK"这条属性：pigmodel 是契约不是客户端，而 PiG 本身
+  # 仍然只被 core/pig 这一个模块命名（harness 走 pigai alias，不出现任何
+  # github.com/MichaelKinsy/PiG 的 import path）。
+  oxharness_judge:
+    mayDependOn: [oxpig_ai, oxpig_model]
+  oxharness_runner:
+    mayDependOn:
+      - oxharness_judge
+      - oxpig_model
+      - oxharness_schema
+      # 决策 266：为了把三轴带进这条评分路径。
+      - oxharness_axes
+  # 决策 266：三轴派生的授权面只有 schema —— 它读 case 文件的形状，
+  # 不认识 judge 的词汇（那是 judge.DiagnosticAxes 的事），也不认识
+  # 任何 harness 之外的包。
+  oxharness_axes:
+    mayDependOn: [oxharness_schema]
+  oxharness_leaderboard:
+    # No project grants: nothing in this component imports another
+    # project component today.
+    #
+    # `anyVendorDeps` rather than `anyProjectDeps` is the whole point.
+    # The schema refuses a rule with an empty mayDependOn and no flags
+    # at all, and the two flags are opposites: anyProjectDeps opens
+    # this component to every other project component, which is the
+    # exact hole this file is here to close. anyVendorDeps says the
+    # opposite — this component may reach third-party libraries (the
+    # repository already allows that globally) and may reach no project
+    # component whatsoever.
+    #
+    # Before decision 74 these components carried dozens of grants that
+    # no import used, so arch-lint was reporting a boundary far wider
+    # than the one the code had. Deleting the unused grants is what
+    # turns the file back into a statement about the architecture
+    # rather than a list of permissions nobody exercised.
+    anyVendorDeps: true
+  # ---------------- 共享 ----------------
+  shared_pkg:
+    # 不得依赖任何 BC（业务无关）。允许依赖契约层——契约层本身与业务无关，
+    # 依赖它不会把任何业务语义带进 shared_pkg。
+    #
+    # 决策 66 删掉了这里的 oxpig_model 例外。shared_pkg 里的 llm 曾经直接
+    # import pigmodel，理由是"PiG 支撑的 llm.Client 必须落在控制面"；现在
+    # 那三个文件在 shared_llmpig，方向反过来了（llmpig → shared_pkg），
+    # 例外也就没有存在理由了。这条规则由 modulecheck 的 floorIsolation
+    # 强制，不是注释。
+    #
+    # oxedge_policygate 仍在：清单校验要读闸门的决策类型，才不会对"批准"
+    # 有一套自己的理解。
+    #
+    # 决策 272 给了它 oxcore_ports，这是 shared_pkg 的**第一条**契约层出边。
+    # 触发它的是 core/extension 的节点账本行类型：Action 字段用的是
+    # core/ports 的 AuditAction 而不是 string，因为"节点自己发明了一个动作名"
+    # 必须由形状检查抓住，而不是被一个静默默认值吞掉。契约层与业务无关，
+    # 依赖它不把任何业务语义带进底座——这也是它属于这一类而不是例外的原因。
+    mayDependOn:
+      - shared_pkg
+      - oxcore_ports
+      - oxfloor
+
+  # 控制面里唯一绑定 PiG 适配层与 LLM 底座的包（决策 66）。
+  # 方向是 llmpig → shared_pkg：shared_pkg 现在只剩 provider 配置与预算，
+  # 模型调用本身完全在 core/pig 那边，底座不反过来认识它。
+  #
+  # 决策 67 给了它 oxpig_coding：llmpig.Sync 把控制面的 provider 表发布进
+  # PiG 的 ModelRegistry，所以它是"设置表 → agent 运行时"这条边上唯一
+  # 同时知道两边的包。这不是绕过边界，而是边界本身——凭据从设置表进
+  # PiG 的模型注册表，中间没有第二个存储。
+  shared_llmpig:
+    mayDependOn:
+      - oxcore_domain
+      - oxpig_ai
+      - oxpig_coding
+      - oxpig_model
+      - shared_pkg
+
+  oxdomains_biz:
+    mayDependOn:
+      - oxcore_domain
+      - oxcore_ports
+      - oxcore_wire
+      - oxdomains_data
+      - oxdomains_model
+      - oxfloor
+      - shared_pkg
+
+  oxdomains_data:
+    # 决策 230 开了 oxfloor：唯一的使用者是 data/flow/store，它要实现
+    # core/floor/scheduler 的 Repo（missed-run 检测端口）。这个端口此前住在
+    # core/domains/biz/scheduler，于是这层数据代码为了说「我实现了你的接口」
+    # 而 import 那个 biz 包——数据层伸手进业务层，正是端口要防的那个反向。
+    # 端口下沉到 core/floor 之后，data 与 biz 各自只依赖 floor，谁也不认识
+    # 谁，`flow -> scheduler` 那条声明边因此消失。
+    #
+    # 依赖面因此从「biz + model + base」变成「biz + model + base + floor」，
+    # 而 floor 不认识任何业务域：它只有 missed-run 契约，没有实现、没有编排、
+    # 没有对 flow 的任何认识。data 层认得它，与 data 层认得 shared_pkg 是同一
+    # 类事——被依赖的是契约，不是别人的内部。
+    mayDependOn:
+      - oxdomains_biz
+      - oxdomains_model
+      - oxfloor
+      - shared_pkg
+
+  # oxdomains_model was registered with no grant at all rather than with
+  # `mayDependOn: []`, because go-arch-lint's spec check reads an empty list
+  # as a malformed file and refuses to run any of it — the same trap
+  # decision 99 hit. An omitted block is the way to say "depends on nothing".
+  #
+  # Decision 226 ended that: model/audit came across with the audit ledger,
+  # and its vocabulary is still a set of aliases onto core/base/pkg/audit, so
+  # this layer now does reach for one shared tree. The grant is one entry
+  # wide on purpose — the DTO layer of the release floor may name a row, and
+  # nothing else.
+  oxdomains_model:
+    # 决策 227 加的 floor 一项：model/metric 的指标行存的是一份 tunnel 线上
+    # 类型（HostMetricPoint 的存储形态）。这不是「模型层认得了一个域」，是
+    # 它认得**自己存的那个词**——而那个词属于传输层，不属于任何一个域。
+    #
+    # 决策 242 加的 core/domain 一项，理由与上面那行**逐字同形**：model/monitor
+    # 的三个面板类型常量（PanelTypeTimeseries / Stat / Gauge）现在声明在
+    # core/domain，因为两个域需要它们——本层存它们，Grafana 镜像把它们映射
+    # 到 Grafana 自己的词汇。仍然是「认得自己存的那个词」，而那个词属于一个
+    # 不属于任何域的共享命名空间。本层是 alias，值只有一处定义。
+    #
+    # 为什么是常量而不是别的：它不是「模型层开始 import 别人的实体」。如果
+    # 哪天 core/domain 里出现了一个本层需要 GORM 标签的东西，那才是另一回事，
+    # 而 core/domain 自己也有一条守卫断言它不 import 任何非标准库包、
+    # 且任何字段都不得带 gorm tag（TestThisPackageImportsNothingButTheStandardLibrary
+    # 与 TestMonitorPanelSpecHasExactlySixFields）。
+    mayDependOn:
+      - oxcore_domain
+      - oxfloor
+      - shared_pkg
+
+  oxdomains_server:
+    mayDependOn:
+      - oxdomains_biz
+      - oxdomains_model
+      - oxdomains_service
+      - oxcore_domain
+      - oxcore_ports
+      - oxfloor
+      - oxpig_ai
+      - oxpig_model
+      - shared_control
+      - shared_pkg
+
+  # No oxfloor here, and that is a measurement rather than an omission.
+  # service/federationchild does import core/floor, but this component does
+  # not own it: manager_federation_child is the narrower declaration and the
+  # checker resolves overlaps by name, so those imports are booked against
+  # that grant — which is the one place a sub-cluster side channel is
+  # allowed to see the tunnel. What is left here is prometheus and
+  # systemupgrade, and neither reaches for floor.
+  oxdomains_service:
+    mayDependOn:
+      - oxdomains_biz
+      - oxcore_domain
+      - oxcore_ports
+      - oxfloor
+      - shared_pkg
+
+  # ---------------- 装配层 ----------------
+  # cmd/opskeeper 装配 iam + manager，cmd/opskeeper-edge 装配 edge；
+  # go-arch-lint v3 无"按子目录分 cmd"的原生表达，这里合并授权，
+  # 由人工 review 与 CODEOWNERS 把住"cmd/opskeeper-edge 不 import iam/manager"。
+  # 注意 cmd 是唯一被允许同时看到两个平面的地方——这正是装配层的定义。
+  cmd:
+    mayDependOn:
+      - oxedge_biz
+      - oxedge_runtime
+      - oxedge_service
+      # 决策 326：节点账本那一批行要变成线上形状。转换曾经就写在这个文件里，
+      # 而住在 package main 的代码对两头的测试都不可见——整条路于是没有
+      # 端到端的证据。拆成 oxedge_auditwire 之后，装配根仍然是唯一组装它
+      # 的地方，只是这一步不再只能是「写在这里」。
+      - oxedge_auditwire
+      # 决策 98：cmd 是节点面唯一的装配根，自治仲裁器要拿到三样只有这里同时
+      # 知道的东西——已准入的清单、agent 的心跳/采集器、以及节点那个
+      # sandbox。让仲裁器自己去找这三样，就等于让它变成节点面本身。
+      - oxedge_autonomy
+      # 决策 126：账本的 sink、pump 和三态 sender 都在装配根，因为它们要
+      # 同时知道三样东西——隧道 client、agent 的心跳（只有它能证明控制面
+      # 在），以及节点的工作目录。与 autonomy 同一条理由：这三样只有这里
+      # 同时知道，让账本自己去找就等于让它变成节点面本身。
+      - oxedge_auditlog
+      - iam_biz
+      - iam_data
+      - iam_model
+      - iam_server
+      - iam_service
+      - manager_biz
+      - manager_data
+      - manager_model
+      - manager_server
+      - manager_service
+      # 决策 222：release floor 独立成 core/domains 模块后，装配根第一次
+      # 从两个模块里取控制面的层。五个 domains_* 与它们的 manager_* 同层，
+      # 授权面也只到实际 import 的那几处。
+      - oxdomains_biz
+      - oxdomains_data
+      - oxdomains_model
+      - oxdomains_server
+      - oxdomains_service
+      - oxedge_agentprofile
+      - oxharness_axes
+      - oxharness_judge
+      - oxharness_projection
+      - oxharness_vocabulary
+      - shared_agentteams
+      - shared_control
+      - shared_dataguard
+      - shared_higress
+      - shared_knowledge
+      - shared_middleware
+      - shared_migrate
+      - shared_migrator
+      - shared_observability
+      - shared_pkg
+      # 决策 66：装配层在这里第一次同时看到 LLM 底座与它的 PiG 实现，
+      # 因为 NewRegistry/NewSettingsSource 的组合本来就只发生在一处。
+      - shared_llmpig
+      - oxfloor
+      # The 2.0 modules assemble from cmd; only cmd may reach pig.
+      - oxcore_domain
+      - oxcore_ports
+      - oxcore_wire
+      - oxpig_model
+      - oxpig_ai
+      - oxpig_coding
+      - oxpig_agent
+      - oxpig_rpc
+      - oxpig_wire
+      # 决策 142：节点 profile 里的 `extensions:` 块要按 PiG 的公开名分组，
+      # 而公开名是 PiG 自己的派生规则（core/pig/pigprofile 是全仓唯一持有
+      # 这个规则的包）。装配根必须写出这份 profile，所以在这一处、且只在
+      # 这一处，cmd 允许看到它——这与「只有 cmd 能碰到 pig」是同一条授权，
+      # 不是第二个例外。oxedge_agentprofile 因此保持零 PiG 依赖：它只渲染
+      # 别人告诉它是什么。
+      - oxpig_profile
+      - oxedge_pigsup
+      - oxedge_policygate
+      - oxedge_gatesocket
+      - oxedge_toolbroker
+      - oxharness_schema
+      - oxharness_runner
+      - oxharness_leaderboard
+      # 决策 297：inject 子命令真的用上了注入器注册表。注入器搬出了 core/harness
+      # （那个模块写着"reaches no database"，而一个 PG 锁链就是一组持有行锁的
+      # 会话），现在是 core/faults 里的独立模块。cmd 是它的装配根。
+      - oxfaults_injector
+
+  # ---------------- 底座 / 运行时 / 工具链 ----------------
+  # 这些组件此前没有 deps 条目，于是每一次合法 import 都报一条 warning。
+  # 规则不变：底座与运行时不得依赖任何 BC，只允许依赖契约层和自己。
+  oxedge_runtime:
+    # 决策 99 之后多出两条边，都是给 changewatcher 的落盘日志用的：
+    #
+    #   oxedge_spool     落盘原语本身
+    #   oxtelemetry_wal  只为了那张分级丢弃策略表——两个日志问的是同一个
+    #                    问题（「满了先丢哪个」），两份答案就是两个没人能
+    #                    同时看见的答案。策略表住在 telemetrywal 是因为
+    #                    它本来就是节点遥测的词汇表，而落盘原语保持通用：
+    #                    以后还会有第三、第四个用户，它们不该继承遥测词汇。
+    mayDependOn: [oxedge_runtime, oxfloor, oxedge_spool, oxtelemetry_wal]
+  oxharness_projection:
+    mayDependOn: [oxharness_judge]
+  oxharness_vocabulary:
+    mayDependOn: [oxharness_schema]
+  oxpig_ext:
+    mayDependOn: [oxcore_wire]
+  scripts:
+    mayDependOn: [shared_agentteams]
+  shared_agentteams:
+    mayDependOn: [oxfloor]
+  shared_dataguard:
+    # 决策 363：escalation.go 要把敏感度等级换算成工具类别（domain.ToolClass），
+    # 而那份等级序在 core/domain 里，紧挨着被它排序的那几个常量。dataguard 自己
+    # 不再复制一份等级表——复制两份的安全映射，迟早只有一份是对的，而操作员读
+    # 的往往不是对的那份。这条授权只为 escalation.go 一个文件，与决策 74 删掉的
+    # 那 104 条零 import 授权方向相反。
+    mayDependOn: [oxcore_domain, shared_dataguard, shared_pkg]
+  shared_knowledge:
+    mayDependOn: [shared_knowledge, shared_pkg]
+  shared_middleware:
+    mayDependOn: [oxcore_ports, shared_knowledge, shared_middleware, shared_pkg]
+  shared_migrate:
+    mayDependOn: [shared_migrate]
+  # The genai span decorator reads the reply's own usage off PiG's type, so
+  # it needs the same two components every other model caller does. It is a
+  # decorator over pigmodel.Completer, not a second client: it adds no
+  # provider knowledge of its own, which is why it is allowed to see the
+  # vocabulary at all.
+  shared_observability:
+    mayDependOn: [oxpig_ai, oxpig_model]
+  # The gateway console writes host audit rows (decision 324), and the
+  # vocabulary it writes — Action*, Resource*, the slot, the digest — is the
+  # port's, not a local copy of it. That is the whole reason shared_pkg is
+  # reachable from here: a second vocabulary in this package would be a
+  # second thing to keep in step with the chain, and the chain is exactly
+  # what must not drift.
+  #
+  # What this rule deliberately does NOT open is anything else. The gateway
+  # holds no usecase, no repository and no HMAC key: cmd/higress-console
+  # builds those in the assembly root, the same way the control plane does.
+  shared_higress:
+    mayDependOn: [shared_higress, shared_pkg]
+  oxfloor:
+    # 不得依赖任何 BC。core 契约层 + sdk 是它的全部 opskeeper 依赖；
+    # 其余是 yaml / prometheus / geminio 这类第三方库。
+    mayDependOn: [oxfloor, oxcore_domain, oxcore_wire, oxplugin_sdk]
+
 commonComponents: []
-excludeFiles: []
+
+# 排除规则（正则，匹配 FileRelativePath；每条都要有理由，否则就是一块遮羞布）：
+#
+#   _test\.go$
+#     测试把两个平面接起来，正是边界被演练的地方，而不是边界被违反的地方。
+#     scripts/modulecheck 对 _test.go 用的是同一把尺（见其 exceptions）。
+#
+#   /plugins/pig-ops/[^/]+/extensions/
+#     scripts/sync-pig-ops.sh 从 core/pig/extensions/** 复制出来的独立 go.mod
+#     副本，只是分发产物；同一份代码在 core/pig/extensions 里已被 oxpig_ext
+#     组件覆盖，重复统计只会产生噪声。
+#
+#   /web/node_modules/
+#     第三方 vendored 代码，不是本仓库的架构。
+excludeFiles:
+  - "_test\\.go$"
+  - "/plugins/pig-ops/[^/]+/extensions/"
+  - "/web/node_modules/"

@@ -6,18 +6,18 @@
 // "secret never leaves the manager via the read APIs" invariant that
 // G1's "secret 加密 at-rest" requirement boils down to in practice:
 //
-//   1. POST   /v1/notification-channels                — create
-//   2. GET    /v1/notification-channels                — list, asserts
-//      our row is present AND its `secret` is NOT present in any shape
-//      (the Channel DTO at internal/manager/service/alert/service.go
-//      has no `Secret` field — masking is by *omission*, not by
-//      bullet-string substitution).
-//   3. GET    /v1/notification-channels/{id}           — get-one, same
-//      "secret never appears" assertion.
-//   4. PUT    /v1/notification-channels/{id}           — update name +
-//      endpoint + enabled toggle, re-list to confirm.
-//   5. DELETE /v1/notification-channels/{id}           — delete, re-list
-//      to confirm the row is gone.
+//  1. POST   /v1/notification-channels                — create
+//  2. GET    /v1/notification-channels                — list, asserts
+//     our row is present AND its `secret` is NOT present in any shape
+//     (the Channel DTO at core/manager/service/alert/service.go
+//     has no `Secret` field — masking is by *omission*, not by
+//     bullet-string substitution).
+//  3. GET    /v1/notification-channels/{id}           — get-one, same
+//     "secret never appears" assertion.
+//  4. PUT    /v1/notification-channels/{id}           — update name +
+//     endpoint + enabled toggle, re-list to confirm.
+//  5. DELETE /v1/notification-channels/{id}           — delete, re-list
+//     to confirm the row is gone.
 //
 // There is *no* per-channel /reveal endpoint analogous to O1's
 // /system-settings/{cat}/{key}/reveal — channel secrets never need to
@@ -123,7 +123,7 @@ func TestNotify_ChannelCRUD_G1(t *testing.T) {
 	// Flip enabled, rename, swap endpoint. Send an empty secret to
 	// exercise the "preserve existing" branch of mergeChannelConfig
 	// (passing "-" would clear it; "" leaves it alone). Per
-	// internal/manager/service/alert/service.go.
+	// core/manager/service/alert/service.go.
 	const (
 		updatedName     = "e2e-g1-channel-renamed"
 		updatedEndpoint = "https://example.invalid/hook-g1-updated"

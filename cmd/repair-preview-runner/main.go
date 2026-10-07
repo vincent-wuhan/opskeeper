@@ -9,7 +9,7 @@ import (
 	"os"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
-	repairpreview "github.com/vincent-wuhan/opskeeper/internal/control/repairpreview"
+	repairpreview "github.com/vincent-wuhan/opskeeper/core/domains/control/repairpreview"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"

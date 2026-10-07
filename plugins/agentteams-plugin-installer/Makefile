@@ -23,7 +23,7 @@ self-check:
 
 verify: self-check
 	cd ../.. && \
-	  go test ./internal/manager/server/agentteams/ -count=1 -run TestPlugin -v
+	  go test ./core/manager/server/agentteams/ -count=1 -run TestPlugin -v
 
 clean:
 	rm -rf dashboard/dist dashboard/node_modules $(DIST_DIR)

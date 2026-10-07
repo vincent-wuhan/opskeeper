@@ -3,7 +3,7 @@
 // Catalog: L1 — 加载内置 skill registry。证明 GET /v1/skills 在一台干净
 // 启动的 manager 上回出非空清单:
 //
-//   - 内置 Go skills 在 internal/skill/builtin 的 init() 里登记
+//   - 内置 Go skills 在 core/floor/skill/builtin 的 init() 里登记
 //     (host_tail_file / host_netns_inspect / host_probe_dns /
 //     host_probe_http / host_probe_tcp / host_read_journal /
 //     host_restart_service / web_search),manager 一进程就有这 8 条。
@@ -76,7 +76,7 @@ func TestSkills_RegistryListed_L1(t *testing.T) {
 
 	// ─── spot-check: at least 2 known builtin keys present ────────────────
 	// These are the most-stable ones — host_probe_* live in
-	// internal/skill/builtin/*.go with hardcoded init() Register; web_search
+	// core/floor/skill/builtin/*.go with hardcoded init() Register; web_search
 	// is the canonical ScopeManager builtin; host_restart_service has its
 	// own subpackage. Even if BaseTool inventory_bridge churns we expect
 	// these to keep showing up.

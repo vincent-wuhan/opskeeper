@@ -2,7 +2,7 @@ apiVersion: agentteams.agentteam/v1alpha1
 kind: AgentTeamPlugin
 metadata:
   name: opskeeper-teamharness
-  version: 1.0.70
+  version: 1.0.72
   description: |
     Opskeeper TeamHarness plugin — provides six deployed ops actors
     (alerter/investigator/reviewer/repairer/verifier/reporter)
@@ -155,6 +155,15 @@ metadata:
     v1.0.69 binds final-demo approvals to the current Matrix message, ignoring
     stale incident IDs from accumulated room history.
     v1.0.70 retries transient OpsKeeper 5xx responses after human approval.
+    v1.0.71 infers the PostgreSQL RCA resource type when the archive
+    evidence omits it, downgrades a worker/manifest trail version mismatch
+    to a warning instead of blocking the run, and repoints the MCP name
+    map and the harness self-check at the core/ layout after the internal
+    -> core module move.
+    v1.0.72 re-aligns the plugin version with the current release boundary:
+    the accompanying backend change is the LLM gateway streaming
+    delta.tool_calls fix, which lives in the Go tree and does not alter this
+    plugin's runtime behaviour. No runtime change in this release.
     v1.0.68 preserves the human Matrix approval boundary and forwards approved
     final-demo incidents to a deterministic Manager recovery API, avoiding
     quota-sensitive LLM retries after the operator has already approved. It

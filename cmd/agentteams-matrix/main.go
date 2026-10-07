@@ -14,7 +14,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/auth"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/auth"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func main() {
 		Matrix        []auth.WorkerPermission `json:"matrix"`
 	}{
 		SchemaVersion: "v1",
-		Description:   "Canonical 7-role minimum permission matrix for AgentTeams opsKeeper integration. Single source of truth: internal/pkg/auth/jwt.go::AgentTeamsWorkerPermissions.",
+		Description:   "Canonical 7-role minimum permission matrix for AgentTeams opsKeeper integration. Single source of truth: core/base/pkg/auth/jwt.go::AgentTeamsWorkerPermissions.",
 		Matrix:        rows,
 	}
 

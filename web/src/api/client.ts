@@ -83,10 +83,9 @@ export async function request<T = unknown>(
     let msg = `HTTP ${res.status}`;
     let code: string | undefined;
     if (parsed && typeof parsed === 'object') {
-      const obj = parsed as Record<string, unknown>;
-      if (typeof obj.error === 'string') msg = obj.error;
-      else if (typeof obj.message === 'string') msg = obj.message;
-      if (typeof obj.code === 'string') code = obj.code;
+      const { message, code: errCode } = readErrorEnvelope(parsed);
+      if (message) msg = message;
+      code = errCode;
     } else if (typeof parsed === 'string' && parsed.trim()) {
       // Plain-text body (e.g. handlers calling http.Error). Surface a
       // trimmed slice so the UI can show actionable detail like
@@ -112,6 +111,47 @@ export async function request<T = unknown>(
   }
 
   return parsed as T;
+}
+
+/** readErrorEnvelope pulls the message and code out of an error body.
+ *
+ *  The control plane writes failures in two shapes and both are live on the
+ *  wire. Most handlers emit a flat `{"error": "...", "code": "..."}`
+ *  (marketplace, skill, monitor, alert), while the two written for 2.0 —
+ *  nodeagent's writeErr and plugin's — emit a nested
+ *  `{"error": {"message": "...", "code": "..."}}`.
+ *
+ *  Reading only the flat shape is not a cosmetic gap. The code is what tells
+ *  a page which refusal it is looking at, and pages branch on it:
+ *  Tasks matches `not-wired-yet`, Marketplace matches `invalid-argument`,
+ *  and the node-agent page matches `conversation_limit` and `not_streaming`
+ *  — the last of which is the difference between "close a conversation" and
+ *  "try again", advice that sends an operator to do the one thing that
+ *  cannot help. With the nested body unread those branches all fall
+ *  through to a bare `HTTP 429`, and every one of them is wrong.
+ *
+ *  Flat is checked first because it is the older and more common shape, and
+ *  a body carrying both would be a handler bug rather than a shape to
+ *  guess about. */
+function readErrorEnvelope(parsed: unknown): { message?: string; code?: string } {
+  const obj = parsed as Record<string, unknown>;
+  if (typeof obj.error === 'string') {
+    return {
+      message: obj.error,
+      code: typeof obj.code === 'string' ? obj.code : undefined,
+    };
+  }
+  if (obj.error && typeof obj.error === 'object') {
+    const inner = obj.error as Record<string, unknown>;
+    return {
+      message: typeof inner.message === 'string' ? inner.message : undefined,
+      code: typeof inner.code === 'string' ? inner.code : undefined,
+    };
+  }
+  return {
+    message: typeof obj.message === 'string' ? obj.message : undefined,
+    code: typeof obj.code === 'string' ? obj.code : undefined,
+  };
 }
 
 async function refreshAccessToken(): Promise<string | null> {

@@ -1,0 +1,100 @@
+// Module faults stages the failures the evaluation plane measures an agent
+// against.
+//
+// It is a module of its own, and the reason is written down rather than
+// discovered later. `core/harness` states this as an invariant:
+//
+//	harness depends on core, core/pig and the standard library.
+//	Nothing else. It reaches no database, no HTTP client, and no
+//	other Opskeeper module.
+//
+// An injector cannot live under that rule. A PG lock chain is a set of
+// sessions holding row locks; a slow query is a `pg_sleep` on a live
+// connection; a held transaction is a BEGIN that never commits. None of
+// them is a description of a fault — they are faults, staged against a
+// running database. Putting pgx inside the corpus module would have made
+// "the golden cases are a portable corpus" false, and it would have done
+// it quietly, one `go get` at a time.
+//
+// So the injector tree moved here. What it may reach:
+//
+//   - core/harness  for schema.InjectStep, the corpus format it stages from
+//   - pgx           the one database client this module exists to hold
+//   - the standard library
+//
+// Nothing else. In particular it reaches no control plane: a fault
+// injector that could reach the manager could be talked into injecting
+// into production through it.
+module github.com/vincent-wuhan/opskeeper/core/faults
+
+go 1.26.0
+
+require (
+	github.com/jackc/pgx/v5 v5.8.0
+	github.com/rabbitmq/amqp091-go v1.15.0
+	github.com/vincent-wuhan/opskeeper/core/harness v0.0.0
+	k8s.io/api v0.31.3
+	k8s.io/apimachinery v0.31.3
+	k8s.io/client-go v0.31.3
+)
+
+require (
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
+	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
+	github.com/go-logr/logr v1.4.2 // indirect
+	github.com/go-openapi/jsonpointer v0.19.6 // indirect
+	github.com/go-openapi/jsonreference v0.20.2 // indirect
+	github.com/go-openapi/swag v0.22.4 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/google/gnostic-models v0.6.8 // indirect
+	github.com/google/go-cmp v0.6.0 // indirect
+	github.com/google/gofuzz v1.2.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
+	github.com/imdario/mergo v0.3.6 // indirect
+	github.com/josharian/intern v1.0.0 // indirect
+	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/klauspost/compress v1.15.9 // indirect
+	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
+	github.com/modern-go/reflect2 v1.0.2 // indirect
+	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/pierrec/lz4/v4 v4.1.15 // indirect
+	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/x448/float16 v0.8.4 // indirect
+	go.uber.org/atomic v1.11.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/oauth2 v0.37.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/term v0.45.0 // indirect
+	golang.org/x/time v0.3.0 // indirect
+	google.golang.org/protobuf v1.34.2 // indirect
+	gopkg.in/inf.v0 v0.9.1 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
+	k8s.io/klog/v2 v2.130.1 // indirect
+	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
+	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8 // indirect
+	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
+	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
+	sigs.k8s.io/yaml v1.4.0 // indirect
+)
+
+require (
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/redis/go-redis/v9 v9.21.0
+	github.com/segmentio/kafka-go v0.4.51
+	golang.org/x/text v0.41.0 // indirect
+)
+
+// Sibling modules resolve by path during development; the workspace covers
+// this in a normal build, the replace keeps a bare module directory
+// buildable in CI jobs that disable workspaces.
+replace (
+	github.com/vincent-wuhan/opskeeper/core => ../
+	github.com/vincent-wuhan/opskeeper/core/harness => ../harness
+	github.com/vincent-wuhan/opskeeper/core/pig => ../pig
+)

@@ -1,0 +1,18 @@
+001 assistant_start pending=0 id=""
+002 assistant_end pending=0 id="" ""
+003 assistant_end pending=1 id="" ""
+004 tool_start tc-topo get_topology args={"root":"prod"}
+005 tool_update tc-topo get_topology "ok"
+006 tool_end tc-topo get_topology status=success "ok"
+007 assistant_end pending=0 id="" ""
+008 assistant_start pending=0 id=""
+009 assistant_end pending=1 id="" ""
+010 tool_start tc-web restart_service args={"service":"web"}
+011 approval_pending
+012 approval_resolved
+013 tool_end tc-web restart_service status=blocked "opskeeper: tool blocked by host policy: approval_denied\napproval_denied"
+014 assistant_end pending=0 id="" ""
+015 assistant_start pending=0 id=""
+016 assistant_delta "The topology has three tiers. I did not restart web: the change is frozen."
+035 assistant_end pending=0 id="" "The topology has three tiers. I did not restart web: the change is frozen."
+036 done iterations=3 tool_calls=2

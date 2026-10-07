@@ -1,13 +1,14 @@
 //go:build e2e
 
 // Catalog: G4 — Feishu / DingTalk notification 通道：创建带 secret 的
-//          channel → POST /test → 假 webhook endpoint 收到带签名的请求。
-//          Feishu 签名进 JSON body (timestamp + sign 顶层字段，sign 是
-//          HMAC-SHA256 base64 of "<timestamp>\n<secret>")；DingTalk 签名
-//          进 URL query (?timestamp=...&sign=...，sign 是 HMAC-SHA256
-//          base64 of "<timestamp>\n<secret>", URL-encoded)。验证
-//          internal/pkg/notify/webhook.go NewFeishuSender + NewDingTalkSender
-//          的输出与 G4 描述一致。
+//
+//	channel → POST /test → 假 webhook endpoint 收到带签名的请求。
+//	Feishu 签名进 JSON body (timestamp + sign 顶层字段，sign 是
+//	HMAC-SHA256 base64 of "<timestamp>\n<secret>")；DingTalk 签名
+//	进 URL query (?timestamp=...&sign=...，sign 是 HMAC-SHA256
+//	base64 of "<timestamp>\n<secret>", URL-encoded)。验证
+//	core/base/pkg/notify/webhook.go NewFeishuSender + NewDingTalkSender
+//	的输出与 G4 描述一致。
 //
 // Both subtests reuse the in-process FakeSlack httptest server — it just
 // captures POSTs (URL path + raw query + body) and replies 200, which is
@@ -175,7 +176,7 @@ func TestNotify_Signed_G4(t *testing.T) {
 	})
 }
 
-// signFeishu mirrors internal/pkg/notify/webhook.go signFeishu — Feishu
+// signFeishu mirrors core/base/pkg/notify/webhook.go signFeishu — Feishu
 // custom-bot scheme: HMAC-SHA256 with KEY = "<timestamp>\n<secret>" over
 // empty message, base64-std encoded.
 func signFeishu(timestamp, secret string) string {
@@ -184,7 +185,7 @@ func signFeishu(timestamp, secret string) string {
 	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
 }
 
-// signDingTalk mirrors internal/pkg/notify/webhook.go signDingTalkURL —
+// signDingTalk mirrors core/base/pkg/notify/webhook.go signDingTalkURL —
 // DingTalk custom-bot scheme: HMAC-SHA256 with KEY = secret over the
 // payload "<timestamp>\n<secret>", base64-std encoded. The URL appends
 // timestamp= and sign= (URL-encoded by net/url at request time).

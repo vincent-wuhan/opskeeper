@@ -4,10 +4,10 @@
 # The vault content lives upstream in github.com/builtin://vault. It is
 # embedded (go:embed) into the manager binary so a fresh install populates
 # its knowledge base with no network access — see
-# internal/manager/biz/knowledge/builtin_vault.go.
+# core/manager/biz/knowledge/builtin_vault.go.
 #
 # Run this after the upstream vault changes to refresh the vendored copy,
-# then commit the diff under internal/manager/biz/knowledge/builtin_vault/.
+# then commit the diff under core/manager/biz/knowledge/builtin_vault/.
 #
 # Usage:
 #   scripts/sync-builtin-vault.sh [path-to-vault-checkout]
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DST="$REPO_ROOT/internal/manager/biz/knowledge/builtin_vault"
+DST="$REPO_ROOT/core/manager/biz/knowledge/builtin_vault"
 UPSTREAM="git@github.com:builtin://vault.git"
 
 cleanup_tmp=""
@@ -58,4 +58,4 @@ done
 
 count="$(find "$DST" -type f -name '*.md' | wc -l | tr -d ' ')"
 echo "[sync-builtin-vault] done — $count markdown files vendored."
-echo "[sync-builtin-vault] review & commit: git add internal/manager/biz/knowledge/builtin_vault"
+echo "[sync-builtin-vault] review & commit: git add core/manager/biz/knowledge/builtin_vault"

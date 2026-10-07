@@ -2,28 +2,152 @@ name: CI
 
 # Compile + unit-test gate. Exists because regressions like a model field
 # rename that left a fakeRepo test using the old API (PR #123 broke
-# `go test ./internal/manager/biz/edge/...` and sat unnoticed for weeks)
-# must fail a PR, not a release build. e2e tests are `//go:build e2e`
-# tagged and intentionally excluded here — they need docker + a live test
-# environment; this gate is the fast unit/compile layer.
+# `go test ./core/manager/biz/edge/...` and sat unnoticed for weeks)
+# must fail a PR, not a release build. This job is the fast unit/compile
+# layer; the `//go:build e2e` suite runs in the e2e job below.
+#
+# The e2e suite used to be excluded from this workflow entirely, on the note
+# that it "needs docker + a live test environment". Docker is real — MySQL
+# comes up through testcontainers — but this runner is a docker host, so the
+# stated reason was satisfied by the place the suite was being kept out of.
+# Twenty-six of the thirty e2e tests need nothing but that container and
+# about fifty seconds, and they cover the plan's section 6 acceptance end to
+# end: login, RBAC, credentials, the gateway streaming to a node credential,
+# MCP, workflows, notifications, RCA, the harness. The other four: two need
+# the tunnel broker and run in the delivery job, one is behind the
+# livevalidation build tag, and one (the outage replay) needs only a
+# container but was named in neither job's list until decision 377 — so the
+# count here was 28 while the hole was open, and a self-consistent-looking
+# number is not a measurement.
+#
+# The build step is the multi-module one, and that is not a detail. go.work is
+# gitignored, so CI has no workspace: it resolves the sibling modules and PiG
+# through the replace directives and the tags in each go.mod, which is the
+# only resolution a release and a node building a plugin on a host will ever
+# do. A root-only `go build ./...` used to pass here while the twelve modules
+# beneath it were never compiled at all, and while two go.mod files could not
+# resolve without the workspace file CI cannot see.
 
 on:
+  # Every branch, not just main. This file triggered on `branches: [main]`
+  # until decision 165, and because the whole 2.0 line lives on feature/pig
+  # with no pull requests open, `gh api .../actions/runs` answered
+  # total_count: 0 -- the gate this workflow runs had never executed once
+  # (decision 163 added five gates to it; none of them had ever reported).
+  # A whitelist of one branch is a promise about where work happens, and this
+  # repository does not keep work on main.
   push:
-    branches: [main]
   pull_request:
+  # A workflow that can only start on an event somebody else must arrange
+  # needs a way to be started on purpose; verifying a fix on a push is one
+  # of the two reasons this repository reached 164 with a red gate.
+  workflow_dispatch:
+  # Nightly, for the delivery job below. The plan's acceptance list ends with
+  # "the node holds no cloud vendor key", and that assertion lives in
+  # make e2e-delivery-check, which nothing triggered: decision 132 parked it
+  # behind the broker container because a registry rate limit must not be able
+  # to block a pull request. Parking it is right; leaving it with no schedule
+  # at all is not, because a job nothing runs reports on nothing. 03:17 UTC is
+  # deliberately off the hour.
+  schedule:
+    - cron: '17 3 * * *'
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # cancel-in-progress: a newer run on this branch stops an older one, so a
+  # run left half-finished from four minutes ago does not hold a runner while
+  # the code it was checking has already moved.
+  #
+  # This used to claim more than it could do. The comment here said keying on
+  # the head branch made "the push run and the pull-request run for the same
+  # commit one run instead of two", and it did not: 8638514, ed85313 and
+  # 00abc18 each produced two CI runs, and two attempts at the key
+  # (`github.event.pull_request.head.ref || github.ref`, then
+  # `github.head_branch || github.ref_name`) left both runs in_progress side by
+  # side, which is what two different concurrency groups look like.
+  #
+  # The reason is not the key. A concurrency group queues and cancels; it does
+  # not de-duplicate. Two events for one commit are two runs whatever the
+  # group is, and the "one run instead of two" sentence described a merge this
+  # mechanism does not perform. Removing it is the fix -- the sentence was
+  # read as a guarantee for as long as it stood (decision 420).
+  #
+  # On which the key goes: what has actually been observed is cancelling within
+  # one event, which any per-branch key gives. Whether one key also cancels a
+  # push against its own pull request is NOT established -- two runs on the
+  # same commit were still in_progress together under both candidate keys, and
+  # the run API does not report the group a run was placed in. So this line
+  # states the mechanism and not a cross-event effect nobody has measured: the
+  # cancelling this file relies on is within-event, and the key is here because
+  # per-branch is the intent, not because the cross-event case was verified.
+  group: ci-${{ github.head_branch || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
+
+  # Every module on its own published tags, on its own clock.
+  #
+  # This used to be step 11 of build-test. It is the longest thing in the file
+  # -- 19 modules, each built and tested with GOWORK=off -- and it ran on the
+  # same 35-minute budget as the forty gates after it. Observed on run
+  # 37545048748: the step started at 23:11:24 and the run's updated_at had not
+  # moved past 23:11:27 for forty minutes, with steps 12 through 43 still
+  # pending. The same target takes about two and a half minutes on a laptop.
+  #
+  # So the failure mode is not that a gate is red. It is that the step before
+  # them all can eat the whole budget, and every gate after it then reports
+  # nothing -- which reads exactly like "the gates passed" to anyone who reads
+  # the job list rather than the step list. A slow check and a set of checks
+  # that never ran should not be the same event, and sharing a timeout made
+  # them one.
+  #
+  # No MySQL service here: module-standalone-check runs with the workspace off
+  # and builds each module from its published tags, and it passes locally with
+  # no database running at all. Adding the service would make this job pay for
+  # a dependency it does not have.
+  module-standalone:
+    name: every module on its own published tags
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build and test every module on its own published tags
+        run: make module-standalone-check
+
   build-test:
     name: build + vet + test
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 35
+
+    # SQLite cannot see a dialect difference, which is the whole reason this
+    # container is here: the migration list is a list of MySQL statements, and
+    # the failure mode that matters — a statement MySQL accepts and SQLite
+    # silently tolerates, or the reverse — is invisible until it runs on the
+    # engine the deployment actually uses.
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: opskeeper
+          MYSQL_DATABASE: opskeeper_migtest
+          MYSQL_USER: opskeeper
+          MYSQL_PASSWORD: opskeeper
+        ports:
+          - '3306:3306'
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uopskeeper -popskeeper"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
 
     steps:
       - name: Checkout
@@ -48,17 +172,200 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.x'
+          go-version: '1.26.x'
           cache: true
 
-      - name: go build
-        run: go build ./...
-
-      - name: go vet
+      - name: go vet (root module)
         run: go vet ./...
 
-      - name: go test
-        run: go test ./...
+      - name: Module boundaries
+        run: make module-check
+
+      # The plan's phase-B acceptance line says `go test -race`. A data race is
+      # the one defect class that passes every functional test in this
+      # repository, because a test that does not run two goroutines at once
+      # cannot see one — decision 84 found exactly that in the Mapper that
+      # numbers SSE frames. Two minutes, on every push (decision 382).
+      - name: Race detector on the modules whose concurrency is designed
+        run: make race-check
+
+      - name: Control-plane domain boundaries
+        run: make domain-check
+
+      # The split proposal quotes its own price in its first line, and that
+      # quote sat on 95 / 26 / 4 while the tree had moved to 50 / 6 / 3, with
+      # nothing asking. `split-cost` is a report on purpose -- see the comment
+      # on the target -- but that reasoning covers the number it prints, not
+      # the number a document believes. This is the gate for the sentence
+      # (decision 404). It reads the headline only; the running log under it is
+      # history and is deliberately not checked.
+      - name: Split proposal price matches the tree
+        run: make split-price-check
+
+      # The pending list is the one place this repository says what a person
+      # still has to decide. Four turns in a row started from memory instead of
+      # from it, and each time the "unfinished item" turned out to be an old
+      # decision already written down (decision 416).
+      - name: The pending list is shaped and its count matches the auditor
+        run: make pending-check
+
+      # The per-symbol reachability verdict stays a report, and always has
+      # (decision 199: the walk cannot see six kinds of indirection, and a
+      # gate that cries wolf teaches its reader to skip it). What this runs is
+      # the one question that survives those blind spots — may the number of
+      # unreachable symbols grow? It is a one-sided ratchet, so a tree that
+      # deletes its way under the pin is never blocked, only slowed.
+      #
+      # It exists because the verdict file already carried this repository's
+      # most expensive miss: core/manager/biz/hitl/policy.go's
+      # WithDualSignPolicy and ValidateSigners were classified test-only —
+      # the two access points of ADR-019's dual sign, reachable only from
+      # tests — while a boot log line said the policy was loaded. Nobody read
+      # the report for three decisions (decision 285).
+      - name: Unreachable symbols do not grow
+        run: make deadcode-ratchet-check
+
+      # One table, one GORM model. core/domains/model/proposal and
+      # core/manager/model/hitl both returned the same table name from
+      # TableName(), with different column sets and different primary key
+      # types. The shadow had no importers, so nothing had ever broken --
+      # and neither the compiler nor a migrator names the other model, so
+      # the first real use would have arrived as a missing column rather
+      # than as the duplicate it is (decision 288).
+      - name: No table is claimed by two models
+        run: make table-check
+
+      # The ledger states numbers about this tree — a manager file count, a
+      # weighted total, a per-stage composition — and fifteen gates check
+      # those numbers against the tree itself. They had no Makefile target
+      # and no CI step, which makes them equivalent to not having them:
+      # gate fifteen was red for as long as it was unreachable.
+      - name: The ledger's numbers are the tree's own numbers
+        run: make ledger-check
+
+      - name: The release tag grammar accepts this repository's own versions
+        run: make tag-format-check
+
+      # Every mutating HTTP route has to carry a written verdict: audited,
+      # or exempt with a reason. This target existed and was not in CI,
+      # which meant the audit surface could grow a route that nobody had
+      # classified — the failure mode decision 309 found by hand.
+      - name: Every mutating route has an audit verdict
+        run: make route-audit
+
+      # Every method the manager registers on the tunnel must have a
+      # sender in production code. Reachability cannot see this: the
+      # webssh handlers were registered, so a walk arrived and stopped,
+      # while no edge had ever sent either message (decision 346).
+      - name: Every registered tunnel method has a production sender
+        run: make rpc-match-check
+
+      # The delivery chain names the right directory for each cross
+      # target; nothing inspected the artefact inside it. This gate reads
+      # `go version -m` out of the binaries themselves, so a host build
+      # written into a cross slot fails here instead of on a customer host
+      # as ENOEXEC. It skips on machines that have run no cross-build —
+      # which includes CI — and says so, rather than reporting a red that
+      # trains people to skip it (decision 348).
+      - name: Node binaries match their target directory
+        run: make node-arch-check
+
+      # Four more check-shaped targets that existed and that no workflow
+      # ran. All four are green, so the fix here is wiring, not repair --
+      # which is the point: a target nobody runs is not a promise, it is a
+      # number somebody typed. ci-gate-check is what keeps this from
+      # quietly growing again (decision 348).
+      - name: The node agent reaches the LLM through the vetted path
+        run: make agent-llm-path-check
+
+      - name: AgentTeams identities are the ones the protocol declares
+        run: make agentteams-identity-check
+
+      - name: Edge credentials are not reachable from the node side
+        run: make edge-credential-check
+
+      - name: Webshell links name files that exist
+        run: make webshell-links-check
+
+      - name: A domain change moves its dependents with it
+        run: make domain-cochange
+
+      # A migration target has to exist, and the fields written into it have
+      # to be fields its handler actually decodes. entity.go carried a single
+      # free-text Target that import, verify and rollback all pasted into a
+      # URL: six of the nine entities pointed at endpoints this router does
+      # not register, and the three that did exist rejected most of the mapped
+      # fields. Both failures land in the result as one bad row -- a 404 or a
+      # 400 read as dirty source data rather than as this tool aiming at the
+      # wrong place (decision 291).
+      - name: Migration targets exist and accept their mapped fields
+        run: make migrate-target-check
+
+      - name: Golden-corpus and diagnostic-axis gates
+        run: make eval-gates
+
+      # These five are the plan's phase-2 and phase-3 properties by name:
+      # cost crystallisation, the MCP protocol surface, prompt-injection
+      # fencing, the audit port, and building a package the way a node builds
+      # it. module-standalone-check already ran every one of their tests, so
+      # this step is not new coverage — it is the properties being *named* at
+      # the point of failure instead of failing as one anonymous package among
+      # several hundred, and it is what lets scripts/cigate hold them. Each now
+      # builds the way a node builds (cd <module> && GOWORK=off go test), so it
+      # also works on a checkout that has no go.work — which the root-relative
+      # form did not, on this runner or any fresh clone.
+      - name: Audit port is bounded-context free
+        run: make audit-port-check
+
+      - name: Crystallization promotion and retirement
+        run: make crystallize-check
+
+      - name: MCP protocol surface
+        run: make mcp-surface-check
+
+      - name: Foreign text is fenced before it reaches the model
+        run: make promptguard-check
+
+      - name: Packaged extensions build the way a node builds them
+        run: make plugin-extension-build-check
+
+      # Verified against a real mysql:8.0 before it was wired here, because a
+      # migration gate added to CI without ever having been run is a gate that
+      # reports a verdict nobody has seen. The target is the whole
+      # //go:build integration tag, not the two packages the first version
+      # named: the third one had 48 cases that no CI run had ever compiled,
+      # and nothing was red, because a build tag removes coverage without
+      # removing a line of code. scripts/cigate now asks that per file.
+      - name: Everything behind the integration build tag, on the dialect the deployment uses
+        env:
+          OPSKEEPER_TEST_MYSQL_DSN: opskeeper:opskeeper@tcp(127.0.0.1:3306)/opskeeper_migtest?parseTime=true
+        run: make integration-check
+
+      - name: Broker version pins agree
+        run: make broker-pin-check
+
+      - name: Node agent is actually offered its package tools
+        run: make pig-tool-scoping-check
+
+      - name: Plan security block, named assertion by assertion
+        run: make plan-security-check
+
+      - name: Roadmap ticks are witnessed in the shipped surfaces
+        run: make roadmap-delivery-check
+
+      - name: Data-Guard promises are checked against the tree
+        run: make compliance-claims-check
+
+      - name: Plan acceptance gates are wired
+        run: make ci-gate-check
+
+      # docs/api is the one place in this repository where a fully written,
+      # entirely fictional contract could sit for months with nothing red:
+      # two of its three documents described REST APIs that were never
+      # registered. This gate makes a documented endpoint a claim that has to
+      # be true in the source.
+      - name: Documented endpoints exist
+        run: make apidoc-check
 
       - name: Verify web console
         run: |
@@ -70,3 +377,127 @@ jobs:
 
       - name: Verify plugins and open-source gate
         run: make verify-plugins PYTHON=python3
+
+  e2e:
+    name: end-to-end suite (${{ matrix.arch }})
+    # The plan's section 6 asks for a full end-to-end run on both
+    # architectures, and release.yml has been packaging linux/arm64 since it
+    # started packaging anything. A release binary built on one architecture and
+    # a suite that only ever ran on another is the gap that requirement was
+    # written to close, so the suite runs on both now.
+    #
+    # The arm64 leg is a real run and not a build: ubuntu-24.04-arm is an arm
+    # machine, testcontainers pulls the arm64 manifest of mysql:8.0, and the
+    # suite compiles and starts the manager natively.
+    #
+    # What it does NOT cover, stated here so nobody reads more into it than is
+    # there: these twenty-eight tests never build the node's pig agent — only
+    # make e2e-delivery-check does, and it compiles it from source in
+    # core/pig (CGO_ENABLED=0) rather than downloading one. So the arm64 leg
+    # is the manager suite on arm, and the node agent on arm is still not
+    # exercised anywhere. Closing that would mean matrixing the delivery job
+    # too, which puts a public-registry broker pull and a cold PiG build on a
+    # second runner for a test nobody has ever run on arm; it is left as the
+    # next cut rather than shipped as a red nightly. See decision 186.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    # The suite brings up one MySQL container and a manager process per test.
+    # Cold it is a pull plus build; warm locally it is under a minute. Twenty
+    # minutes is headroom for a cold runner, not an expectation.
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+
+      # The two tunnel-broker tests are excluded by name, not by pattern: they
+      # pull singchia/frontier from Docker Hub, and a registry rate limit
+      # should not take the other twenty-eight with it. make e2e-delivery-check
+      # is the target that runs them, and scripts/cigate keeps the excluded set
+      # equal to the set of tests that actually call testenv.SharedFrontier.
+      - name: End-to-end suite
+        run: make e2e-manager-check
+
+  delivery:
+    # The plan's acceptance list ends with "the node holds no cloud vendor
+    # key", and that assertion has a home — make e2e-delivery-check, which
+    # walks the edge's install directory and the process environment of a
+    # running pig. It had no schedule: decision 132 parked it because it
+    # needs the broker container, and a job nothing triggers is a job that
+    # reports on nothing.
+    #
+    # Nightly rather than per-push, for the same reason it was parked: the
+    # broker image comes from a public registry, and a rate limit should not
+    # be able to block a pull request. It is allowed to go red here, because
+    # a nightly failure is information and a red PR is an obstacle.
+    name: node delivery (broker, nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+
+      # Decision 190 narrowed the arm64 gap to one question this job is the
+      # only thing that can answer: does the broker image the harness pulls
+      # offer an arm64 manifest? A developer machine behind a registry mirror
+      # cannot answer it — this one asked and got 403 — so the question is
+      # asked here, where the registry is reachable, and the answer is
+      # recorded in the log every night.
+      #
+      # continue-on-error here does NOT swallow the result, and the difference
+      # matters. The first dispatch of this job (2026-10-06) answered the
+      # question -- "no arm64 linux manifest is offered" -- and stopped. The
+      # step below it never ran. A diagnostic that blocks the assertion the
+      # job exists to make is not a gate, it is an outage: the plan's line
+      # "the node holds no cloud vendor key" stayed unreported for a second
+      # reason, and a worse one than the first, because this time the job DID
+      # run and looked like it had.
+      #
+      # The step is still counted. The final step re-raises whatever it
+      # decided, so a nightly that learned nothing still ends red and never
+      # looks like a nightly that passed -- which was decision 190's actual
+      # requirement. What it no longer does is let a *reported* verdict decide
+      # whether an *unrelated* assertion gets to run. The exit statuses are
+      # 0 (arm64 offered), 1 (read it, no arm64), 2 (this tool is misused) and
+      # 3 (could not ask); all four are answers about the broker image, none
+      # of them is a statement about the node. Read the VERDICT line.
+      - name: Which architectures does the broker image offer?
+        id: broker_arch
+        continue-on-error: true
+        run: make broker-arch-report
+
+      - name: Node delivery and no-cloud-credential assertions
+        run: make e2e-delivery-check
+
+      # The job is red if either half is, and the arch half is re-raised here
+      # rather than swallowed, so a nightly that only learned "no arm64" still
+      # ends red -- it just ends red having also reported the delivery
+      # assertions, which is the whole reason this job exists.
+      - name: Re-raise the broker architecture verdict
+        if: always() && steps.broker_arch.outcome == 'failure'
+        run: |
+          echo "::error::the broker image verdict was not arm64-capable; this job" \
+            "ends red so the gap stays visible. Read the VERDICT line above" \
+            "for the reason."
+          exit 1

@@ -8,7 +8,7 @@ option go_package = "github.com/singchia/opskeeper/api/gen/iam/v1;iamv1";
 
 // IamService 负责登录、JWT 签发、Org / User / Membership 管理。
 // 所有 RPC 都不在请求体里带 org_id / user_id — 那些来自 JWT claims 与 URL path，
-// 由 internal/pkg/auth middleware 注入 context.Context（见 ADR-003）。
+// 由 core/manager/pkg/auth middleware 注入 context.Context（见 ADR-003）。
 service IamService {
     // Register 用邮箱 + 密码注册；同步创建隐式个人 org + owner membership，
     // 返回一对 access / refresh token（claims 里 org_id 指向新建的个人 org）。

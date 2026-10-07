@@ -8,7 +8,7 @@
 //	create  创建新迁移骨架（文件名 + Up/Down 占位）
 //
 // 设计依据：docs/superpowers/specs/2026-07-13-unified-platform-path-a-design.md §2.5
-// 关联包：internal/migrator
+// 关联包：core/manager/migrator
 package main
 
 import (
@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
-	"github.com/vincent-wuhan/opskeeper/internal/migrator"
+	"github.com/vincent-wuhan/opskeeper/core/manager/migrator"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -260,7 +260,7 @@ func cmdCreate(args []string) error {
 import (
 	"context"
 
-	"github.com/vincent-wuhan/opskeeper/internal/migrator"
+	"github.com/vincent-wuhan/opskeeper/core/manager/migrator"
 	"gorm.io/gorm"
 )
 

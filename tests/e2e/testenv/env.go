@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -133,36 +134,53 @@ func Start(t *testing.T, opts ...Option) *Env {
 	}
 	env.httpBase = fmt.Sprintf("http://127.0.0.1:%d", port)
 
+	// The upstream the manager's OpenAI provider resolves to. It is the fake
+	// unless an operator pointed this run at a local inference engine, in
+	// which case the manager talks to a real model and the fake keeps
+	// answering only the providers nobody switched over.
+	//
+	// A bad value fails the run here rather than falling back to the fake:
+	// an operator who asked for a real model and silently got the stub would
+	// read a green run as evidence for a claim the run never tested.
+	openAIKey, openAIBaseURL, openAIModel := "fake-test-key", env.llm.URL()+"/v1", "fake-gpt"
+	if real, err := RealLLMBaseURL(); err != nil {
+		t.Fatalf("testenv: %v", err)
+	} else if real != "" {
+		openAIKey = "local-engine-no-secret"
+		openAIBaseURL = real + "/v1"
+		openAIModel = RealLLMModel()
+		t.Logf("testenv: manager will call a REAL inference engine at %s (%s)", real, RealLLMLimits)
+	}
+
 	managerEnv := map[string]string{
-		"OPSKEEPER_HTTP_ADDR":         fmt.Sprintf("127.0.0.1:%d", port),
-		"OPSKEEPER_METRICS_ADDR":      fmt.Sprintf("127.0.0.1:%d", metricsPort),
-		"OPSKEEPER_TUNNEL_ADDR":       "127.0.0.1:0", // disabled in practice; never dialed from e2e
-		"OPSKEEPER_DB_DIALECT":        "mysql",
-		"OPSKEEPER_DB_DSN":            dsn,
-		"OPSKEEPER_JWT_SECRET":        "test-jwt-secret-" + randomSuffix(),
-		"OPSKEEPER_ADMIN_EMAIL":       env.AdminEmail,
-		"OPSKEEPER_ADMIN_PASSWORD":    env.AdminPassword,
-		"OPSKEEPER_PUBLIC_URL":        env.httpBase,
-		"OPSKEEPER_PROM_ENABLED":      "true",
-		"OPSKEEPER_PROM_URL":          env.prom.URL(),
-		"OPSKEEPER_PROM_QUERY_URL":    env.prom.URL(),
-		"OPSKEEPER_LOG_QUERY_URL":     "", // Loki disabled in default e2e
-		"OPSKEEPER_TRACE_QUERY_URL":   "",
-		"OPSKEEPER_OPENAI_API_KEY":    "fake-test-key",
-		"OPSKEEPER_OPENAI_BASE_URL":   env.llm.URL() + "/v1",
-		"OPSKEEPER_OPENAI_MODEL":      "fake-gpt",
-		"OPSKEEPER_ANTHROPIC_API_KEY": "fake-test-key",
-		"OPSKEEPER_ANTHROPIC_BASE_URL": env.llm.URL(),
-		"OPSKEEPER_ANTHROPIC_MODEL":   "claude-fake",
-		"OPSKEEPER_ZHIPU_API_KEY":     "fake-test-key",
-		"OPSKEEPER_ZHIPU_BASE_URL":    env.llm.URL() + "/v1",
-		"OPSKEEPER_ZHIPU_MODEL":       "glm-fake",
+		"OPSKEEPER_HTTP_ADDR":           fmt.Sprintf("127.0.0.1:%d", port),
+		"OPSKEEPER_METRICS_ADDR":        fmt.Sprintf("127.0.0.1:%d", metricsPort),
+		"OPSKEEPER_DB_DIALECT":          "mysql",
+		"OPSKEEPER_DB_DSN":              dsn,
+		"OPSKEEPER_JWT_SECRET":          "test-jwt-secret-" + randomSuffix(),
+		"OPSKEEPER_ADMIN_EMAIL":         env.AdminEmail,
+		"OPSKEEPER_ADMIN_PASSWORD":      env.AdminPassword,
+		"OPSKEEPER_PUBLIC_URL":          env.httpBase,
+		"OPSKEEPER_PROM_ENABLED":        "true",
+		"OPSKEEPER_PROM_URL":            env.prom.URL(),
+		"OPSKEEPER_PROM_QUERY_URL":      env.prom.URL(),
+		"OPSKEEPER_LOG_QUERY_URL":       "", // Loki disabled in default e2e
+		"OPSKEEPER_TRACE_QUERY_URL":     "",
+		"OPSKEEPER_OPENAI_API_KEY":      openAIKey,
+		"OPSKEEPER_OPENAI_BASE_URL":     openAIBaseURL,
+		"OPSKEEPER_OPENAI_MODEL":        openAIModel,
+		"OPSKEEPER_ANTHROPIC_API_KEY":   "fake-test-key",
+		"OPSKEEPER_ANTHROPIC_BASE_URL":  env.llm.URL(),
+		"OPSKEEPER_ANTHROPIC_MODEL":     "claude-fake",
+		"OPSKEEPER_ZHIPU_API_KEY":       "fake-test-key",
+		"OPSKEEPER_ZHIPU_BASE_URL":      env.llm.URL() + "/v1",
+		"OPSKEEPER_ZHIPU_MODEL":         "glm-fake",
 		"OPSKEEPER_ALERT_EVAL_INTERVAL": "30s",
 		// Graph kernel is the live runtime (memory: chat quality
 		// 2026-05-25). The legacy kernel doesn't build chatruntime, so
 		// investigator / agent paths look "not wired". Default the
 		// harness to the same kernel production runs on.
-		"OPSKEEPER_AGENT_KERNEL": "graph",
+		"OPSKEEPER_AGENT_KERNEL": "pig",
 		// Tell the chatruntime loader where to find the agent + skill
 		// markdown files. The manager binary is spawned in a tempdir so
 		// the default `./agents` / `./skills` relative paths don't
@@ -281,6 +299,38 @@ func (e *Env) DoJSON(method, path string, body any, bearer string) (int, map[str
 		_ = json.Unmarshal(raw, &out)
 	}
 	return resp.StatusCode, out, nil
+}
+
+// StreamBody posts a request and returns the raw response body.
+//
+// DoJSON is the wrong tool for an endpoint that answers text/event-stream: it
+// hands back a nil map for every SSE response, successfully, because a stream
+// is not JSON. A test that wanted the frames therefore had nothing to assert
+// on and asserted on the status line instead — which is how a gateway
+// answering 200 with a well-formed but empty stream passed.
+func (e *Env) StreamBody(path string, body any, bearer string) (string, error) {
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequest("POST", e.httpBase+path, bytes.NewReader(raw))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	out, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return string(out), fmt.Errorf("status %d: %s", resp.StatusCode, string(out))
+	}
+	return string(out), nil
 }
 
 // LoginResult is the subset of /v1/auth/login that tests care about.
@@ -473,7 +523,7 @@ func managerBinary(t *testing.T) string {
 			binaryErr = errors.New("cannot locate repo root from testenv source")
 			return
 		}
-		dir, err := os.MkdirTemp("", "opskeeper-e2e-bin-")
+		dir, err := mkTempDir("opskeeper-e2e-bin-")
 		if err != nil {
 			binaryErr = err
 			return
@@ -481,6 +531,19 @@ func managerBinary(t *testing.T) string {
 		out := filepath.Join(dir, "opskeeper-manager")
 		cmd := exec.Command("go", "build", "-o", out, "./cmd/opskeeper")
 		cmd.Dir = repo
+		// GOWORK=off, for the same reason the node's binary is built that
+		// way (see this package's edge.go): the workspace file is a local
+		// development convenience that points PiG at a checkout on the
+		// developer's disk, and nothing in CI has one. A manager binary
+		// built with it does not test the dependency set that ships.
+		//
+		// This is not hypothetical. The acceptance suite spent a run
+		// failing on `s.sess.Steer returns 1 value` — a compile error in
+		// OpsKeeper's own file — because go.work pointed at a PiG checkout
+		// that predated the v0.4.0 release the modules actually pin. The
+		// message named the wrong repository, and the only reason it was
+		// not chased into PiG is that the pin was checked first.
+		cmd.Env = buildEnv()
 		var buf bytes.Buffer
 		cmd.Stdout = &buf
 		cmd.Stderr = &buf
@@ -540,15 +603,61 @@ func (e *Env) dumpLogs() {
 	e.t.Logf("=== manager logs ===\n%s\n=== end manager logs ===", e.logBuf.String())
 }
 
-// mergedEnv overlays envMap onto os.Environ() so the child inherits the
-// parent's PATH / HOME / proxy settings, then has its OPSKEEPER_* overridden.
+// credentialShapedEnv matches an inherited variable whose *name* says it may
+// be carrying a secret.
+//
+// It is a shape rule rather than a list of vendor names on purpose. PiG
+// resolves a provider credential from a long and growing set of variables —
+// OPENAI_API_KEY, ANTHROPIC_AUTH_TOKEN, HF_TOKEN, AZURE_OPENAI_API_KEY,
+// GEMINI_API_KEY, GOOGLE_APPLICATION_CREDENTIALS and more — and a copy of
+// that list in a test harness is a list that is wrong the day a provider is
+// added. A name rule fails closed instead: a variable that looks like a
+// credential does not reach a child, and the cost of being wrong is a
+// missing environment variable in a test child, not a key on a node.
+//
+// The rule is deliberately broad. Anything a spawned process needs in order
+// to run — PATH, HOME, TMPDIR, LANG, SSH_AUTH_SOCK, TERM — does not match it.
+//
+// "proxy" is in the rule for a reason that has nothing to do with the word
+// proxy: an inherited http_proxy is routinely written as
+// scheme://user:password@host, which is a credential wearing a URL as a
+// disguise. The children here make no proxied calls, so dropping it costs
+// nothing.
+var credentialShapedEnv = regexp.MustCompile(
+	`(?i)(api[_-]?key|secret|token|password|passwd|credential|private[_-]?key|proxy)|^aws_|^google_`)
+
+// mergedEnv builds a child environment: the parent's, minus OpsKeeper's own
+// configuration and minus anything credential-shaped, then envMap laid over
+// the top.
+//
+// The credential half is not hygiene, it is the harness keeping its own
+// promise. The acceptance criterion this repository has to demonstrate is
+// that a node's *process environment* holds no cloud vendor key, and the
+// process that starts the node is a `go test` binary running on whatever
+// machine the developer or CI runner happens to be. Before this rule, a
+// developer with OPENAI_API_KEY exported in their shell produced an e2e run
+// whose node genuinely held a real provider credential — and the test that
+// exists to catch exactly that reported green, because it only ever scanned
+// the node's config directory for the manager's own fake key. The harness
+// was the leak.
+//
+// envMap is applied last and is never scrubbed: the node's tunnel pair and
+// the manager's fake provider key are values the harness chose on purpose,
+// and the manager is exactly the process that is supposed to hold one.
 func mergedEnv(envMap map[string]string) []string {
 	parent := os.Environ()
-	// Strip any OPSKEEPER_* the test runner happens to have set — we want
-	// a clean slate so the test fully controls config.
 	clean := parent[:0]
 	for _, kv := range parent {
-		if len(kv) >= 7 && kv[:7] == "OPSKEEPER_" {
+		name, _, ok := strings.Cut(kv, "=")
+		if !ok {
+			continue
+		}
+		// Configuration isolation: anything the test runner set for
+		// OpsKeeper is dropped so the test fully controls config.
+		if strings.HasPrefix(name, "OPSKEEPER_") {
+			continue
+		}
+		if credentialShapedEnv.MatchString(name) {
 			continue
 		}
 		clean = append(clean, kv)

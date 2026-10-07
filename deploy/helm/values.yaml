@@ -38,6 +38,24 @@ manager:
             pathType: Prefix
     tls: []
 
+  # HLD-010 audit tamper-evidence.
+  #
+  # hmacKeySecret names an EXISTING Secret holding the chain key. It must
+  # be the same Secret for every replica: manager.replicaCount is 2 by
+  # default, both pods append to one chain, and a per-pod key makes
+  # verification fail at the first row the other pod wrote.
+  #
+  #   kubectl -n opskeeper create secret generic opskeeper-audit-key \
+  #     --from-literal=key="$(openssl rand -hex 32)"
+  #
+  # Unset means the ledger records rows without a digest. Degradation is
+  # loud (startup WARN + intact=null on the chain status endpoint), not
+  # silent, and it is preferred over failing to boot a deployment that
+  # was working before the key existed.
+  audit:
+    hmacKeySecret: ""
+    hmacKeySecretKey: "key"
+
   # Platform-base-ha: HA scheduling knobs.
   # PodAntiAffinity spreads replicas across nodes; topologySpread
   # balances across zones. PDB ensures at least 1 stays during

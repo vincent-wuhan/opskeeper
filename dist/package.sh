@@ -116,8 +116,40 @@ copy_opt "${REPO_ROOT}/deploy/install/README.md"           "${STAGE_DIR}/README.
 copy_opt "${REPO_ROOT}/deploy/install/install.sh"          "${STAGE_DIR}/install.sh"          755
 copy_opt "${REPO_ROOT}/deploy/install/uninstall.sh"        "${STAGE_DIR}/uninstall.sh"        755
 copy_opt "${REPO_ROOT}/deploy/install/upgrade.sh"          "${STAGE_DIR}/upgrade.sh"          755
-copy_opt "${REPO_ROOT}/deploy/install/docker-compose.yml"  "${STAGE_DIR}/docker-compose.yml"
-copy_opt "${REPO_ROOT}/deploy/install/.env.example"        "${STAGE_DIR}/.env.example"
+
+# state-dirs.sh is NOT optional, which is why it does not use copy_opt.
+# install.sh and upgrade.sh `source` it, and both run under `set -e`, so a
+# tarball without it dies on the first data directory rather than on a health
+# check. That is the right place to fail and the wrong reason to get there:
+# copy_opt warns and continues, so a rename on one side would have shipped a
+# tarball that could not install. The whole list of host directories and their
+# uids lives in this one file, so losing it loses every mkdir and chown.
+if [ -f "${REPO_ROOT}/deploy/install/state-dirs.sh" ]; then
+    cp "${REPO_ROOT}/deploy/install/state-dirs.sh" "${STAGE_DIR}/state-dirs.sh"
+    log "  + state-dirs.sh"
+else
+    die "deploy/install/state-dirs.sh missing: install.sh and upgrade.sh source it, and the stack cannot be installed without it"
+fi
+# docker-compose.yml and .env.example are NOT optional, and copy_opt's
+# warn-and-continue is wrong for them in the same way it is wrong for
+# state-dirs.sh. install.sh and upgrade.sh reference both without an
+# `if [[ -f … ]]` guard — a `docker compose up` with no compose file is an
+# install that cannot start, and a generated .env with no example to copy from
+# is a stack whose variables are silently unset. The other copy_opt entries
+# below ARE optional: every one of them is read behind a guard, and the guard's
+# message is the right thing to see when a tarball is assembled without them.
+require_asset() {
+    local src="$1" dst="$2" mode="${3:-}"
+    if [ ! -f "$src" ]; then
+        die "$src missing: it is staged as a required asset, and a tarball without it cannot install"
+    fi
+    cp "$src" "$dst"
+    if [ -n "$mode" ]; then chmod "$mode" "$dst"; fi
+    log "  + $(basename "$dst")"
+}
+
+require_asset "${REPO_ROOT}/deploy/install/docker-compose.yml" "${STAGE_DIR}/docker-compose.yml"
+require_asset "${REPO_ROOT}/deploy/install/.env.example"       "${STAGE_DIR}/.env.example"
 copy_opt "${REPO_ROOT}/deploy/install/frontier.yaml"       "${STAGE_DIR}/frontier.yaml"
 
 # --- systemd mode (--mode=systemd dispatch target) --------------------------
@@ -195,7 +227,7 @@ docker save "${IMAGE_REF}" -o "${STAGE_DIR}/images/opskeeper.tar"
 # Frontier broker is upstream singchia/frontier (ADR-007). Docker Hub
 # pull is unreliable in some networks, so we build it locally (see
 # Makefile target `docker-build-broker`) and ship the image tar.
-FRONTIER_VERSION="${FRONTIER_VERSION:-v1.2.4}"
+FRONTIER_VERSION="${FRONTIER_VERSION:-v1.2.5}"
 FRONTIER_REF="singchia/frontier:${FRONTIER_VERSION}"
 log "saving docker image ${FRONTIER_REF} -> images/frontier.tar"
 if ! docker image inspect "${FRONTIER_REF}" >/dev/null 2>&1; then
@@ -395,6 +427,30 @@ for target in ${EDGE_TARGETS}; do
         log "  + edge/opskeeper-edge-${target}"
     else
         warn "edge binary ${src} missing; skipping"
+    fi
+done
+
+# The node AI agent (pig) ships next to opskeeper-edge so install-edge.sh can
+# install it under /usr/local/lib/opskeeper-edge/pig and the edge can spawn it
+# as a child process.
+#
+# Unlike everything below this block, a missing pig is fatal rather than a
+# warning. Every other bundled binary is a signal source the node degrades
+# without; the agent is how a question gets answered at all. A release tarball
+# without it installs cleanly, the service starts, metrics flow, and the first
+# operator who asks the node anything gets an empty toolset with nothing in any
+# log to say why. `die` here is the only place in this script that refuses to
+# produce an artefact, and it refuses for the same reason install-edge.sh
+# refuses: the failure this prevents is invisible from the outside.
+for target in ${EDGE_TARGETS}; do
+    src="${REPO_ROOT}/bin/${target}/pig"
+    dst="${STAGE_DIR}/edge/pig-${target}"
+    if [ -f "$src" ]; then
+        cp "$src" "$dst"
+        chmod 755 "$dst"
+        log "  + edge/pig-${target}"
+    else
+        die "pig binary ${src} missing; a node installed from this tarball would run with no AI tools at all. Run 'make build-pig-all' first."
     fi
 done
 

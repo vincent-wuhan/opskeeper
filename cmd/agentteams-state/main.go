@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	state "github.com/vincent-wuhan/opskeeper/internal/manager/biz/agentteams/state"
+	state "github.com/vincent-wuhan/opskeeper/core/manager/biz/agentteams/state"
 )
 
 const protocolVersion = "v1"

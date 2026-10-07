@@ -30,7 +30,7 @@ jobs:
             runner: ubuntu-24.04-arm
 
     env:
-      FRONTIER_VERSION: v1.2.4
+      FRONTIER_VERSION: v1.2.5
 
     steps:
       - name: Checkout
@@ -50,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.?[0-9]+)?$ ]]; then
             echo "release tag must match vMAJOR.MINOR.PATCH, got: $tag" >&2
             exit 2
           fi
@@ -64,7 +64,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25.x'
+          go-version: '1.26.x'
           cache: true
 
       - name: Set up Docker Buildx
@@ -94,6 +94,16 @@ jobs:
         run: |
           set -euo pipefail
           make package TARGET_OS=linux TARGET_ARCH=${{ matrix.arch }} PLATFORM=${{ matrix.platform }}
+
+      # The release-signing check, here and not on every push. It asserts that
+      # RELEASE_VERSION.json still describes *this* commit -- its two tree
+      # hashes are compared against HEAD -- so on a development branch it is
+      # red by construction and would only ever stop the job before the
+      # open-source gate underneath it got a chance to run. See the comment on
+      # the `verify-plugins` target in the Makefile.
+      - name: Verify release metadata
+        shell: bash
+        run: make version-check
 
       - name: Verify package
         shell: bash
@@ -133,7 +143,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]; then
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.?[0-9]+)?$ ]]; then
             echo "release tag must match vMAJOR.MINOR.PATCH, got: $tag" >&2
             exit 2
           fi

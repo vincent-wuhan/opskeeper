@@ -4,7 +4,7 @@ These tests exercise the FastAPI router registered by build_install_plugin_route
 Subprocess calls to `qwenpaw plugin install` are mocked so the suite runs in CI
 without the qwenpaw binary. The goal is to lock down the install wiring
 behavior on the worker side; opskeeper-side wiring is covered separately by
-internal/manager/server/agentteams/plugin_http_test.go and
+core/manager/server/agentteams/plugin_http_test.go and
 internal/agentteams/controller_discovery_test.go.
 """
 from __future__ import annotations

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	aiopstoolsbase "github.com/vincent-wuhan/opskeeper/internal/manager/biz/aiops/tools/basetool"
+	aiopstoolsbase "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/basetool"
 )
 
 type coordinatorToolStub struct{ name string }

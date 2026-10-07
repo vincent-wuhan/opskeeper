@@ -47,7 +47,7 @@ func mockMCP(authSeen *string, mu *sync.Mutex) *httptest.Server {
 		case "tools/list":
 			mcpWriteRPC(w, req.ID, map[string]any{"tools": []map[string]any{{
 				"name":        "echo",
-				"description":  "echo back the input",
+				"description": "echo back the input",
 				"inputSchema": map[string]any{"type": "object", "properties": map[string]any{"msg": map[string]any{"type": "string"}}},
 			}}})
 		case "tools/call":

@@ -69,7 +69,7 @@ OpsKeeper 的护城河是 `geminio` 双向通道 + AI agent 能在客户机器�
 - **B.4** `✓` 网络 Layer-1 —— cmdpolicy 扩展（已落地）
   - 9 个 binary：OVS / nft / conntrack / ipset / ethtool / bpftool / `ip netns`
   - 只开 read，write 留给 SOP 走双签
-  - 源码：`internal/edgeagent/cmdpolicy/policy.go`
+  - 源码：`core/edge/cmdpolicy/policy.go`
 - **B.5** `◐` 网络 Layer-2/3 skill [v1.0]
   - `host_ovs_show`、`host_netfilter_dump`、`host_conntrack_summary`
   - eBPF preset 库 —— 只放 preset id，永远不允许 `bpftrace -e <body>` 这种裸传

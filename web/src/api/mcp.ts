@@ -1,8 +1,8 @@
 import { request } from './client';
 
 // MCP servers API client — talks to /v1/mcp/servers/* (HLD-018 P3).
-// The backend handler lives at internal/manager/server/mcp/http.go; the
-// model is internal/manager/model/mcp.Server.
+// The backend handler lives at core/manager/server/mcp/http.go; the
+// model is core/manager/model/mcp.Server.
 //
 // Wire shapes (mind the asymmetry — same trap as marketplace.ts):
 //   - create/update accept a snake_case-ish editable subset via `serverInput`

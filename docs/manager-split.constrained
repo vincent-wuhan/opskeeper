@@ -1,0 +1,119 @@
+# manager 拆分候选方案 · 约束自洽版（决策 214）
+
+# 状态：已定价的候选，不是已批准的决定。
+#
+# 定价：
+#   make split-cost FILE=docs/manager-split.constrained
+#
+# 它与 `docs/manager-split.proposed` 的关系不是「下一版」，是**一个修正**。
+# 提案的推理链（第一问、第二问、第三问各自的答案与边界）全部保留在那边，
+# 那边仍然是决策 120/137/147/149/150/169/196/211 的记录。这一份只做一件事：
+# 把那份分组按它自己声明的硬约束改回来，然后报实测价。
+#
+# —— 为什么需要修正：提案切断了自己声明的硬约束 ——
+#
+# 决策 211 给 `-cut` 加了硬约束报告，并查出 `docs/manager-split.proposed`
+# 切断了它自己在第 36-39 行声明的 4 条硬约束里的 3 条：
+#
+#   chatdiagnose  -> audit     apps -> core
+#   frontierbound -> audit     apps -> core
+#   middleware    -> audit     apps -> core
+#
+# 也就是说：**这份分组买到的是「构建与发布独立」，代价是「审计链被切成三段」**，
+# 而后者是这份文件自己说过不能买的东西。这不是外部证据与方案冲突，是方案与
+# 它自己的第一问答案冲突——而第一问是**已经有答案**的那一问（决策 196 读完
+# 43 条边，认定只有 4 条是真正的物理硬约束，且它们是同一件事：审计链）。
+#
+# 换句话说：4 条硬约束全部指向 `audit`，所以任何合法分组都必须让
+# {audit, aiops, chatdiagnose, frontierbound, middleware} 落在同一组。
+# 提案把 audit 留在 core、把它另外 4 个持有者中的 3 个放进 apps。
+#
+# —— 修正的做法，以及一个没有人预料到的结果 ——
+#
+# 把 chatdiagnose / frontierbound / middleware 从 apps 移进 core，重跑定价。
+# 预期是「更贵」——多三个域进 core，它们各自还有别的出边。结果是**更便宜**：
+#
+#   候选                              组内 import   跨组 import   切断的硬约束
+#   docs/manager-split.proposed 50 6 0 / 0
+#   docs/manager-split.constrained 53 3 0 / 0
+#
+# 机制不难理解，但方向值得写清楚，因为它是本文件存在的全部理由：
+# 那三个域不是跨组边的**消费者**，是**生产者**。它们在 apps，而它们依赖的东西
+# （audit / aiops / loop / edge）都在 core，于是它们几乎每一条出边都是一条缝：
+#
+#   chatdiagnose -> aiops / loop / audit      全部 apps -> core
+#   frontierbound -> audit / edge / metric    前两条 apps -> core
+#   middleware -> audit                       apps -> core
+#
+# 把它们放进 core，这批边从缝变成组内。代价是它们自己**指向 apps 的**那几条
+# 变成了缝——而决策 227 之后这个代价是零：`frontierbound -> metric` 那一条
+# 已经被切掉，端口搬到了 `core/floor/tunnel` 的 `HostMetricPoint` 旁边，
+# 于是 `frontierbound` 一条指向 apps 的边都不剩。
+# 净账是 42 → 29，少 13 条缝，而 29 这个数是实测的：`make split-cost
+# FILE=docs/manager-split.constrained`。
+#
+# **所以那份提案是在付更高的价，去买一个它自己禁止买的性质。** 这不是「两个
+# 候选差不多、你来选」——是其中一份在它自己的判据下明确地更差。
+#
+# —— 顺带修掉的第二个缺陷：漏掉一个域 ——
+#
+# 决策 211 记过「分组只提到 57 个域，`federationchild` 没有被分配」。两份候选
+# 都漏了它。`core/manager/service/federationchild` 是子集群那一侧的策略接收端，
+# 与 `service/federationlink`（哪个已认证调用方可以代表哪个子集群）成对；
+# 提案自己给 federationlink 放 apps 的理由是「这一层讲的是控制面怎么把一份
+# 签好的策略送到另一个控制面手里」，`federationchild` 讲的是同一件事的另一半，
+# 所以它在 apps。本版 58 个域全部分配，定价器不再报「1 domain(s) the grouping
+# does not mention」。
+#
+# —— 这份方案仍然回答不了的那一问（不因为更便宜就消失）——
+#
+# 第三问「哪些域要独立发版」依然是空的，而且理由与本文件无关：控制面的全部提交
+# 落在同一天（决策 169，`make domain-cochange` 报 `window: 2026-10-02 to
+# 2026-10-03 (1 day(s))`），这条轴上根本没有第二个时间点。import 图说的是
+# 「切这里便宜」，共变数据说的是「有人会一起改」，而后者此刻测不出来。
+#
+# 第二问「什么和什么一起故障」有答案，且答案不站在「拆了就独立」那一边：
+# 两半仍共用同一个数据库连接预算（决策 150）。所以这份分组买到的仍然是
+# **构建与发布独立**，不是资源与故障独立。
+#
+# 换句话说：**这份修正解决的是「方案违反了自己的硬约束」，
+# 不是「方案已经可以被批准」。** 后者需要第三问的真实历史，而那要等时间。
+#
+# 定价器的口径提醒：`-cut` 是报告模式，一份切断硬约束的候选仍然会被定价并
+# 争论，而不是在写出来的当天变成红灯（决策 211 的明确选择）。所以「0 / 4」
+# 这个数不会自己喊出来——它印在 `make split-cost` 的输出里，而
+# scripts/domaincheck/candidate_test.go 会把本文件的这两个数与定价器实算的数
+# 对齐，文件里的数字一旦陈旧就红。
+
+# AI 内核面：agent 内核 + 它直接坐着的三个底座域 + 审批/审计/拓扑/诊断，
+# 再加上**审计链的另外三个持有者**。
+#
+# 与原提案的差别只有这一处，理由是硬约束而不是偏好：chatdiagnose、
+# frontierbound、middleware 与 aiops 一样往 audit 写，而写一条有序防篡改链的
+# 四个持有者被拆到两个进程，需要选主/共识/至少一把跨进程锁——那笔账比它
+# 省下的多（决策 196）。把三个域放进来让跨组缝从 42 降到 31，所以这条硬约束
+# 在这里不是代价，是省下来的钱。
+# 决策 271 之后多了一个 container：插件容器加载器。它进 core 组不是因为它跟
+# 内核有什么耦合，而是因为它是**被两边共同依赖的底座**——aiops 从它加载出来的
+# 结果里解析 skill 与 persona，marketplace 用它判断暂存的是哪种包，而它自己
+# 已经是 core/extension 这个独立 module。把它放 apps 会凭空造出一条
+# aiops → container 的跨组缝，而这条缝在真实切法里根本不存在（决策 271 已经
+# 用一个 Go module 把它从 manager 里搬出去了）。
+core = aiops, container, device, edge, alert, topology, loop, hitl, approval, audit, mcp,
+        chatdiagnose, frontierbound, middleware,
+        monitor, setting, skill, knowledge, report, proposal, incident
+
+# 应用面：入口层与适配层。彼此几乎不依赖（L0 占 36 个域），打包代价低。
+#
+# federation / federationchild / federationlink 是集群联邦的三块：biz/federation
+# 是根侧的账本与发布器，service/federationlink 是「哪个已认证的调用方可以代表
+# 哪个子集群」这张绑定表和两个方向的调用，service/federationchild 是子集群
+# 那一侧的接收端。放同一组是因为它们之间那几条边就是这件事本身，拆开等于把
+# 一次绑定的判断留在缝的两侧。都不在 core 组：这一层不讲 agent 内核，它讲的是
+# 控制面怎么把一份签好的策略送到另一个控制面手里。
+apps  = agentteams, cluster, control, dataguard,
+        demo, edgeauth, federation, federationchild, federationlink, flow, grafana,
+        higress, iam, imbridge, integration, llmgw, llmpig, logs, marketplace,
+        metric, migrate, migrator, nodeagent, nodefleet, observability,
+        pkg, plugin, pluginimport, prometheus, promwrite, scheduler, secret,
+        systemhealth, systemupgrade, traces, version, webshell

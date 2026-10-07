@@ -24,10 +24,10 @@ func TestAuth_RBAC_ThreeTier_B3(t *testing.T) {
 	adminPair := env.LoginAdmin()
 
 	const (
-		userEmail    = "rbac-user@opskeeper.local"
-		userPass     = "E2E!RBAC-user-pass"
-		viewerEmail  = "rbac-viewer@opskeeper.local"
-		viewerPass   = "E2E!RBAC-viewer-pass"
+		userEmail   = "rbac-user@opskeeper.local"
+		userPass    = "E2E!RBAC-user-pass"
+		viewerEmail = "rbac-viewer@opskeeper.local"
+		viewerPass  = "E2E!RBAC-viewer-pass"
 	)
 
 	// Admin seeds the two lesser-privileged accounts. Endpoint A on the
@@ -43,9 +43,9 @@ func TestAuth_RBAC_ThreeTier_B3(t *testing.T) {
 	// Now both non-admin roles must be 403, never letting them mint
 	// new identities.
 	for _, c := range []struct {
-		role   string
-		token  string
-		email  string
+		role  string
+		token string
+		email string
 	}{
 		{"user", userPair.AccessToken, "rbac-user-attempt@opskeeper.local"},
 		{"viewer", viewerPair.AccessToken, "rbac-viewer-attempt@opskeeper.local"},

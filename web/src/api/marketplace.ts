@@ -1,10 +1,10 @@
 import { request } from './client';
 
 // Marketplace API client — talks to /v1/marketplace/* (/ N+5a).
-// The backend handler lives at internal/manager/server/marketplace/http.go;
-// the wire shapes mirror the Go types in internal/manager/biz/marketplace
+// The backend handler lives at core/manager/server/marketplace/http.go;
+// the wire shapes mirror the Go types in core/manager/biz/marketplace
 // (Source / CapabilityDeclaration / InstallResult) and
-// internal/manager/model/marketplace (InstalledPack).
+// core/manager/model/marketplace (InstalledPack).
 //
 // Note: model.InstalledPack ships without `json:` tags so its fields go
 // over the wire as Go-style PascalCase. We expose them through a normalised

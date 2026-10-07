@@ -140,8 +140,8 @@ def check_harness_cases_have_agentteams() -> tuple[bool, str]:
 
     cases 目录解析顺序：
       1. 环境变量 OPSKEEPER_HARNESS_CASES_DIR（推荐 — CI 注入）
-      2. 相对 opskeeper 仓库根：../../../../internal/harness/cases
-      3. 相对当前 plugin：../../../internal/harness/cases（兜底，兼容 monorepo 内嵌）
+      2. 相对 opskeeper 仓库根：../../../../core/harness/cases
+      3. 相对当前 plugin：../../../core/harness/cases（兜底，兼容 monorepo 内嵌）
       4. 相对 plugin.yaml 的 ./examples/harness-cases（demo cases，v1.0.2+ 推荐）
 
     行为：

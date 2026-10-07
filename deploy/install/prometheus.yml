@@ -24,7 +24,7 @@ scrape_configs:
       - targets: ['opskeeper:9100']
     scrape_interval: 15s
 
-  # frontier 没有自暴露 /metrics（singchia/frontier:v1.2.4 暂未开），
+  # frontier 没有自暴露 /metrics（当前固定的 broker 版本暂未开），
   # 等上游加了再来。
   #
   # Host + process metrics now flow edge → tunnel push → remote_write

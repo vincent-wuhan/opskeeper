@@ -170,8 +170,21 @@ docker volume rm opskeeper_mysql_data opskeeper_logs 2>/dev/null || true
 # 'opskeeper'@…`. Discovered during the 2026-05-20 reinstall smoke.
 DATA_DIR="${OPSKEEPER_DATA_DIR:-/var/lib/opskeeper}"
 if [[ -d "$DATA_DIR" ]]; then
-    log_info "removing bind-mount data dirs in $DATA_DIR (mysql/qdrant/prom/loki/tempo/grafana)"
-    for d in mysql qdrant prometheus loki tempo grafana; do
+    # Which directories to purge is derived from the same list install.sh
+    # creates them from, so a service added to one is added to the other. The
+    # two used to be written out separately and agreed by hand; when they
+    # disagree, a --purge leaves a previous install's data behind and the next
+    # install reads it — see the mysql password note above.
+    # shellcheck source=/dev/null
+    if [[ -r "$SCRIPT_DIR/state-dirs.sh" ]]; then
+        source "$SCRIPT_DIR/state-dirs.sh"
+    else
+        log_error "state-dirs.sh is missing from $SCRIPT_DIR: it holds the purge list, and guessing it would re-introduce the mysql-password failure this file documents"
+        exit 1
+    fi
+    purge_list="$(opskeeper_purge_dirs | tr '\n' ' ')"
+    log_info "removing bind-mount data dirs in $DATA_DIR (${purge_list% })"
+    for d in $(opskeeper_purge_dirs); do
         if [[ -d "$DATA_DIR/$d" ]]; then
             rm -rf "$DATA_DIR/$d"
         fi

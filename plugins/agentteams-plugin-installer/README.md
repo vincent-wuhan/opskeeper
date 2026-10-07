@@ -71,7 +71,7 @@ export OPSKEEPER_PLUGINS_DIR=/var/lib/opskeeper/plugins   # 可选，默认值
 export HIGRESS_ADMIN_PASSWORD=...                        # Bearer 鉴权必需
 ```
 
-后端 7 个 endpoint 由 `internal/manager/server/agentteams/plugin_http.go` 提供：
+后端 7 个 endpoint 由 `core/manager/server/agentteams/plugin_http.go` 提供：
 - list / get / install / uninstall / enable / disable / sync / **push**(zip → worker qwenpaw install)
 Bearer 中间件复用 `cmd/opskeeper/auth_agentteams.go`。
 

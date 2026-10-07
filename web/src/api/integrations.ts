@@ -1,7 +1,7 @@
 // integrations.ts — typed wrappers for the plugin runtime + the
 // Integrations cards on the Settings page.
 //
-// Backend routes (see internal/manager/server/edge/http.go):
+// Backend routes (see core/manager/server/edge/http.go):
 //   GET /api/v1/edges/{id}/plugins
 //   PUT /api/v1/edges/{id}/plugins/{name} (admin)
 //   GET /api/v1/integrations/plugin-counts

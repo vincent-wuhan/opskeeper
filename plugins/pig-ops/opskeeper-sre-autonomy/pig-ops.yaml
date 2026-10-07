@@ -1,0 +1,134 @@
+# pig-ops.yaml — OpsKeeper governance manifest for the self-heal package.
+#
+# This is the third node package, and it is the only one whose tool can run
+# with nobody present to approve it. The other two are answered by the
+# control plane: a read is an upcall, a mutating call is an upcall carrying
+# a human's receipt. This one is answered by the node — but only while the
+# control plane is unreachable, and only for an argument vector that the
+# person reviewing THIS file has read.
+#
+# So this file is not a manifest with a setting turned on. The autonomy
+# block below is the entire capability: the model gets to choose a name
+# from it, the host compares the name against it, and the host runs the
+# argv written here. A model cannot reach anything that is not one of these
+# lines, because there is no parameter through which a command could be
+# written — the tool's schema has no `command` property, and a test in the
+# extension fails the build if one is ever added.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-sre-autonomy
+  version: 0.1.0
+  vendor: opskeeper
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  # edge: installed into the per-node pig process, on the nodes whose
+  # operators asked for self-heal. A node without this package still
+  # registers the tool in the host — the tool is a host executor — and
+  # refuses every call, because the gate only dispatches a tool that some
+  # admitted manifest declared.
+  targets: [edge]
+
+  # L3 — this mutates state outside OpsKeeper's control, on a live host,
+  # with no human in the loop. L2 would be a lie about the tier: L2's
+  # ceiling is `write`, and MinimumClass(L2) is write, so a destructive
+  # tool here would be a load error rather than a clamp. L3 is the tier
+  # whose ceiling is `destructive` and whose approval carries a blast
+  # radius, which is exactly the shape of this capability.
+  safety_level: L3
+
+  # The declared ceiling. There is nothing read-only in this package, and
+  # nothing here can be described as a bounded reversible change either —
+  # a self-heal runs on a host that is already broken, which is the worst
+  # possible moment to discover that the action was wrong. It is bounded
+  # by the argv, the reach, the window and the key, and by nothing else.
+  capabilities: [destructive]
+
+  # One name. The host's allow-list is built from this list, so a tool the
+  # agent produces that is not named here is refused on every turn — which
+  # is also the reason this package adds exactly one tool.
+  tools:
+    - { name: host_autonomy_run,  class: destructive }  # run one pre-declared self-heal action
+
+  # No scopes. This is a deliberate, load-bearing absence rather than an
+  # oversight: the package never talks to an API, so it has nothing to
+  # authenticate with. It names an action and the host runs a local
+  # command. That also means a future action which genuinely needs a
+  # credential cannot be added quietly — it would have to come with an
+  # edit to this line, and an edit here is a review.
+  required_scopes: []
+
+  audit:
+    # The package declares that it emits; the host writes every row. The
+    # node's arbiter spools each decision to its own write-ahead log
+    # before the action starts, and the replay pump hands the backlog to
+    # the center's tamper-evident chain once the tunnel is back. A
+    # package that could suppress that would be a package that could
+    # act without a record, so `mutates` is always false and a manifest
+    # asking for it is refused at load.
+    emits: true
+    mutates: false
+
+  approval:
+    # True, and the interesting part is what the host does with it while
+    # the control plane is *gone*: nothing, and everything. The gate
+    # cannot be asked, so the signed argv below stands in for the
+    # signature a person put on this package. The moment the control
+    # plane is reachable again, every call to this tool defers to the
+    # ordinary approval gate and a human decides.
+    required: true
+
+    # pod, the narrowest radius there is, and the host refuses to load an
+    # autonomy action wider than single-ns at all. A self-heal that could
+    # take a namespace down is not an edge self-heal — it is an outage
+    # with extra steps, and one nobody was watching.
+    max_blast_radius: pod
+
+  # The whole capability. Read this block as a list of things a person is
+  # agreeing the node may do alone, unattended, during an outage.
+  #
+  # `offline_after` is 30s, which is the host floor (MinAutonomyOfflineAfter)
+  # and therefore the shortest window anybody can ask for. It is not
+  # arbitrary: a node that has been alone for four seconds has not
+  # established that anything is wrong, and a tunnel reconnect cycle is a
+  # stream of blips — a threshold near zero would run this whole list on
+  # every reconnect.
+  #
+  # Each action is one exact argument vector, compared byte for byte and
+  # executed without a shell between the manifest and the process. There
+  # is no wildcard, no prefix match, and no "the first element names a
+  # binary and the rest are whatever the caller wanted". An undeclared
+  # call is refused.
+  #
+  # The example is a service restart, which is the canonical edge self-heal
+  # and the one an operator is most likely to have signed. `date` is used
+  # here instead so that the declaration is inert on any host: it proves
+  # the mechanism without restarting anything on the machine that installs
+  # this package.
+  autonomy:
+    offline_after: 30s
+    actions:
+      - name: restart_orders
+        tool: host_autonomy_run
+        trigger:
+          kind: metric_above
+          metric: opskeeper_orders_backlog_depth
+          threshold: 500
+        argv: ["systemctl", "restart", "orders-api"]
+        blast_radius: pod
+        ttl: 2h
+        # The key is a template, not a constant, because a constant is
+        # spent by the first outage and the second one then finds an
+        # action that cannot run at all. The host derives the key from
+        # the template and the claim, so a caller cannot supply its own.
+        idempotency_key: "{{target}}-{{window}}"
+
+  install:
+    # pin, like the repair package and for a stronger reason. A package
+    # that can restart a service is not one to auto-upgrade across a
+    # fleet; a package that can restart a service *with nobody watching*
+    # is not one whose autonomy.actions anyone should be able to change
+    # without reading the diff. Nodes are moved onto a new version
+    # deliberately.
+    strategy: pin
+    min_edge_version: 0.8.0

@@ -143,62 +143,96 @@ CI → cmd/opskeeper-eval → fault-injector → Coordinator 自主响应
 
 ### 4.1 迁移工具
 
-`opskeeper-migrate-from-opskeeper`（独立 CLI，Task 3.3 产出）。
+`opskeeper-migrate`（独立 CLI，源码在 `cmd/opskeeper-migrate/`）。
 
 ### 4.2 支持的实体（9 类）
 
-| # | ops-keeper 实体 | opskeeper 目标 | 字段映射 |
-|---|---|---|---|
-| 1 | `users` | `users` | 1:1 |
-| 2 | `projects` | `tenants` | name → name, owner → owner_id |
-| 3 | `pg_connections` | `middleware_resources`（type=postgres） | DSN 加密重存 |
-| 4 | `redis_connections` | `middleware_resources`（type=redis） | 同上 |
-| 5 | `mq_connections` | `middleware_resources`（type=rabbitmq/kafka） | 同上 |
-| 6 | `k8s_clusters` | `middleware_resources`（type=k8s） | kubeconfig 重加密 |
-| 7 | `git_repos` | `middleware_resources`（type=git） | URL + token 加密 |
-| 8 | `inspection_schedules` | `schedules` | cron 表达式保留 |
-| 9 | `alert_rules` | `alert_rules` | 表达式翻译 |
+**只有前两类真的可导入。** 决策 291 之前这张表把九类实体一律写成"可迁移",
+而 manager 的路由表里没有其中六个的落点：五个连接类实体指向
+`middleware_resources`（那张表从未接线，决策 287 已删；中间件适配器读的是 DSN
+环境变量），`inspection_schedules` 指向 `schedules`（唯一相近的端点是
+`/v1/report-schedules`，那是报告计划）。照旧写出去，`import` 会为每一行记一条
+404——而 404 读起来像数据错误，不像"这个工具写错了地方"。
+
+| # | ops-keeper 实体 | opskeeper 端点 | 可导入 | 说明 |
+|---|---|---|---|---|
+| 1 | `users` | `POST /v1/users` | ✅ | email → email，name → display_name |
+| 2 | `projects` | `POST /v1/orgs` | ✅ | name → name；**owner_id 不迁**（组织成员关系走 `/v1/orgs/{id}/members`） |
+| 3 | `pg_connections` | — | ❌ | 目标端不存在 |
+| 4 | `redis_connections` | — | ❌ | 目标端不存在 |
+| 5 | `mq_connections` | — | ❌ | 目标端不存在 |
+| 6 | `k8s_clusters` | — | ❌ | 目标端不存在 |
+| 7 | `git_repos` | — | ❌ | 目标端不存在 |
+| 8 | `inspection_schedules` | — | ❌ | 巡检计划落哪张表是一次产品决定 |
+| 9 | `alert_rules` | — | ❌ | expr/for → rule_key/conditions 是规则语义翻译，不是字段改名 |
+
+不带 `--entity` 的 `import` 会在写入第一行之前拒绝执行并列出不可导入的实体；
+`opskeeper-migrate list-entities` 打印同一份清单。注册表与真实路由 / 请求结构
+的一致性由 `make migrate-target-check` 守住。
 
 ### 4.3 迁移流程
 
+`--tenant-mapping` 的格式是 `<源 project_id>=<目标 tenant_id>`，逗号分隔，
+例如 `42=1,100=2`。**不是** `key:value` 形式。
+
 ```bash
-# 1. 导出 ops-keeper 快照
+# 1. 导出 ops-keeper 快照（--rate 是 import 的标志，export 没有）
 opskeeper-migrate export \
-  --source opskeeper://user:pass@ops-keeper-host:5432/db \
-  --output snapshot-2026-07-13.json \
-  --rate 1000  # 限速 1000 行/秒
+  --source http://ops-keeper-host:3000 \
+  --token "$OPSKEEPER_TOKEN" \
+  --output snapshot-2026-07-13.json
 
 # 2. 在 opskeeper 端校验（dry-run）
+#    目标端不存在的实体不会被计入「假设可导入」，而是单独列出——
+#    dry-run 的作用就是回答"这一步会不会成"，它比真跑更不能撒谎。
 opskeeper-migrate import \
   --source snapshot-2026-07-13.json \
-  --target opskeeper://opskeeper-host:8080 \
-  --tenant-mapping opskeeper-project-id=42:opskeeper-tenant-id=42 \
+  --target http://opskeeper-host:8080 \
+  --tenant-mapping "42=1,100=2" \
   --dry-run
 
-# 3. 实际导入
+# 3. 实际导入（会打印它写下的回滚快照路径）
 opskeeper-migrate import \
   --source snapshot-2026-07-13.json \
-  --target opskeeper://opskeeper-host:8080 \
-  --tenant-mapping opskeeper-project-id=42:opskeeper-tenant-id=42
+  --target http://opskeeper-host:8080 \
+  --tenant-mapping "42=1,100=2" \
+  --rate 1000 \
+  --rollback-dir ./rollback
 
-# 4. 验证
+# 4. 验证：逐字段比对源与目标，报告里区分「缺失」与「没能核对」
+#    两种源 URL 与快照两种给法都支持（--source 是快照路径，
+#    --opskeeper-url 才是实时源）。
 opskeeper-migrate verify \
-  --source opskeeper://... \
-  --target opskeeper://... \
-  --report verify-2026-07-13.html
+  --source snapshot-2026-07-13.json \
+  --target http://opskeeper-host:8080 \
+  --tenant-mapping "42=1,100=2"
 ```
 
 ### 4.4 幂等 + 回滚
 
-- **幂等**：每条记录带 `source_id`，重复导入跳过
-- **回滚**：导入前自动生成 `rollback-snapshot-{timestamp}.json`，可一键回滚
+- **幂等**：每条记录带 `source_id`，重复导入跳过。**注意**：这个查询打的是
+  `GET /api/v1/{entity}/by-source-id/{id}`，而 manager 的路由表里没有这个端点，
+  所以对着真实 opskeeper 跑，幂等判断永远返回"不存在"，重复导入会重复创建。
+  幂等要成立，需要 manager 提供按来源 ID 查询的读端点（一次接口决定）。
+- **回滚**：**导入后**自动写出 `rollback-snapshot-{timestamp}.json`，里面是这次
+  真正新建的 opskeeper ID 列表，可一键撤销。文件名撞名时追加序号，不覆盖旧文件。
 
 ```bash
-# 回滚到导入前状态
+# import 会打印它写下的回滚快照路径
+opskeeper-migrate import \
+  --source snapshot-2026-07-13.json \
+  --target opskeeper://opskeeper-host:8080 \
+  --tenant-mapping "42=1" \
+  --rollback-dir ./rollback
+
+# 撤销那次导入
 opskeeper-migrate rollback \
-  --rollback-snapshot rollback-snapshot-2026-07-13T10-30-00.json \
+  --rollback-snapshot ./rollback/rollback-snapshot-2026-07-13T10-30-00.json \
   --target opskeeper://opskeeper-host:8080
 ```
+
+回滚按**导入顺序的逆序**删除（先建 users 再建 orgs，回滚就先删 orgs），
+并对已经不在的实体按幂等处理。
 
 ### 4.5 限速 + 多租户隔离
 

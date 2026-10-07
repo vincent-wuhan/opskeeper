@@ -88,7 +88,13 @@ AgentTeams 负责协同与交互，OpsKeeper 负责工具契约、权限、审�
 | 路径 | 内容 |
 |---|---|
 | `cmd/` | Go 服务与命令行工具 |
-| `internal/` | 控制面、Manager、MCP、事件、审计与评估逻辑 |
+| `core/` | 契约层：领域词汇、端口接口、wire DTO |
+| `core/pig/` | PiG 适配层——全仓唯一允许 import `github.com/MichaelKinsy/PiG` 的地方 |
+| `core/manager/` | 控制面：身份、审批、审计、拓扑、知识库、适配器 |
+| `core/edge/` | 节点面：agent 监管、策略闸门、采集器、主机工具 |
+| `core/floor/` | 两个平面共用的基础设施：config / log / manifest / metrics / tunnel / skill |
+| `core/harness/` | 评测：黄金语料、judge、leaderboard、投影 |
+| `sdk/` | 第三方插件唯一依赖面 |
 | `web/` | React/Vite Web 控制台 |
 | `plugins/agentteams-plugin-installer/` | AgentTeams Dashboard 安装插件 |
 | `plugins/opskeeper-teamharness/` | Worker/Manager 集成插件与 MCP 代理 |
@@ -100,7 +106,7 @@ AgentTeams 负责协同与交互，OpsKeeper 负责工具契约、权限、审�
 
 ### 环境要求
 
-- Go 1.25+
+- Go 1.26+
 - Node.js 20+、npm 10+、pnpm 9+
 - Python 3.11+
 - Docker 与 Docker Compose
@@ -124,8 +130,9 @@ curl -fsS http://localhost:8080/healthz
 
 ```bash
 # Go 后端
-go build ./...
-go test ./... -count=1
+go build ./...        # 根模块只剩装配层
+make module-test      # 逐个模块 build + test（core / pig / edge / floor / manager / harness / sdk）
+make module-check     # 模块边界检查器（Go 模块系统表达不了的那部分）
 make build
 
 # Web 控制台

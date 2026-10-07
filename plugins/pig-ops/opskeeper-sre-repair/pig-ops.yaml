@@ -1,0 +1,105 @@
+# pig-ops.yaml — OpsKeeper governance manifest for the repair package.
+#
+# The read-only package is what every node starts with. This one is the
+# opt-in half: the tools that change something. It is a separate package
+# rather than an extra section of the read-only manifest because the two
+# make different promises. "This node can investigate" is true everywhere;
+# "this node may restart a service" is true only on nodes whose operators
+# asked for it, and a manifest that carried both would be a manifest whose
+# weakest promise governed the strongest.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-sre-repair
+  version: 0.1.0
+  vendor: opskeeper
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  # edge: installed into the per-node pig process. Every tool here is
+  # served by an upcall to the control plane, because the reviewer that
+  # must see a mutating proposal lives on the other side of the tunnel.
+  targets: [edge]
+
+  # L2 — this package mutates state, so every call that changes something
+  # is routed through the host's approval gate. The gate is what mints the
+  # receipt the broker then demands, and a package at L1 could not carry a
+  # write tool at all: MinimumClass(L1) is read, and the sdk refuses a
+  # manifest whose tools exceed their package's declared level rather than
+  # clamping them.
+  safety_level: L2
+
+  # The declared ceiling. The host refuses a tool whose class exceeds this,
+  # so declaring a destructive tool here is a load error rather than a
+  # runtime surprise. There is nothing destructive in this package: every
+  # action it offers is a bounded, reversible-by-a-human operation on one
+  # named target. A tool that could not be undone by restarting the thing
+  # it restarted does not belong in L2, and if one arrives it needs L3 and
+  # a review of its own.
+  capabilities: [read, write]
+
+  # The tool inventory, and the host's allow-list: a tool the agent
+  # produces that is not named here is refused on every turn. It is
+  # therefore the review surface — five names, sorted, each one a thing
+  # somebody agreed this package may do.
+  #
+  # The declared class is a claim, not the decision. The host re-derives
+  # the class from the executor it finds for the tool and refuses any call
+  # whose observed class is worse than the one declared here, so
+  # understating a tool in this file does not buy it reach; it just makes
+  # the package fail closed.
+  tools:
+    # Sorted, as everywhere else: a review is a diff more often than it is
+    # a reading. Comments explain each entry; the order is not a grouping.
+    - { name: apply_config_change,   class: write }  # commit a confirmed alert-rule draft
+    - { name: draft_config_change,   class: read }   # validate a draft; persists nothing
+    - { name: host_restart_service,  class: write }  # restart one allowlisted systemd unit
+    - { name: recovery.execute,      class: write }  # run a reserved, approved recovery action
+    - { name: verify_recovery,       class: read }   # did the repair actually work
+
+  # The host injects credentials for exactly these scopes. A scope not
+  # listed here is never handed to the package, so it cannot reach a
+  # credential it did not ask for — and asking is the reviewable act.
+  required_scopes:
+    - host.write
+    - alert.write
+
+  audit:
+    # The package reports tool activity; the host derives each ledger entry
+    # from its own gate events, so a package can neither forge nor suppress
+    # a record. `mutates` is always false — audit-ledger writes are
+    # host-only, and a manifest asking for them is refused at load rather
+    # than downgraded. This package is the one that would benefit most from
+    # that ability, which is exactly why the rule is not negotiable.
+    emits: true
+    mutates: false
+
+  approval:
+    # Every mutating call in this package waits for a human. This is the
+    # field that separates it from the read-only package, and it is not
+    # advisory: the broker demands the gate's receipt for any call at or
+    # above write, and a node with no gate to ask refuses them all rather
+    # than running them unattended.
+    required: true
+
+    # The widest reach the host may approve on this package's behalf.
+    #
+    # pod is the narrowest radius there is, and it is the honest one: every
+    # tool here acts on exactly one named target — one systemd unit on one
+    # device, or one alert-rule draft. Nothing in this package can be
+    # widened at approval time to mean "this namespace" or "this cluster",
+    # because the host clamps to the narrower of this and its own ceiling
+    # and a plugin cannot widen the clamp by asking.
+    #
+    # A future package that restarts everything matching a label does not
+    # belong here with a wider number. It is a different package at a
+    # different level, reviewed as one.
+    max_blast_radius: pod
+
+  install:
+    # pin, not rolling. A package that can restart a service is not one to
+    # auto-upgrade across a fleet: an operator who approved a repair on
+    # yesterday's version of it did not approve today's. The repair
+    # package changes when somebody decides it should, and nodes are moved
+    # onto it deliberately.
+    strategy: pin
+    min_edge_version: 0.8.0

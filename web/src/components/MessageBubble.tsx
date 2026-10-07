@@ -150,9 +150,9 @@ function ToolCallSummaryBlock({
     result?: unknown;
     duration_ms?: number;
     error?: string;
-	  };
-	  onConfirmConfigDraft?: ConfirmConfigDraft;
-	}) {
+  };
+  onConfirmConfigDraft?: ConfirmConfigDraft;
+}) {
   const { tr } = useI18n();
   const [open, setOpen] = useState(false);
   const status = call.status ?? (call.error ? 'error' : 'success');

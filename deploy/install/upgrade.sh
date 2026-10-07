@@ -174,148 +174,17 @@ OPSKEEPER_LOG_DIR="${OPSKEEPER_LOG_DIR:-/var/log/opskeeper}"
 log_info "data dir: $OPSKEEPER_DATA_DIR  (override via OPSKEEPER_DATA_DIR)"
 log_info "log dir:  $OPSKEEPER_LOG_DIR  (override via OPSKEEPER_LOG_DIR)"
 
-mkdir -p \
-    "$OPSKEEPER_DATA_DIR/mysql" \
-    "$OPSKEEPER_DATA_DIR/prometheus" \
-    "$OPSKEEPER_DATA_DIR/loki" \
-    "$OPSKEEPER_DATA_DIR/tempo" \
-    "$OPSKEEPER_DATA_DIR/qdrant" \
-    "$OPSKEEPER_DATA_DIR/grafana" \
-    "$OPSKEEPER_DATA_DIR/embeddings" \
-    "$OPSKEEPER_DATA_DIR/skills" \
-    "$OPSKEEPER_DATA_DIR/pages" \
-    "$OPSKEEPER_DATA_DIR/workspace" \
-    "$OPSKEEPER_DATA_DIR/tools" \
-    "$OPSKEEPER_LOG_DIR"
+# The list of host directories and the uid each container process runs as
+# lives in one place — see state-dirs.sh, which install.sh, upgrade.sh and the
+# test that exercises this all share. mkdir, then chown, then chmod, in that
+# order: a chown before the mkdir is a no-op, and the directory is then
+# created by `compose up` as root, which no log line reports.
+mkdir -p "$OPSKEEPER_DATA_DIR"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/state-dirs.sh"
+opskeeper_state_dirs | opskeeper_ensure_state_dirs "$OPSKEEPER_DATA_DIR"
 
-# Embedding model cache (ADR-027 Phase-2). Same staging logic as
-# install.sh so the bundled BGE model lands on the host the first
-# time an upgrade includes it. Idempotent — skip if already there.
-chown -R 65532:65532 "$OPSKEEPER_DATA_DIR/embeddings" 2>/dev/null || true
-chmod -R 0755 "$OPSKEEPER_DATA_DIR/embeddings" 2>/dev/null || true
-# HLD-017 marketplace skills dir must be writable by the manager (uid 65532),
-# else pack install fails with "permission denied" moving staging → install.
-chown -R 65532:65532 "$OPSKEEPER_DATA_DIR/skills" 2>/dev/null || true
-# Manager-written runtime dirs (uid 65532), bind-mounted into the container.
-# An upgrade from a pre-existing install may predate these dirs, so create +
-# chown here too: serve_page (pages), cloud_bash scratch (workspace) +
-# installed tools (tools). Without it docker creates them root-owned → the
-# nonroot manager hits "mkdir page dir: permission denied".
-chown -R 65532:65532 "$OPSKEEPER_DATA_DIR/pages" 2>/dev/null || true
-chown -R 65532:65532 "$OPSKEEPER_DATA_DIR/workspace" 2>/dev/null || true
-chown -R 65532:65532 "$OPSKEEPER_DATA_DIR/tools" 2>/dev/null || true
-if [[ -d "$SCRIPT_DIR/embeddings/fast-bge-small-zh-v1.5" ]]; then
-    target="$OPSKEEPER_DATA_DIR/embeddings/fast-bge-small-zh-v1.5"
-    if [[ ! -f "$target/model_optimized.onnx" ]]; then
-        log_info "staging bundled embedding model → $target"
-        mkdir -p "$target"
-        cp -rf "$SCRIPT_DIR/embeddings/fast-bge-small-zh-v1.5/." "$target/"
-        chown -R 65532:65532 "$target"
-    fi
-fi
-
-# Detect legacy docker named volumes from pre-bind-mount installs. If
-# any are still around, the new compose would start with empty bind
-# mounts — operator would see "fresh install" symptoms (no devices, no
-# alert history, no Grafana dashboards) and the live data would sit
-# orphaned in /var/lib/docker/volumes/. Refuse to bring the stack up
-# unless --migrate-volumes was passed (auto-copies) OR --no-migrate-volumes
-# (operator promises to migrate manually per README "数据卷迁移").
-# IMPORTANT: docker-compose prefixes named volumes with the project name
-# (default = install-dir basename, i.e. "opskeeper" → real volume names look
-# like opskeeper_qdrant_data). The pre-v0.7.45 compose declared bare names
-# (qdrant_data) which compose then prefixed; older installs that started
-# with `docker compose` at /opt/opskeeper/ end up with opskeeper_<name>_data.
-# We list both forms — first hit wins per dst. The 2026-05-19 test-env
-# migration lost 521MB of mysql + 121MB of qdrant (knowledge base) +
-# 547MB of prometheus TSDB because v0.7.45's upgrade.sh only looked at
-# the bare names. Don't repeat that.
-declare -A LEGACY_VOL_TO_DST=(
-    [opskeeper_opskeeper_mysql_data]="$OPSKEEPER_DATA_DIR/mysql"
-    [opskeeper_mysql_data]="$OPSKEEPER_DATA_DIR/mysql"
-    [mysql_data]="$OPSKEEPER_DATA_DIR/mysql"
-    [opskeeper_prometheus_data]="$OPSKEEPER_DATA_DIR/prometheus"
-    [prometheus_data]="$OPSKEEPER_DATA_DIR/prometheus"
-    [opskeeper_loki_data]="$OPSKEEPER_DATA_DIR/loki"
-    [loki_data]="$OPSKEEPER_DATA_DIR/loki"
-    [opskeeper_tempo_data]="$OPSKEEPER_DATA_DIR/tempo"
-    [tempo_data]="$OPSKEEPER_DATA_DIR/tempo"
-    [opskeeper_qdrant_data]="$OPSKEEPER_DATA_DIR/qdrant"
-    [qdrant_data]="$OPSKEEPER_DATA_DIR/qdrant"
-    [opskeeper_grafana_data]="$OPSKEEPER_DATA_DIR/grafana"
-    [grafana_data]="$OPSKEEPER_DATA_DIR/grafana"
-    [opskeeper_opskeeper_logs]="$OPSKEEPER_LOG_DIR"
-    [opskeeper_logs]="$OPSKEEPER_LOG_DIR"
-)
-LEGACY_FOUND=()
-for v in "${!LEGACY_VOL_TO_DST[@]}"; do
-    if docker volume inspect "$v" >/dev/null 2>&1; then
-        LEGACY_FOUND+=("$v")
-    fi
-done
-
-MIGRATE_VOLUMES="${MIGRATE_VOLUMES:-}"
-NO_MIGRATE_VOLUMES="${NO_MIGRATE_VOLUMES:-}"
-for arg in "$@"; do
-    case "$arg" in
-        --migrate-volumes) MIGRATE_VOLUMES=1 ;;
-        --no-migrate-volumes) NO_MIGRATE_VOLUMES=1 ;;
-    esac
-done
-
-if (( ${#LEGACY_FOUND[@]} > 0 )); then
-    if [[ -n "$MIGRATE_VOLUMES" ]]; then
-        log_warn "migrating legacy named volumes to $OPSKEEPER_DATA_DIR (this can take minutes for large TSDBs)"
-        # Prefer the larger legacy volume when multiple candidates map to
-        # the same dst (e.g. an old `opskeeper_mysql_data` orphan AND the
-        # active `opskeeper_opskeeper_mysql_data` both claim /var/lib/opskeeper/mysql).
-        # Picking by size is a heuristic but matches real-world usage —
-        # the active volume is always the biggest.
-        declare -A SIZE_BY_DST=()
-        declare -A SRC_BY_DST=()
-        for v in "${LEGACY_FOUND[@]}"; do
-            d="${LEGACY_VOL_TO_DST[$v]}"
-            sz=$(docker run --rm -v "$v":/d:ro alpine du -sb /d 2>/dev/null | cut -f1)
-            sz=${sz:-0}
-            if [[ -z "${SIZE_BY_DST[$d]:-}" ]] || (( sz > ${SIZE_BY_DST[$d]} )); then
-                SIZE_BY_DST[$d]=$sz
-                SRC_BY_DST[$d]=$v
-            fi
-        done
-        for dst in "${!SRC_BY_DST[@]}"; do
-            v="${SRC_BY_DST[$dst]}"
-            log_info "  $v (${SIZE_BY_DST[$dst]} bytes) → $dst"
-            # alpine + cp -a preserves perms. Skip if dst non-empty —
-            # operator probably ran migration before; don't clobber.
-            if [[ -n "$(ls -A "$dst" 2>/dev/null)" ]]; then
-                log_warn "  $dst already populated; skipping ($v left intact for operator review)"
-                continue
-            fi
-            docker run --rm \
-                -v "$v":/src:ro \
-                -v "$dst":/dst \
-                alpine sh -c 'cp -a /src/. /dst/'
-        done
-        log_info "migration complete — legacy volumes preserved; remove with: docker volume rm ${LEGACY_FOUND[*]}"
-    elif [[ -n "$NO_MIGRATE_VOLUMES" ]]; then
-        log_warn "legacy volumes left as-is (--no-migrate-volumes): ${LEGACY_FOUND[*]}"
-        log_warn "new stack will start with empty data; you MUST migrate manually before users see it"
-    else
-        log_error "legacy docker named volumes detected: ${LEGACY_FOUND[*]}"
-        log_error "v0.7.45+ uses host bind mounts. Pick one:"
-        log_error "  - re-run with --migrate-volumes to auto-copy data into $OPSKEEPER_DATA_DIR"
-        log_error "  - re-run with --no-migrate-volumes if you'll migrate by hand (see README '数据卷迁移')"
-        exit 1
-    fi
-fi
-
-# uids must match what the upstream images run as — re-chown every
-# upgrade so a tampered/renamed dir still works.
-chown -R 999:999       "$OPSKEEPER_DATA_DIR/mysql"      2>/dev/null || true
-chown -R 65534:65534   "$OPSKEEPER_DATA_DIR/prometheus" 2>/dev/null || true
-chown -R 10001:10001   "$OPSKEEPER_DATA_DIR/loki"       2>/dev/null || true
-chown -R 10001:10001   "$OPSKEEPER_DATA_DIR/tempo"      2>/dev/null || true
-chown -R 472:472       "$OPSKEEPER_DATA_DIR/grafana"    2>/dev/null || true
+# The state root itself and the log dir: same reasoning as install.sh.
 chmod 755 "$OPSKEEPER_DATA_DIR" "$OPSKEEPER_LOG_DIR"
 
 export OPSKEEPER_DATA_DIR OPSKEEPER_LOG_DIR

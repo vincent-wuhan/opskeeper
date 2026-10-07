@@ -249,6 +249,36 @@ services:
       # else a generated page 404s the moment the manager container is
       # recreated and its "open generated page" link goes dead.
       - ${OPSKEEPER_DATA_DIR:-/var/lib/opskeeper}/pages:/var/lib/opskeeper/pages
+      # Knowledge-base git clones (knowledgeUsecase cloneDir, default
+      # /var/lib/opskeeper/repos). Dockerfile.opskeeper creates this
+      # directory and says "bind-mount this in production to keep them
+      # across container restarts"; until now the manifest did not. WITHOUT
+      # this mount every registered repo has to be re-cloned on `compose up`,
+      # and the reindex that follows a clone is the expensive half.
+      - ${OPSKEEPER_DATA_DIR:-/var/lib/opskeeper}/repos:/var/lib/opskeeper/repos
+      # Agent-teams plugin root (OPSKEEPER_PLUGINS_DIR, default
+      # /var/lib/opskeeper/plugins) — the same shape as the skills mount
+      # above and by the same omission: plugins are installed over the HTTP
+      # API and land here, and the helm chart already bind-mounts this
+      # directory, so the two deployment shapes disagreed about whether it
+      # matters. Both are wrong: the container's writable layer does not
+      # survive `compose up`.
+      - ${OPSKEEPER_DATA_DIR:-/var/lib/opskeeper}/plugins:/var/lib/opskeeper/plugins
+      # Multi-cluster federation membership (OPSKEEPER_FEDERATION_LEDGER,
+      # default /var/lib/opskeeper/federation/ledger.json). A root that
+      # forgets its cluster re-enrols everyone and rotates every token, so
+      # this file is the one whose loss is a security event rather than a
+      # chore. Note the mount is the DEFAULT path: pointing the variable
+      # somewhere else means mounting somewhere else too.
+      - ${OPSKEEPER_DATA_DIR:-/var/lib/opskeeper}/federation:/var/lib/opskeeper/federation
+      # Cost-crystallisation ledger (OPSKEEPER_CRYSTALLIZE_STATE, default
+      # /var/lib/opskeeper/crystallize/ledger.json). It holds the promotion
+      # streak that decides when a repeatedly-proven fix is written down as
+      # a runbook, and promotion needs three consecutive clean recoveries —
+      # so a deployment that restarts more often than a fault recurs never
+      # reaches it, with nothing in the logs to say why. Same note as
+      # above about the default path.
+      - ${OPSKEEPER_DATA_DIR:-/var/lib/opskeeper}/crystallize:/var/lib/opskeeper/crystallize
     logging:
       driver: json-file
       options:
@@ -260,7 +290,7 @@ services:
     # (images/Dockerfile.frontier) and shipped in the release tarball —
     # Docker Hub pull is not relied upon. Pinned tag is
     # bumped via Makefile var FRONTIER_VERSION.
-    image: singchia/frontier:v1.2.4
+    image: singchia/frontier:v1.2.5
     container_name: opskeeper-frontier
     restart: unless-stopped
     volumes:

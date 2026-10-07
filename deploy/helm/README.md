@@ -52,7 +52,7 @@ chart 默认启用路径 A 继承的 3 个核心能力（通过 manager.config �
 |------|------|------|
 | Chart version | `1.0.0` | helm chart 自身版本 |
 | App version | `v1.0.0` | 兼容期应用版本 |
-| Go | `1.25+` | manager 二进制要求 |
+| Go | `1.26+` | manager 二进制要求 |
 
 ## 与 ops-keeper 兼容
 

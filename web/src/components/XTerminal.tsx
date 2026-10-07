@@ -151,7 +151,46 @@ export function XTerminal({ onData, onResize, attachRef }: Props) {
       ro.disconnect();
       dataDisposable.dispose();
       resizeDisposable.dispose();
-      term.dispose();
+      // xterm 5.3 queues two Viewport animations during open() — one from
+      // Viewport.reset(), which never stores its handle so nothing can
+      // cancel it, and one from _refresh(), which only clears on the next
+      // synchronous _refresh(true). dispose() cancels neither. Those
+      // callbacks then read this._renderService.dimensions off an already
+      // torn-down terminal and throw an uncaught TypeError.
+      //
+      // It is not a rare race: open() runs synchronously in the effect, so
+      // the frames are always queued before cleanup, and StrictMode's
+      // double-mount runs that cleanup on every single page load. Hence the
+      // two uncaught errors this page used to throw, every time.
+      //
+      // Disposing from a rAF puts teardown BEHIND the frames already
+      // queued — rAF callbacks run in scheduling order within a frame — so
+      // they execute against a live terminal and never see the wreckage.
+      //
+      // One frame is not enough. xterm's chain re-queues as it goes: the
+      // char-size measurement runs inside frame 1 and calls Viewport.reset(),
+      // which schedules syncScrollArea for frame 2, which calls _refresh(),
+      // which schedules _innerRefresh for frame 3. Disposing on frame 1
+      // therefore still lands before frames 2 and 3 — measured, not guessed:
+      // a single-rAF defer took this page from two uncaught errors per load
+      // to one. DRAIN_FRAMES covers the chain end to end with margin.
+      //
+      // The timer is the escape hatch for a hidden tab, where rAF is
+      // throttled to never and the terminal must not be leaked.
+      const DRAIN_FRAMES = 5;
+      let disposed = false;
+      const dispose = () => {
+        if (disposed) return;
+        disposed = true;
+        term.dispose();
+      };
+      let remaining = DRAIN_FRAMES;
+      const drain = () => {
+        if (--remaining <= 0) return dispose();
+        window.requestAnimationFrame(drain);
+      };
+      window.requestAnimationFrame(drain);
+      window.setTimeout(dispose, 1000);
     };
     // attachRef / onData / onResize are expected to be stable refs from
     // the parent (wrapped in useCallback). We deliberately mount once.

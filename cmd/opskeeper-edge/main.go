@@ -15,34 +15,34 @@ import (
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/config"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/httpserver"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/logger"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/prom"
-	"github.com/vincent-wuhan/opskeeper/internal/pkg/tunnel"
+	"github.com/vincent-wuhan/opskeeper/core/floor/config"
+	"github.com/vincent-wuhan/opskeeper/core/floor/httpserver"
+	"github.com/vincent-wuhan/opskeeper/core/floor/logger"
+	"github.com/vincent-wuhan/opskeeper/core/floor/prom"
+	"github.com/vincent-wuhan/opskeeper/core/floor/tunnel"
 
-	edgebash "github.com/vincent-wuhan/opskeeper/internal/edgeagent/bash"
-	edgebiz "github.com/vincent-wuhan/opskeeper/internal/edgeagent/biz"
-	edgecollector "github.com/vincent-wuhan/opskeeper/internal/edgeagent/collector"
-	edgehostfiles "github.com/vincent-wuhan/opskeeper/internal/edgeagent/host_files"
-	edgeplugins "github.com/vincent-wuhan/opskeeper/internal/edgeagent/plugins"
-	edgeplugincustommetrics "github.com/vincent-wuhan/opskeeper/internal/edgeagent/plugins/custommetrics"
-	edgeplugindatabasemetrics "github.com/vincent-wuhan/opskeeper/internal/edgeagent/plugins/databasemetrics"
-	edgepluginhostmetrics "github.com/vincent-wuhan/opskeeper/internal/edgeagent/plugins/hostmetrics"
-	edgepluginlogs "github.com/vincent-wuhan/opskeeper/internal/edgeagent/plugins/logs"
-	edgepluginmetrics "github.com/vincent-wuhan/opskeeper/internal/edgeagent/plugins/metrics"
-	edgepluginprocmetrics "github.com/vincent-wuhan/opskeeper/internal/edgeagent/plugins/procmetrics"
-	edgeplugintraces "github.com/vincent-wuhan/opskeeper/internal/edgeagent/plugins/traces"
-	edgerestartservice "github.com/vincent-wuhan/opskeeper/internal/edgeagent/restart_service"
-	edgesvc "github.com/vincent-wuhan/opskeeper/internal/edgeagent/service"
-	edgewebshell "github.com/vincent-wuhan/opskeeper/internal/edgeagent/webshell"
+	edgebash "github.com/vincent-wuhan/opskeeper/core/edge/bash"
+	edgebiz "github.com/vincent-wuhan/opskeeper/core/edge/biz"
+	edgecollector "github.com/vincent-wuhan/opskeeper/core/edge/collector"
+	edgehostfiles "github.com/vincent-wuhan/opskeeper/core/edge/host_files"
+	edgeplugins "github.com/vincent-wuhan/opskeeper/core/edge/plugins"
+	edgeplugincustommetrics "github.com/vincent-wuhan/opskeeper/core/edge/plugins/custommetrics"
+	edgeplugindatabasemetrics "github.com/vincent-wuhan/opskeeper/core/edge/plugins/databasemetrics"
+	edgepluginhostmetrics "github.com/vincent-wuhan/opskeeper/core/edge/plugins/hostmetrics"
+	edgepluginlogs "github.com/vincent-wuhan/opskeeper/core/edge/plugins/logs"
+	edgepluginmetrics "github.com/vincent-wuhan/opskeeper/core/edge/plugins/metrics"
+	edgepluginprocmetrics "github.com/vincent-wuhan/opskeeper/core/edge/plugins/procmetrics"
+	edgeplugintraces "github.com/vincent-wuhan/opskeeper/core/edge/plugins/traces"
+	edgerestartservice "github.com/vincent-wuhan/opskeeper/core/edge/restart_service"
+	edgesvc "github.com/vincent-wuhan/opskeeper/core/edge/service"
+	edgewebshell "github.com/vincent-wuhan/opskeeper/core/edge/webshell"
 
 	// Builtin skill init() blocks register Executors with the shared
-	// internal/skill registry. The edge-side dispatcher
-	// (internal/edgeagent/skill) routes execute_skill RPCs by key —
+	// core/floor/skill registry. The edge-side dispatcher
+	// (core/edge/skill) routes execute_skill RPCs by key —
 	// without this import the registry is empty and every skill call
 	// returns "unknown skill".
-	_ "github.com/vincent-wuhan/opskeeper/internal/skill/builtin"
+	_ "github.com/vincent-wuhan/opskeeper/core/floor/skill/builtin"
 )
 
 // version is overwritten at build time via -ldflags.
@@ -70,16 +70,18 @@ func main() {
 
 	fmt.Fprintf(os.Stderr, "opskeeper-edge %s starting\n", version)
 
-	cfg, err := config.Load()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "config load: %v\n", err)
-		os.Exit(1)
-	}
+	// The node reads its own configuration and nothing else. config.Load
+	// would also read every model-vendor API key, the admin password, the
+	// JWT secret and the database DSN into this process, and this process
+	// runs restart_service and a bash sandbox on a customer host. The
+	// loader's own comment says why; the short version is that a node which
+	// cannot represent a vendor key cannot be handed one.
+	cfg := config.LoadEdge()
 
 	log := logger.WithService(logger.New(slog.LevelInfo), "opskeeper-edge")
 	log.Info("configuration loaded",
-		slog.String("cloud_addr", cfg.Edge.CloudAddr),
-		slog.String("collector_mode", cfg.Edge.CollectorMode),
+		slog.String("cloud_addr", cfg.CloudAddr),
+		slog.String("collector_mode", cfg.CollectorMode),
 		slog.String("version", version),
 	)
 
@@ -87,9 +89,9 @@ func main() {
 
 	// Tunnel client.
 	client := tunnel.NewClient(tunnel.ClientConfig{
-		CloudAddr: cfg.Edge.CloudAddr,
-		AccessKey: cfg.Edge.AccessKey,
-		SecretKey: cfg.Edge.SecretKey,
+		CloudAddr: cfg.CloudAddr,
+		AccessKey: cfg.AccessKey,
+		SecretKey: cfg.SecretKey,
 		Log:       log,
 	})
 
@@ -118,31 +120,53 @@ func main() {
 		log.Warn("host_files register failed; capability disabled", slog.Any("err", err))
 	}
 
-	// restart_service plugin (/ first MUTATING skill).
-	// Mocked posture in PR-7: handler returns Mocked=true without
-	// shelling out. SandboxConfig.Validate enforces a non-empty
-	// allow-list; on failure we boot without the capability so the
-	// edge can still scrape metrics / read files.
-	if err := edgerestartservice.Register(client, log); err != nil {
+	// restart_service plugin — the first and only MUTATING skill on a node.
+	//
+	// The posture is the operator's: Mocked defaults to true, and a mocked
+	// node answers successfully without touching a service, saying so in
+	// its response. Setting it false makes this node really run systemctl,
+	// against an allow-list that is still enforced here at the edge rather
+	// than trusted from the cloud. A sandbox that fails validation costs
+	// the capability, not the boot: the edge can still scrape metrics and
+	// read files without it.
+	restartSandbox := &edgerestartservice.SandboxConfig{
+		Mocked:        cfg.RestartService.Mocked,
+		SystemctlPath: cfg.RestartService.SystemctlPath,
+	}
+	if len(cfg.RestartService.AllowedUnits) > 0 {
+		restartSandbox.AllowedUnits = cfg.RestartService.AllowedUnits
+	} else {
+		restartSandbox.AllowedUnits = edgerestartservice.DefaultAllowedUnits()
+	}
+	if err := edgerestartservice.RegisterWith(client, restartSandbox, log); err != nil {
 		log.Warn("restart_service register failed; capability disabled", slog.Any("err", err))
 	}
 
 	// bash skill: generic read-only shell-execution gated by
-	// internal/edgeagent/cmdpolicy. The cmdpolicy package owns the
+	// core/edge/cmdpolicy. The cmdpolicy package owns the
 	// rules (binary classes / arg matchers / path + network
 	// allowlists); this Register call wires the cmdpolicy.Sandbox to
 	// the host_files path validator and installs the handler. Boot
 	// continues on any soft failure (operator yaml override parse
 	// error, missing binaries) — cmdpolicy.Sandbox.Decide just
 	// rejects calls cleanly with a Reason the LLM can read.
-	if err := edgebash.Register(client, log); err != nil {
+	//
+	// The sandbox is built once and used twice: by the bash handler below,
+	// and by the autonomy runner that a signed package may install. One
+	// sandbox on one host is one policy; two would be two answers to
+	// "what may this node run", and the day they disagree the signed argv
+	// is running under whichever rule nobody reviewed.
+	sandbox, err := edgebash.NewSandbox(log)
+	if err != nil {
+		log.Warn("bash sandbox unavailable; capability disabled", slog.Any("err", err))
+	} else if err := edgebash.RegisterWithSandbox(client, sandbox, log); err != nil {
 		log.Warn("bash register failed; capability disabled", slog.Any("err", err))
 	}
 
 	// WebSSH: edge is a stream port-forwarder. Manager opens a
 	// frontier stream with Meta describing the target (sshd at
 	// 127.0.0.1:22), edge io.Copy's bytes both ways. SSH client
-	// lives entirely on the manager — see internal/manager/server/
+	// lives entirely on the manager — see core/manager/server/
 	// webshell. The edge has no SSH lib, no PTY, no session map.
 	edgewebshell.Register(client, log.With(slog.String("comp", "webshell")))
 
@@ -153,11 +177,89 @@ func main() {
 	if stageDir == "" {
 		stageDir = "/var/lib/opskeeper-edge/.upgrade"
 	}
-	agent := edgebiz.NewAgent(client, collector, edgebiz.Config{
-		MetricsInterval: cfg.Edge.CollectorInterval,
-		AgentVersion:    version,
+	// Telemetry write-ahead log. Same systemd-install layout as the
+	// upgrade stage and the plugin work dir, with the same escape hatch,
+	// and the same reason: a node that cannot write here still starts and
+	// still heartbeats — it just loses samples while the link is down,
+	// which the agent logs rather than hides.
+	telemetryWALDir := os.Getenv("OPSKEEPER_EDGE_TELEMETRY_WAL_DIR")
+	if telemetryWALDir == "" {
+		telemetryWALDir = "/var/lib/opskeeper-edge/telemetry"
+	}
+
+	// The change watcher's durable log gets its own directory, because the
+	// two logs are graded by one policy table and stored in two files, and
+	// an operator who clears "the log" should not have to guess which.
+	changeEventWALDir := os.Getenv("OPSKEEPER_EDGE_CHANGE_EVENT_WAL_DIR")
+	if changeEventWALDir == "" {
+		changeEventWALDir = "/var/lib/opskeeper-edge/changes"
+	}
+	// How long this node tolerates losing the control plane. Read before the
+	// agent is built so a typo is a boot error rather than a node running
+	// on numbers its operator did not choose, and logged with the product
+	// because the two settings multiply into the one an operator is
+	// actually trying to control.
+	tunables, err := loadTunables(log)
+	if err != nil {
+		log.Error("edge: refusing to boot on an unparseable link tolerance", slog.Any("err", err))
+		os.Exit(1)
+	}
+	log.Info("edge: link tolerance",
+		slog.Duration("heartbeat", tunables.heartbeat),
+		slog.Int("stuck_after", tunables.stuck),
+		slog.Duration("gives_up_after", tunables.tolerance()))
+
+	agentCfg := edgebiz.Config{
+		MetricsInterval:   cfg.CollectorInterval,
+		AgentVersion:      version,
+		TelemetryWALDir:   telemetryWALDir,
+		ChangeEventWALDir: changeEventWALDir,
+		// The same value install-time admission compares
+		// min_pig_version against, so the control plane's pre-flight and
+		// this node's own verdict can never be looking at two different
+		// numbers for the same node. pigSelfVersion is not free: it reads
+		// the operator's override first and only then falls back to the
+		// linked release line, which is the same order the installer uses.
+		PigVersion:      pigSelfVersion(),
 		UpgradeStageDir: stageDir,
-	}, log)
+	}
+	tunables.apply(&agentCfg)
+	agent := edgebiz.NewAgent(client, collector, agentCfg, log)
+
+	// Node agent: a PiG process under this node's supervision, serving the
+	// manager's agent.* commands. A failure here is logged and the edge
+	// boots without it - the node still collects metrics and still serves
+	// its own skill RPCs. An edge that refused to start because the AI
+	// was down would take the telemetry with it, and telemetry is the one
+	// thing a node cannot be redeployed to get back quickly.
+	agentLog := log.With(slog.String("comp", "node-agent"))
+	nodeCfg := loadNodeAgentConfig()
+	agentBridge, stopNodeAgent, err := startNodeAgent(egCtx, client, nodeCfg, version, agent,
+		autonomyRunner{sandbox: sandbox}, agentLog)
+	if err != nil {
+		log.Warn("node agent unavailable; the node runs without an AI agent", slog.Any("err", err))
+	} else {
+		agent.SetAgentBridge(agentBridge)
+		// The bridge's events are relayed on goroutines that outlive the
+		// agent supervisor's own loop, so the process is stopped on the
+		// way out rather than left orphaned holding node credentials.
+		defer stopNodeAgent()
+	}
+
+	// Plugin distribution. Wired outside the node-agent block above
+	// because it is independent of it: a node with no AI agent can still
+	// be handed a package, and a node whose agent failed to start should
+	// not silently become a node that cannot be updated.
+	//
+	// It shares nodeCfg on purpose. The store republishes the boot
+	// bundle alongside anything it installs, and the bundle it republishes
+	// has to be the one the node actually booted with.
+	if store, storeErr := newPluginStore(nodeCfg, log.With(slog.String("comp", "plugin-store"))); storeErr != nil {
+		log.Warn("plugin distribution is unavailable; the node runs its boot packages only",
+			slog.Any("err", storeErr))
+	} else {
+		agent.SetPluginInstaller(store)
+	}
 
 	// Local /metrics listener for debugging.
 	metricsMux := chi.NewRouter()
@@ -300,7 +402,7 @@ func main() {
 	log.Info("opskeeper-edge shutdown complete")
 }
 
-// buildCollector constructs the collector matching cfg.Edge.CollectorMode.
+// buildCollector constructs the collector matching cfg.CollectorMode.
 // For scrape mode the per-target scrape goroutines are added to eg so
 // they share the agent's lifecycle.
 //
@@ -316,8 +418,8 @@ func main() {
 //	auto — legacy: embedded (gopsutil push) + scraper.
 //	embedded — embedded push only.
 //	scrape — scraper only.
-func buildCollector(ctx context.Context, cfg *config.Config, log *slog.Logger, eg *errgroup.Group) (edgebiz.Collector, *edgecollector.Scraper, error) {
-	switch cfg.Edge.CollectorMode {
+func buildCollector(ctx context.Context, cfg *config.EdgeConfig, log *slog.Logger, eg *errgroup.Group) (edgebiz.Collector, *edgecollector.Scraper, error) {
+	switch cfg.CollectorMode {
 	case "off", "none", "":
 		// Default for fresh installs: don't push anything periodically.
 		// On-demand RPCs still hit gopsutil via the wrapped embedded
@@ -333,7 +435,7 @@ func buildCollector(ctx context.Context, cfg *config.Config, log *slog.Logger, e
 		if err != nil {
 			return nil, nil, fmt.Errorf("embedded collector: %w", err)
 		}
-		sc, err := edgecollector.LoadScrapeConfig(cfg.Edge.ScrapeConfigFile)
+		sc, err := edgecollector.LoadScrapeConfig(cfg.ScrapeConfigFile)
 		if err != nil {
 			log.Warn("scrape config unavailable; using embedded baseline only", slog.Any("err", err))
 			return collectorAdapter{c: em}, nil, nil
@@ -343,7 +445,7 @@ func buildCollector(ctx context.Context, cfg *config.Config, log *slog.Logger, e
 		return collectorAdapter{c: edgecollector.NewComposite(em, scraper, log)}, scraper, nil
 
 	case "scrape":
-		sc, err := edgecollector.LoadScrapeConfig(cfg.Edge.ScrapeConfigFile)
+		sc, err := edgecollector.LoadScrapeConfig(cfg.ScrapeConfigFile)
 		if err != nil {
 			return nil, nil, fmt.Errorf("scrape config: %w", err)
 		}
@@ -358,7 +460,7 @@ func buildCollector(ctx context.Context, cfg *config.Config, log *slog.Logger, e
 		}
 		return collectorAdapter{c: em}, nil, nil
 	default:
-		return nil, nil, fmt.Errorf("unknown collector mode %q", cfg.Edge.CollectorMode)
+		return nil, nil, fmt.Errorf("unknown collector mode %q", cfg.CollectorMode)
 	}
 }
 
@@ -373,7 +475,7 @@ func envOr(key, def string) string {
 // collectorAdapter bridges the collector package's Collector interface to
 // the biz package's identical-shaped interface. Two interfaces, one
 // implementation — the seam exists so biz/agent.go does not import
-// internal/edgeagent/collector (avoids cycles when the collector package
+// core/edge/collector (avoids cycles when the collector package
 // in turn depends on tunnel types).
 type collectorAdapter struct {
 	c edgecollector.Collector

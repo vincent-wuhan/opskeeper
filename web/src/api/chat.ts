@@ -299,7 +299,11 @@ export async function streamMessage(
   const decoder = new TextDecoder();
   let buf = '';
 
-  while (true) {
+  // `for (;;)`, not `while (true)`: the reader is closed only by `done` or a
+  // throw, and the bare-`for` form is the one spelling of "loop forever" that
+  // no-constant-condition accepts — so this stays an honest endless read
+  // without an eslint-disable comment lying about the exit condition.
+  for (;;) {
     const { value, done } = await reader.read();
     if (done) break;
     buf += decoder.decode(value, { stream: true });

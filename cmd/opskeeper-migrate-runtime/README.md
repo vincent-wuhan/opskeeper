@@ -120,7 +120,7 @@ package migrations
 
 import (
     "context"
-    "github.com/vincent-wuhan/opskeeper/internal/migrator"
+    "github.com/vincent-wuhan/opskeeper/core/manager/migrator"
     "gorm.io/gorm"
 )
 
@@ -169,11 +169,11 @@ func init() {
 ### 5.1 业务包内注册（推荐）
 
 ```go
-// internal/harness/store/migrations.go
+// core/harness/store/migrations.go
 package store
 
 import (
-    "github.com/vincent-wuhan/opskeeper/internal/migrator"
+    "github.com/vincent-wuhan/opskeeper/core/manager/migrator"
 )
 
 func init() {
@@ -186,7 +186,7 @@ func init() {
 ```go
 // cmd/opskeeper-migrate-runtime/main.go
 import (
-    _ "github.com/vincent-wuhan/opskeeper/internal/harness/store"  // 触发 init
+    _ "github.com/vincent-wuhan/opskeeper/core/harness/store"  // 触发 init
 )
 ```
 

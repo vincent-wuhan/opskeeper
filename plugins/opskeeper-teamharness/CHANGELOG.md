@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.72 — 2026-10-07
+
+- Bump the TeamHarness plugin version to 1.0.72 across `plugin.yaml`, the
+  dashboard package/manifest (including the versioned `dist/main-1.0.72.js`
+  entry), and the qwenpaw adapter (`plugin.json` + `plugin.py`).
+- No runtime behaviour change in this release: the accompanying backend work
+  is the LLM gateway streaming `delta.tool_calls` fix, which lives in the Go
+  tree, not in this plugin. This bump only re-aligns the plugin version with
+  the release boundary so signing does not read as a version drift.
+
+## 1.0.71 — 2026-10-07
+
+- Infer the PostgreSQL RCA resource type when archive evidence omits it.
+- Warn instead of blocking when the worker/manifest trail version does not match the expected version.
+- Repoint MCP tool-name mapping and the harness self-check at the `core/` layout after the `internal/` -> `core` module move.
+
 ## 1.0.70 — 2026-09-19
 
 - Retry transient OpsKeeper 5xx responses after a real Matrix approval, keeping recovery deterministic when model quota is unavailable.

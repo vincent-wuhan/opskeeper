@@ -90,7 +90,7 @@ EVIDENCE_OUT="${CONTAINER_EVIDENCE_DIR}/verify-final-demo-${UTC_STAMP}.json"
 mkdir -p "$HOST_EVIDENCE_DIR"
 
 SCENARIO_IDEMPOTENCY_KEY="final-demo-e82d97d1-$(date -u +%Y%m%dT%H%M%SZ)-$$"
-# validFingerprint (internal/manager/biz/demo/scenario.go) accepts only hex or
+# validFingerprint (core/manager/biz/demo/scenario.go) accepts only hex or
 # sha256:<64hex>. The previous "pg-pool-waiters-<utc>-<pid>" string failed that
 # check and Manager responded with HTTP 400 invalid_request. Derive the alert
 # fingerprint from the idempotency key so it is unique per run, stable across

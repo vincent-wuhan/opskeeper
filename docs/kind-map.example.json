@@ -1,0 +1,15 @@
+{
+  "pg_lock": ["pg.lock_waits", "pg.active_sessions"],
+  "pg_long_tx": ["pg.long_running_txns"],
+  "pg_pool_exhausted": ["pg.active_sessions"],
+
+  "redis_memory": ["redis.memory_usage", "redis.big_keys", "redis.hot_keys", "redis.fragmentation_ratio"],
+
+  "k8s_oom": ["k8s.pod_list", "k8s.events"],
+
+  "host_cpu": ["host.top_cpu_procs", "host.host_load"],
+  "host_memory": ["host.host_load"],
+  "host_disk": ["host.host_files"],
+
+  "unknown": []
+}

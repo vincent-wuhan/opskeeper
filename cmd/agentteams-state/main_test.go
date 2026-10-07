@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	state "github.com/vincent-wuhan/opskeeper/internal/manager/biz/agentteams/state"
+	state "github.com/vincent-wuhan/opskeeper/core/manager/biz/agentteams/state"
 )
 
 func TestCLI_HITLNotifyAndTimeoutEscalation(t *testing.T) {

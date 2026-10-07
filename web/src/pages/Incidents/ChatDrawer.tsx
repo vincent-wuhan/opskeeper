@@ -279,6 +279,7 @@ function MessageBubble({
               name={tc.name}
               args={tc.args}
               result={tc.result}
+              argv={tc.argv}
               status={tc.status}
               latencyMs={tc.latencyMs}
             />

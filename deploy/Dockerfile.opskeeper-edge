@@ -4,14 +4,19 @@
 #
 # NOTE on ports:
 #   The edge agent does NOT accept inbound traffic in normal operation — it
-#   dials the cloud tunnel (TUNNEL_ADDR) as a client. The EXPOSE 9101 below is
-#   ONLY for the agent's own local /metrics endpoint, useful for local debug
-#   (e.g. `curl localhost:9101/metrics`). Production deployments can ignore it.
+#   dials the cloud tunnel as a client, and the address it dials is
+#   OPSKEEPER_EDGE_CLOUD_ADDR. (There used to be a second variable,
+#   OPSKEEPER_TUNNEL_ADDR, that looked like it configured this and was read
+#   by nothing; it is gone as of decision 152. If you find it in an old env
+#   file it is a no-op, and the address is still Edge.CloudAddr.)
+#   The EXPOSE 9101 below is ONLY for the agent's own local /metrics
+#   endpoint, useful for local debug (e.g. `curl localhost:9101/metrics`).
+#   Production deployments can ignore it.
 
 ARG VERSION=dev
 
 # ---------- Stage 1: builder ----------
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 ARG VERSION
 WORKDIR /app
@@ -26,10 +31,30 @@ RUN CGO_ENABLED=0 GOOS=linux \
     -ldflags="-s -w -X main.version=${VERSION}" \
     -o /out/opskeeper-edge ./cmd/opskeeper-edge
 
+# The node AI agent, built from core/pig rather than from the repo root.
+#
+# Two things are deliberate here. The build runs inside core/pig because that
+# is the only module that requires PiG, and it requires the published tag —
+# GOWORK=off keeps the image off any workspace that might point at a developer's
+# checkout, so the agent in the image is the agent the module graph promises.
+# And it is built in the same RUN chain as the edge rather than copied in,
+# because an image whose agent is older than its edge is a node that answers
+# with a toolset the control plane does not expect.
+RUN cd /app/core/pig \
+    && GOWORK=off go mod download \
+    && CGO_ENABLED=0 GOOS=linux GOWORK=off \
+       go build -trimpath -ldflags="-s -w" \
+       -o /out/pig github.com/MichaelKinsy/PiG/cmd/pig
+
 # ---------- Stage 2: runtime (distroless, nonroot) ----------
 FROM gcr.io/distroless/static-debian12:nonroot
 
 COPY --from=builder /out/opskeeper-edge /opskeeper-edge
+# Beside the edge, not on a PATH lookup: the image must run the agent it was
+# built with, and a distroless base has no PATH to search anyway.
+COPY --from=builder /out/pig /opskeeper-edge/pig
+
+ENV OPSKEEPER_EDGE_AGENT_BIN=/opskeeper-edge/pig
 
 # Local /metrics only — edge dials cloud, no inbound service ports.
 EXPOSE 9101

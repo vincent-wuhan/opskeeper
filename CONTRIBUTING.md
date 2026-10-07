@@ -11,7 +11,7 @@ review/merge expectations.
 
 ```
 opskeeper/                     # main repository
-├── internal/manager/          # Go backend (biz/aiops, loop, server/agentteams)
+├── core/manager/          # Go backend (biz/aiops, loop, server/agentteams)
 ├── plugins/opskeeper-teamharness/  # AgentTeams plugin (Python stdio MCP server)
 │   ├── mcp/                   # JSON-RPC stdio server (server.py)
 │   ├── skills/                # 7 Worker Skills (alerter / investigator / critic /
@@ -28,8 +28,8 @@ opskeeper/                     # main repository
 ## Development environment
 
 ```bash
-# Go 1.25+ for backend
-go version  # go1.25.0+
+# Go 1.26+ for backend
+go version  # go1.26.0+
 
 # Python 3.10+ for plugin
 python3 --version  # 3.10+
@@ -64,7 +64,7 @@ python3 eval/runner.py --all
 
 - Standard `gofmt` + `goimports`
 - `go vet ./...` clean
-- Use the existing `internal/manager/biz/aiops/tools/` BaseTool pattern for new
+- Use the existing `core/manager/biz/aiops/tools/` BaseTool pattern for new
   backend tools
 - HTTP errors → opskeeper standard error envelope (see existing handlers)
 

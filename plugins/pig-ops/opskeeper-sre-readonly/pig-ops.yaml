@@ -1,0 +1,97 @@
+# pig-ops.yaml — OpsKeeper governance manifest.
+#
+# The Pi package manifest stays Pi-compatible and is what the agent runtime
+# actually mounts; this file adds only the governance fields Pi has no
+# vocabulary for. Both are read on install, and this one is validated by the
+# sdk module's admission rules before the node is allowed to start.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-sre-readonly
+  version: 0.1.0
+  vendor: opskeeper
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  # edge: installed into the per-node pig process.
+  # manager: the control-plane half. This plugin is node-side only.
+  targets: [edge]
+
+  # L1 = read-only plus local evidence collection, no approval required.
+  # This is the first plugin tier every node runs. Anything that mutates
+  # ships as a separate, explicitly approved package.
+  safety_level: L1
+
+  # Declared ceiling, not a wish list. The host refuses a tool whose class
+  # exceeds this, so declaring a destructive tool here is a load error
+  # rather than a runtime surprise.
+  capabilities: [read]
+
+  # The tool inventory. This list is the host's allow-list: a tool the
+  # agent produces that is not named here is refused at the gate on every
+  # turn, so a package cannot become more capable by shipping an
+  # undeclared tool. The list is therefore the review surface — a tool
+  # added here is a tool somebody has agreed this package may run.
+  #
+  # Every entry is a read. A read touches no external system, so none of
+  # them enters the approval queue, and the whole package is safe to run
+  # against production without a human in the loop.
+  #
+  # limits is what each tool may consume, and the node enforces it on the
+  # host side of the tool socket — a limit this file declares is a limit the
+  # host applies, not a request the tool may honour. It is declared on the
+  # high-cardinality reads because those are the ones whose volume the
+  # *caller* chooses (max_lines, max_matches, which file), and the ones that
+  # can otherwise put a gigabyte into a model's context. The tools with
+  # fixed-size answers are left to the host default, which is 1 MiB.
+  #
+  # The numbers here must match the executor's own metadata; the node's
+  # build check compares the two and fails on a difference, so a ceiling
+  # cannot exist in only one of the two files.
+  tools:
+    # Sorted. This list is the review surface, and a review is a diff
+    # between two versions more often than it is a reading of one file.
+    # Comments explain each entry; the order is not a category grouping.
+    - { name: expand_topology,     class: read }  # the graph, one hop out
+    - { name: find_outlier_edges,  class: read }  # edges behaving unlike their peers
+    - { name: find_topology_node,  class: read }  # where one component lives
+    - { name: get_topology,        class: read }  # the whole graph
+    - { name: host_dmesg,          class: read , limits: {output_bytes: 262144, timeout_seconds: 60}}  # kernel ring buffer
+    - { name: host_grep_file,      class: read , limits: {output_bytes: 262144, timeout_seconds: 120}}  # search across log files
+    - { name: host_lsof,           class: read , limits: {output_bytes: 262144, timeout_seconds: 60}}  # open files per process
+    - { name: host_mtr,            class: read , limits: {output_bytes: 65536, timeout_seconds: 120}}  # combined traceroute and loss
+    - { name: host_netns_inspect,  class: read }  # network namespaces
+    - { name: host_probe_dns,      class: read }  # name resolution
+    - { name: host_probe_http,     class: read }  # HTTP reachability and latency
+    - { name: host_probe_tcp,      class: read }  # TCP reachability and latency
+    - { name: host_read_journal,   class: read , limits: {output_bytes: 262144, timeout_seconds: 120}}  # systemd journal
+    - { name: host_sosreport,      class: read , limits: {output_bytes: 524288, timeout_seconds: 600}}  # support bundle summary
+    - { name: host_strace,         class: read , limits: {output_bytes: 131072, timeout_seconds: 300}}  # syscall trace of a pid
+    - { name: host_tail_file,      class: read , limits: {output_bytes: 262144, timeout_seconds: 60}}  # follow a log file
+    - { name: host_traceroute,     class: read , limits: {output_bytes: 65536, timeout_seconds: 120}}  # path to a host, hop by hop
+    - { name: query_alert_rules,   class: read }  # what is firing
+
+  # The host injects credentials for exactly these scopes. A scope not
+  # listed here is never handed to the plugin, so it cannot reach a
+  # credential it did not ask for.
+  required_scopes:
+    - host.read
+    - topology.read
+    - alert.read
+
+  audit:
+    # The plugin reports tool activity; the host derives each ledger entry
+    # from its own gate events. A plugin can neither forge nor suppress a
+    # record, and `mutates` is always false — audit-ledger writes are
+    # host-only and a manifest requesting them is refused outright.
+    emits: true
+    mutates: false
+
+  approval:
+    # Read-only plugins never enter the approval queue. There is no blast
+    # radius here, and asking for one on a package that cannot mutate is a
+    # load error rather than a warning.
+    required: false
+
+  install:
+    strategy: rolling
+    min_edge_version: 0.7.0

@@ -26,17 +26,20 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/vincent-wuhan/opskeeper/internal/higress"
+	managermiddleware "github.com/vincent-wuhan/opskeeper/core/domains/server/middleware"
+	"github.com/vincent-wuhan/opskeeper/core/manager/higress"
 )
 
 const version = "1.0.0-dev"
@@ -102,10 +105,25 @@ func runServe(args []string) int {
 	}
 	defer store.Close()
 
+	// The gateway's own audit trail. Mounted here rather than inside the
+	// higress package because installing it is a decision about this
+	// *process* — routes/routeaudit's entry-point table judges that
+	// decision per binary, and a package cannot make it for every deployment
+	// that links it (decision 321, 324).
+	auditSink, err := buildAuditSink(store.DB(), slog.Default())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "higress-console: audit sink: %v\n", err)
+		return 1
+	}
+
 	srv, err := higress.NewServer(higress.Config{
-		Addr:          *addr,
-		Store:         store,
-		JWTSecret:     secret,
+		Addr:      *addr,
+		Store:     store,
+		JWTSecret: secret,
+		// 决策 328：把这条链交给它的路由，让运维能问「我这条链还完整吗」。
+		// 立链是 324 做的，验证端是这一刀补的——**在那之前这条链从来没有被
+		// 走过一遍**，而下面那段注释还写着「two verifiers」。
+		Chain:         auditSink,
 		AdminUser:     adminUser,
 		AdminPassword: adminPass,
 	})
@@ -115,9 +133,31 @@ func runServe(args []string) int {
 	}
 
 	httpSrv := &http.Server{
-		Addr:              *addr,
-		Handler:           srv.Routes(),
+		Addr: *addr,
+		// AuditMiddleware installs the per-request slot the handlers in
+		// package higress write into. Without this line every SetAuditEvent
+		// below it is a documented no-op, and no test in this repository can
+		// see that, because a no-op and a working write look identical from
+		// inside the handler.
+		Handler:           managermiddleware.AuditMiddleware(auditSink)(srv.Routes()),
 		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	// 决策 330：网关这条链此前**没有任何保留期**——每天增长而从不被清理，
+	// 一个长期运行的网关会把它自己的 SQLite 磁盘写满，而一个写满的审计库在
+	// 运维眼里和「审计没开」是一回事。
+	//
+	// 默认关闭，与控制面同语义（0 = 不清理），**这不是疏忽而是一个要被看见的
+	// 选择**：默认开启等于替运维决定多少天的审计历史可以不要，而审计历史恰恰
+	// 是别人不会愿意替他决定的东西。要开就明写。
+	retentionCtx, stopRetention := context.WithCancel(context.Background())
+	defer stopRetention()
+	retentionDays := higressAuditRetentionDays()
+	if retentionDays > 0 {
+		fmt.Printf("[higress-console] audit retention: %d days\n", retentionDays)
+		go func() { _ = auditSink.RunRetention(retentionCtx, retentionDays) }()
+	} else {
+		fmt.Println("[higress-console] audit retention: off (set OPSKEEPER_HIGRESS_AUDIT_RETENTION_DAYS to bound the chain)")
 	}
 
 	stop := make(chan os.Signal, 1)
@@ -332,4 +372,25 @@ func decodeClaims(token string) (jwt.MapClaims, error) {
 func dumpJSON(v any) string {
 	b, _ := json.MarshalIndent(v, "", "  ")
 	return string(b)
+}
+
+// higressAuditRetentionDays reads the gateway's retention window.
+//
+// It returns 0 for "unset" and for "set to 0", which both mean "do not
+// sweep" — the same reading the control plane gives OPSKEEPER_AUDIT_RETENTION_DAYS,
+// deliberately, so that one mental model covers both processes. A value that
+// does not parse is 0 as well, and the startup line says which of the three
+// happened, because **一个被拼错的保留期变量静默地变成「不清理」，比它大声地
+// 失败更贵**：磁盘会慢慢满，而没有人知道为什么。
+func higressAuditRetentionDays() int {
+	raw := os.Getenv("OPSKEEPER_HIGRESS_AUDIT_RETENTION_DAYS")
+	if raw == "" {
+		return 0
+	}
+	days, err := strconv.Atoi(raw)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "higress-console: OPSKEEPER_HIGRESS_AUDIT_RETENTION_DAYS=%q is not a number; retention is off\n", raw)
+		return 0
+	}
+	return days
 }

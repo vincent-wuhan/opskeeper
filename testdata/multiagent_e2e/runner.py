@@ -280,7 +280,7 @@ else:
 #      proves per-tool/role call tracking works end-to-end.
 #
 # The DBApprovedDecisionLoader logic itself is covered by the Go
-# unit tests at internal/manager/biz/loop/db_approved_decision_loader_test.go
+# unit tests at core/manager/biz/loop/db_approved_decision_loader_test.go
 # (8 cases: non-positive ID / reader error / row not found / type
 # mismatch / payload corrupted / normal path / nil reader panic /
 # compile-time interface check).
@@ -414,7 +414,7 @@ print(f"  ✓ stage 6.5: contract loader observability surface verified end-to-e
 # If the test runner does NOT have admin creds / the env var isn't
 # set, the admin route returns 404 and stage 6.6 prints a warning
 # instead of failing — the metric unit test in
-# internal/manager/biz/loop/recovery_metrics_test.go is the canonical
+# core/manager/biz/loop/recovery_metrics_test.go is the canonical
 # proof, this stage is the e2e sanity check.
 # ============================================================
 banner("STAGE 6.6 / 7: retry_count severity=dangerous escalation verify")

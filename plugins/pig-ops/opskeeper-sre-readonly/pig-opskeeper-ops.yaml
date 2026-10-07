@@ -1,0 +1,125 @@
+# pig-opskeeper-ops.yaml — the built-in OpsKeeper operations agent.
+#
+# This is the first-party composition of the node agent: the read-only
+# diagnosis toolset, the gate courier that carries every tool call to the
+# host, and the skills that use them. It is what a developer runs to get the
+# ops agent on a workstation
+#
+#	pig --mode rpc --piglet plugins/pig-ops/opskeeper-sre-readonly/pig-opskeeper-ops.yaml
+#
+# and it is the reference the node's own generated profile is read against.
+#
+# It is NOT the profile a node runs. A node writes its own profile
+# (core/edge/agentprofile) because the set of extensions a node has is the
+# set of packages it admitted, and that set is not known until admission has
+# run. The two files agree on the parts that are security properties — no
+# PiG built-in tools, no ambient discovery — and disagree only about which
+# extensions are named, which is exactly the difference between "the
+# first-party composition" and "what this host admitted".
+#
+# Why it lives inside the package it composes: PiG refuses a local origin
+# that escapes the piglet's own directory ("escapes the Piglet anchor"), so
+# a composition that named resources in a sibling package would have to copy
+# them first. Here there is nothing to copy — the origins are the package's
+# own extension and skill directories — and therefore nothing to drift.
+# Composing a second package would cost a generated copy of it, which is
+# machinery this composition does not need: the observability package and
+# the repair package are installed per node, deliberately, by an operator.
+name: opskeeper-ops
+description: "OpsKeeper operations agent: read-only diagnosis — topology, host probes, alert rules — with the seven worker personas that use them."
+
+release:
+  version: 0.1.0
+
+# No PiG built-in tools. This removes read, bash, powershell, edit, write,
+# grep, find and ls.
+#
+# The same subtraction the node profile makes, for the same reason: this
+# process holds the operator's credentials and the model's whole purpose is
+# to be talked into running things, so a shell offered to it is a shell
+# offered to whoever can write a persuasive log line.
+#
+# An empty list is exact, not additive: PiG intersects it with what the
+# runtime registered, and an extension this file does not name keeps every
+# tool it registered. Nothing outside this file can therefore be reached by
+# accident.
+tools: []
+
+extensions:
+  # The courier, not a toolset. It registers no tools at all — it listens
+  # for tool_call and carries the call to the host gate, which owns the
+  # allow-list and the approval decision. Declaring it is what makes a
+  # standalone run of this piglet gated rather than unguarded.
+  #
+  # `tools: []` is written out rather than omitted on purpose: omitted means
+  # "whatever this extension registers", and for the one extension whose job
+  # is to sit in front of every call, "whatever it registers later" is the
+  # wrong thing to promise.
+  - name: opskeeper-gate
+    origins: [local:extensions/opskeeper-gate]
+    tools: []
+
+  # L1, 18 read tools: topology, host probes, alert rules. The node's first
+  # tier — everything here is a read, so none of it enters the approval
+  # queue, and the whole set is safe to point at production.
+  #
+  # The tool list is the review surface and it is written out instead of
+  # left to the extension, so that a tool added to the extension shows up
+  # here as a diff a reviewer has to accept rather than as a capability that
+  # appeared on every node.
+  - name: opskeeper-sre-readonly
+    origins: [local:extensions/opskeeper-sre-readonly]
+    tools:
+      # Sorted; the list is a review surface, not a grouping.
+      - expand_topology
+      - find_outlier_edges
+      - find_topology_node
+      - get_topology
+      - host_dmesg
+      - host_grep_file
+      - host_lsof
+      - host_mtr
+      - host_netns_inspect
+      - host_probe_dns
+      - host_probe_http
+      - host_probe_tcp
+      - host_read_journal
+      - host_sosreport
+      - host_strace
+      - host_tail_file
+      - host_traceroute
+      - query_alert_rules
+
+# One entry per skill, each pointing at its own directory.
+#
+# Not one entry pointing at the parent `skills/` directory, which is what
+# the package's Pi manifest declares: a piglet skill entry resolves to a
+# single skill, and PiG's baker loads the path and refuses when it finds
+# more than one definition without a name match — so the parent form
+# validates and then fails to build. Naming each skill is also what makes
+# the seven personas a reviewable list rather than a directory glob.
+skills:
+  - name: diagnose-readonly
+    origins: [local:skills/diagnose-readonly]
+  - name: opskeeper-alerter
+    origins: [local:skills/opskeeper-alerter]
+  - name: opskeeper-critic
+    origins: [local:skills/opskeeper-critic]
+  - name: opskeeper-investigator
+    origins: [local:skills/opskeeper-investigator]
+  - name: opskeeper-postmortem
+    origins: [local:skills/opskeeper-postmortem]
+  - name: opskeeper-repairer
+    origins: [local:skills/opskeeper-repairer]
+  - name: opskeeper-reviewer
+    origins: [local:skills/opskeeper-reviewer]
+  - name: opskeeper-verifier
+    origins: [local:skills/opskeeper-verifier]
+
+# No ambient discovery, matching the node profile. Without this a skill
+# dropped into the agent's own directory is a skill the model may invoke,
+# and the host's allow-list has nothing to say about it because it never
+# passed a review.
+discovery:
+  extensions: []
+  skills: []

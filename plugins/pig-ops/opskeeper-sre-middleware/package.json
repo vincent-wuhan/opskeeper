@@ -1,0 +1,14 @@
+{
+  "name": "opskeeper-sre-middleware",
+  "version": "0.1.0",
+  "description": "OpsKeeper node plugin: governance in pig-ops.yaml, Pi resource declarations here.",
+  "pi": {
+    "extensions": [
+      "extensions/opskeeper-gate",
+      "extensions/opskeeper-sre-middleware"
+    ],
+    "skills": [
+      "skills"
+    ]
+  }
+}

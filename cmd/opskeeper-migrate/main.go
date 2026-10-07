@@ -22,7 +22,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/vincent-wuhan/opskeeper/internal/migrate"
+	"github.com/vincent-wuhan/opskeeper/core/manager/migrate"
 )
 
 const version = "1.0.0-dev"
@@ -158,6 +158,7 @@ func cmdImport(ctx context.Context, args []string) error {
 	var source, target, token, tenantMapping, snapshot string
 	var dryRun bool
 	var rate int
+	var rollbackDir string
 	var entities multiFlag
 	fs.StringVar(&snapshot, "source", "", "snapshot 文件路径")
 	fs.StringVar(&target, "target", "", "opskeeper base URL（必填）")
@@ -165,6 +166,7 @@ func cmdImport(ctx context.Context, args []string) error {
 	fs.StringVar(&tenantMapping, "tenant-mapping", "", "ops-keeper project_id → opskeeper tenant_id 映射（必填，多租户隔离）")
 	fs.BoolVar(&dryRun, "dry-run", false, "仅校验 + 报告，不实际写入")
 	fs.IntVar(&rate, "rate", 1000, "限速（行/秒）")
+	fs.StringVar(&rollbackDir, "rollback-dir", "", "回滚快照输出目录（缺省写在 --source 旁边）")
 	fs.StringVar(&source, "opskeeper-url", "", "（可选）实时 ops-keeper URL，替代 --source snapshot")
 	fs.Var(&entities, "entity", "限定实体类型（可多次指定；缺省全部）")
 	if err := fs.Parse(args); err != nil {
@@ -184,6 +186,7 @@ func cmdImport(ctx context.Context, args []string) error {
 		Entities:      selectedEntities,
 		DryRun:        dryRun,
 		RatePerSec:    rate,
+		RollbackDir:   rollbackDir,
 	})
 	if err != nil {
 		return err
@@ -192,10 +195,25 @@ func cmdImport(ctx context.Context, args []string) error {
 	fmt.Printf("   总记录数: %d\n", result.Total)
 	if dryRun {
 		fmt.Printf("   假设可导入: %d\n", result.Imported)
+		if len(result.Unmigratable) > 0 {
+			fmt.Printf("   ⚠️  目标端不存在、迁不过去: %d 行\n", unmigratableTotal(result.Unmigratable))
+			for _, et := range unmigratableOrder(result.Unmigratable) {
+				fmt.Printf("        %s: %d 行（%s）\n", et, result.Unmigratable[et],
+					migrate.GetEntityMeta(et).TargetMissing)
+			}
+			fmt.Println("      上面这些实体的 dry-run 结果不构成「可以导入」的结论。")
+		}
 	} else {
 		fmt.Printf("   新建: %d\n", result.Imported)
 		fmt.Printf("   跳过（幂等命中）: %d\n", result.Skipped)
 		fmt.Printf("   失败: %d\n", result.Failed)
+	}
+	if result.RollbackSnapshot != "" {
+		fmt.Printf("   回滚快照: %s\n", result.RollbackSnapshot)
+		fmt.Printf("   撤销本次导入: opskeeper-migrate rollback --rollback-snapshot %s --target %s\n",
+			result.RollbackSnapshot, target)
+	} else if !dryRun {
+		fmt.Println("   回滚快照: 无（本次没有写入任何一行）")
 	}
 	if len(result.Failures) > 0 {
 		fmt.Println("\n失败详情（前 20 条）：")
@@ -234,6 +252,12 @@ func cmdRollback(ctx context.Context, args []string) error {
 		return err
 	}
 	fmt.Printf("%s回滚完成\n", map[bool]string{true: "🧪 [DRY-RUN] ", false: "✅ "}[dryRun])
+	if result.Total == 0 {
+		// 这份快照里没有可删的 ID。决策 292 之前这是**每一次** rollback 的
+		// 结果（import 从不写快照），而命令照常报"✅ 回滚完成"。
+		fmt.Println("   ⚠️  这份快照里没有任何可删除的 ID——它不是 import 写出的那一份，")
+		fmt.Println("      或那次导入一行都没有写成功。")
+	}
 	fmt.Printf("   总计: %d\n", result.Total)
 	fmt.Printf("   删除: %d\n", result.Deleted)
 	fmt.Printf("   失败: %d\n", result.Failed)
@@ -303,7 +327,11 @@ func cmdListEntities(_ []string) error {
 		}
 		fmt.Printf("  %d. %s\n", i+1, et)
 		fmt.Printf("     源: ops-keeper %s\n", meta.Source)
-		fmt.Printf("     目标: opskeeper %s\n", meta.Target)
+		if meta.IsImportable() {
+			fmt.Printf("     目标: opskeeper %s（%s）\n", meta.Target, meta.TargetRoute)
+		} else {
+			fmt.Printf("     目标: opskeeper %s —— 不可导入：%s\n", meta.Target, meta.TargetMissing)
+		}
 		if len(meta.DependsOn) > 0 {
 			deps := make([]string, len(meta.DependsOn))
 			for j, d := range meta.DependsOn {
@@ -315,8 +343,42 @@ func cmdListEntities(_ []string) error {
 			fmt.Printf("     加密: ✓（凭据加密重存）\n")
 		}
 	}
-	fmt.Printf("\n共 %d 类\n", len(order))
+	importable := migrate.ImportableEntities()
+	fmt.Printf("\n共 %d 类，其中可导入 %d 类：%s\n",
+		len(order), len(importable), strings.Join(entityStrings(importable), ", "))
+	if len(importable) < len(order) {
+		fmt.Printf("不可导入的 %d 类需要 --entity 显式排除，否则 import 会在写入前拒绝执行。\n",
+			len(order)-len(importable))
+	}
 	return nil
+}
+
+// unmigratableTotal 是迁不过去的行数合计。
+func unmigratableTotal(m map[migrate.EntityType]int) int {
+	n := 0
+	for _, v := range m {
+		n += v
+	}
+	return n
+}
+
+// unmigratableOrder 按依赖顺序列出迁不过去的实体，输出才是稳定的。
+func unmigratableOrder(m map[migrate.EntityType]int) []migrate.EntityType {
+	out := make([]migrate.EntityType, 0, len(m))
+	for _, et := range migrate.MigrationOrder() {
+		if _, ok := m[et]; ok {
+			out = append(out, et)
+		}
+	}
+	return out
+}
+
+func entityStrings(list []migrate.EntityType) []string {
+	out := make([]string, len(list))
+	for i, e := range list {
+		out[i] = string(e)
+	}
+	return out
 }
 
 // parseEntities 解析命令行 --entity 标志（多次）。

@@ -3,11 +3,11 @@
   "kind": "DashboardPlugin",
   "id": "opskeeper-teamharness",
   "name": "Opskeeper TeamHarness",
-  "version": "1.0.70",
+  "version": "1.0.72",
   "description": "Dashboard UI for the OpsKeeper RCA orchestrator. Wraps the AgentTeams plugin (plugin.yaml) so the same package provides deployed Worker skills (alert/investigate/review/repair/verify/report) + Dashboard extensions (sidebar/route/widgets/detail/toolbar).",
   "author": "opskeeper",
   "entry": {
-    "dashboard": "dist/main-1.0.70.js",
+    "dashboard": "dist/main-1.0.72.js",
     "backend": "../plugin.yaml"
   },
   "dashboardVersion": ">=0.2.0",

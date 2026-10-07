@@ -88,7 +88,7 @@ export default function EdgesPage() {
   const { canMutate } = usePermissions();
   // Sidebar sub-items navigate by appending ?roles=server|storage|network|unknown.
   // No param = "全部". We forward the param to the backend so filtering uses the
-  // sargable IN-list path (see internal/manager/biz/edge.ListFilter).
+  // sargable IN-list path (see core/manager/biz/edge.ListFilter).
   const rolesFilter = useMemo(() => {
     const v = new URLSearchParams(location.search).get('roles')?.trim() ?? '';
     return v;

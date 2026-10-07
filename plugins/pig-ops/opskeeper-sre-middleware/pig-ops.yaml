@@ -1,0 +1,175 @@
+# pig-ops.yaml — OpsKeeper governance manifest for the middleware package.
+#
+# This is the third read package, and it answers a third question. The
+# read-only package answers "what is this machine doing"; the observability
+# package answers "what has the fleet recorded"; this one answers "what are
+# the systems the control plane is wired to doing right now".
+#
+# "Right now" is the whole distinction, and it is why this is not part of
+# the observability package. Metrics and logs are what OpsKeeper already
+# collected — a question about history. Listing the sessions a PostgreSQL
+# instance is running, or the pods a cluster currently has, is a question
+# asked of the system itself, over the connection the control plane holds.
+# An operator who has agreed that the fleet's recordings may be read has
+# not thereby agreed that a node's agent may open queries against
+# production databases, and bundling the two would make the narrower
+# promise no stronger than the wider one.
+#
+# What bounds the reach is not this file. It is which adapters the
+# deployment has DSNs for: an adapter with no DSN registers no tools, and a
+# call to one of its names comes back as "not available on this
+# deployment" rather than as a grant. This manifest says which of those
+# tools a node's agent may ask for at all — the reviewable act — and the
+# deployment says which of them exist.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-sre-middleware
+  version: 0.1.0
+  vendor: opskeeper
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  targets: [edge]
+
+  # L1. Every tool here is a read against a system the control plane is
+  # already connected to, and none of them has a success state that
+  # changes anything: a session list, a key census, a pod list.
+  #
+  # The ceiling is asserted rather than declared. The host re-derives each
+  # tool's class from the adapter that implements it and refuses a call
+  # whose observed class is worse than this, so a write that reached this
+  # package would fail closed at the gate rather than run. The adapters
+  # also *offer* writes — pg.kill_session, k8s.drain, redis.flushdb — and
+  # every one of them is deliberately absent from the list below:
+  # reclassification is what would have to happen for one to appear here,
+  # and that is a diff somebody has to accept.
+  safety_level: L1
+
+  # read, and only read. There is no write in this package, so widening the
+  # grant later requires a version bump a reviewer sees.
+  capabilities: [read]
+
+  # The tool inventory, and the host's allow-list: a tool the agent
+  # produces that is not named here is refused on every turn. It is
+  # therefore the review surface — every name is a thing somebody agreed
+  # this package may read.
+  #
+  # The list is generated from the same registration the host dispatches
+  # through, and two tests keep the three copies of this list in agreement:
+  # TestTheMiddlewareProfilesDeclaredToolsAreExactlyWhatItShipsToTheModel
+  # (core/floor/pluginmanifest) fails the moment this file and the
+  # extension's generated toolset disagree, and
+  # TestToolsetMatchesTheAdapters (core/manager/middleware/toolset) fails
+  # the moment that toolset and the adapter registrations disagree. So it
+  # cannot quietly become a menu of tools whose implementations no longer
+  # exist, and an adapter that gains a read tool shows up here as a diff
+  # rather than as a capability that appeared on every node.
+  #
+  # The first of those two tests did not exist when this paragraph was
+  # written — the comment named a guard that was never installed, and on
+  # the widest package in the fleet. It is installed now, and this file is
+  # no longer the only place that says so.
+  #
+  # The declared class is a claim, not the decision: the host re-derives it
+  # from the adapter and refuses any call whose observed class is worse.
+  # Understating a tool here therefore buys it nothing; it only makes the
+  # package fail closed.
+  tools:
+    # Sorted by name, as everywhere else: a review is a diff more often
+    # than it is a reading.
+    - { name: git.find_runtime_link, class: read }
+    - { name: k8s.cluster_info, class: read }
+    - { name: k8s.connect, class: read }
+    - { name: k8s.deployment_status, class: read }
+    # describe_pod was filed as a soft write and re-filed as a diagnostic
+    # read: it GETs a pod and GETs its events and changes nothing. The old
+    # grade cost the node fleet the ability to diagnose a failed
+    # deployment, because a node package ships L0 and L1 and nothing
+    # above them.
+    - { name: k8s.describe_pod,       class: read }
+    - { name: k8s.events, class: read }
+    - { name: k8s.node_list, class: read }
+    - { name: k8s.pod_list, class: read }
+    - { name: k8s.pod_logs, class: read }
+    - { name: k8s.pvc_list, class: read }
+    - { name: k8s.pvc_usage, class: read }
+    - { name: k8s.rollout_history, class: read }
+    - { name: k8s.rollout_status, class: read }
+    - { name: k8s.top_nodes, class: read }
+    - { name: k8s.top_pods, class: read }
+    - { name: kafka.broker_skew, class: read }
+    - { name: kafka.consumer_lag, class: read }
+    - { name: kafka.partition_skew, class: read }
+    - { name: kafka.topic_list, class: read }
+    - { name: mq.broker_status, class: read }
+    - { name: mq.connect, class: read }
+    - { name: mq.inspect_consumer_lag, class: read }
+    - { name: mq.queue_list, class: read }
+    - { name: pg.active_sessions, class: read }
+    - { name: pg.connect, class: read }
+    - { name: pg.explain_query, class: read }
+    - { name: pg.index_usage, class: read }
+    - { name: pg.list_databases, class: read }
+    - { name: pg.list_schemas, class: read }
+    - { name: pg.list_tables, class: read }
+    - { name: pg.lock_waits, class: read }
+    - { name: pg.long_running_txns, class: read }
+    - { name: pg.replication_status, class: read }
+    - { name: pg.slow_log, class: read }
+    - { name: pg.table_bloat, class: read }
+    - { name: pg.top_queries_by_calls, class: read }
+    - { name: pg.top_queries_by_time, class: read }
+    - { name: pg.vacuum_status, class: read }
+    - { name: rabbitmq.cluster_info, class: read }
+    - { name: rabbitmq.consumer_status, class: read }
+    - { name: rabbitmq.queue_depth, class: read }
+    - { name: rabbitmq.queue_list, class: read }
+    - { name: redis.big_keys, class: read }
+    - { name: redis.blocked_clients, class: read }
+    - { name: redis.client_list, class: read }
+    - { name: redis.cluster_info, class: read }
+    - { name: redis.config_get, class: read }
+    - { name: redis.connect, class: read }
+    - { name: redis.dbsize, class: read }
+    - { name: redis.fragmentation_ratio, class: read }
+    - { name: redis.hot_keys, class: read }
+    - { name: redis.info, class: read }
+    - { name: redis.key_space, class: read }
+    - { name: redis.memory_usage, class: read }
+    - { name: redis.slow_log, class: read }
+
+  # The host injects credentials for exactly these scopes. A scope not
+  # listed here is never handed to the package, so it cannot reach a
+  # credential it did not ask for — and asking is the reviewable act.
+  #
+  # There is no host.read here, and that is the point: this package reaches
+  # the systems the control plane is connected to, not the machine the
+  # agent is standing on. A node whose operators want the local probes and
+  # not this can have them, and vice versa.
+  required_scopes:
+    - db.read
+    - k8s.read
+    - mq.read
+
+  audit:
+    # The package reports tool activity; the host derives each ledger entry
+    # from its own gate events, so a package can neither forge nor suppress
+    # a record. `mutates` is always false — audit-ledger writes are
+    # host-only, and a manifest asking for them is refused at load rather
+    # than downgraded.
+    emits: true
+    mutates: false
+
+  approval:
+    # Read-only packages never enter the approval queue. There is no blast
+    # radius here, and asking for one on a package that cannot mutate is a
+    # load error rather than a warning.
+    required: false
+
+  install:
+    # rolling. Everything here is a read against an already-deployed
+    # backend, so a version change adds tools rather than actions, and the
+    # canary wave is a real check rather than a formality. The repair
+    # package is pinned precisely because that is not true of it.
+    strategy: rolling
+    min_edge_version: 0.8.0

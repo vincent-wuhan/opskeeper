@@ -104,6 +104,23 @@ spec:
             {{- end }}
             - name: OPSKEEPER_REDIS_DB
               value: {{ .Values.redis.db | quote }}
+            # HLD-010 audit tamper-evidence key. It MUST be one Secret
+            # shared by every manager replica: each replica appends to the
+            # same chain, and two different keys make the chain fail
+            # verification at the first row written by the other pod —
+            # which an operator cannot tell apart from tampering.
+            #
+            # Leave the key unset and the ledger still records every row,
+            # just without a digest. That is a deliberate degradation and
+            # not a silent one: the manager logs a WARN and
+            # GET /v1/admin/audit-logs/chain reports intact=null.
+            {{- if .Values.manager.audit.hmacKeySecret }}
+            - name: OPSKEEPER_AUDIT_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.manager.audit.hmacKeySecret }}
+                  key: {{ .Values.manager.audit.hmacKeySecretKey }}
+            {{- end }}
             {{- if .Values.redis.passwordSecret }}
             - name: OPSKEEPER_REDIS_PASSWORD
               valueFrom:

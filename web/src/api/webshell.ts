@@ -8,7 +8,7 @@
 //
 // Auth: the manager auth.Middleware reads `Authorization: Bearer <jwt>`,
 // falling back to `?token=<jwt>` for native browser WebSockets — confirmed
-// by reading internal/pkg/auth/middleware.go:extractBearer. So we just
+// by reading core/manager/pkg/auth/middleware.go:extractBearer. So we just
 // append the token as a query string. We still negotiate the
 // `opskeeper.shell.v1` subprotocol because the gorilla server-side upgrader
 // declares it; without a matching client subprotocol the server upgrade

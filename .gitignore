@@ -110,4 +110,59 @@ plugins/opskeeper-teamharness/eval/reports/
 # Local build/cache output (not for source control)
 .dist/
 .docker-gocache/
+# Private working material. scripts/audit_open_source.py refuses a release
+# that ships any of these, so tracking one of them turns the open-source gate
+# red on every push; the gate was correct and the files were the violation.
+# They stay on disk -- this only takes them out of the index.
+/docs/superpowers/
+/deliverables/
+**/.comet/
+
+# Stray local binaries from `go build ./scripts/<tool>`. One line per
+# incident is how this list got to three: the ignore rule does not stop the
+# build, and a checker that reads the tree does (scripts/modulecheck,
+# checkNoRootBuildArtifacts).
+/modulecheck
+/deadcode
+/domaincheck
+/brokerpin
+/cigate
+/cochange
+/nodearch
+
+# Root-level binaries from `go build ./scripts/<name>/`.
+#
+# Every script target in the Makefile runs `go run`, which leaves the build
+# product in the cache and nothing in the tree. A `go build` typed by hand
+# while checking a change drops a Mach-O file at the repository root, where
+# `bin/` does not cover it and no existing rule matches -- one was committed
+# by accident before this rule existed. The list is the `package main`
+# directories under scripts/; a new one is not covered until it is added here,
+# so `git status` after building one is the check that catches it.
+/agentteams-plugin-manager
+/apidoc
+/brokerarch
+/brokerpin
+/cigate
+/cochange
+/dashboard
+/deadcode
+/deadpkg
+/domaincheck
+/e2e_real
+/ledgercheck
+/modulecheck
+/nodearch
+/opskeeper
+/routeaudit
+/rpcmatch
+/splitprice
+/tablecheck
+/transcheck
+
+# Local run artifacts. backend.env holds a JWT secret and an admin password,
+# and backend.log plus the built binary are per-machine output -- none of it
+# belongs in the index. A `git add -A` before this line existed put all three
+# into a commit; it was caught before it was pushed (decision 420).
+.devrun/
 .worktrees/

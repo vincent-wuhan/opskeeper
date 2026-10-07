@@ -1,6 +1,9 @@
 {
+  "_comment": "ADR-019 双签规则，决策 362 起真正生效。resource 与签核人角色用的是系统里真实存在的词：resource ∈ {read,write,destructive} ∪ {pod,single-ns,namespace,cluster} ∪ {devices}，role ∈ iam 的系统角色 {admin,user,viewer}。requires 里的每一组都必须由**不同的用户**覆盖（Validate 按 UserID 去重），而 role 决定谁有资格作为第一签名人。改这份文件前请读 docs/opskeeper2-architecture.md §4.72。",
   "policies": [
-    {"role":"opskeeper-admin","resource":"tenant_wide","action":"approve","effect":"allow","requires":["opskeeper-admin","opskeeper-observer"]},
-    {"role":"opskeeper-observer","resource":"tenant_wide","action":"approve","effect":"allow","requires":["opskeeper-admin","opskeeper-observer"]}
+    {"role":"admin","resource":"destructive","action":"approve","effect":"allow","requires":["admin"]},
+    {"role":"admin","resource":"cluster","action":"approve","effect":"allow","requires":["admin"]},
+    {"role":"admin","resource":"tenant_wide","action":"approve","effect":"allow","requires":["admin"]},
+    {"role":"admin","resource":"devices","action":"approve","effect":"allow","requires":["admin"]}
   ]
 }

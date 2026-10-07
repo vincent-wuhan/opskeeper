@@ -71,7 +71,7 @@ services:
   # frontier：edge/service 通信 broker；manager 启动时会建立 servicebound 连接
   # ---------------------------------------------------------------------------
   frontier:
-    image: singchia/frontier:v1.2.4
+    image: singchia/frontier:v1.2.5
     container_name: opskeeper-frontier
     restart: unless-stopped
     command: ["--config", "/usr/conf/frontier.yaml"]

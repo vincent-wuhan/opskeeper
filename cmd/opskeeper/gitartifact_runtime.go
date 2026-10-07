@@ -3,17 +3,17 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	aiopstools "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools"
 	"log/slog"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/vincent-wuhan/opskeeper/internal/knowledge/gitartifact"
-	gitartifactapi "github.com/vincent-wuhan/opskeeper/internal/knowledge/gitartifact/api"
-	gitartifactstore "github.com/vincent-wuhan/opskeeper/internal/knowledge/gitartifact/store"
-	aiopstools "github.com/vincent-wuhan/opskeeper/internal/manager/biz/aiops/tools"
-	aiopstoolsbase "github.com/vincent-wuhan/opskeeper/internal/manager/biz/aiops/tools/basetool"
-	gitadapter "github.com/vincent-wuhan/opskeeper/internal/middleware/adapter/git"
-	middlewareregistry "github.com/vincent-wuhan/opskeeper/internal/middleware/registry"
+	aiopstoolsbase "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/basetool"
+	"github.com/vincent-wuhan/opskeeper/core/manager/knowledge/gitartifact"
+	gitartifactapi "github.com/vincent-wuhan/opskeeper/core/manager/knowledge/gitartifact/api"
+	gitartifactstore "github.com/vincent-wuhan/opskeeper/core/manager/knowledge/gitartifact/store"
+	gitadapter "github.com/vincent-wuhan/opskeeper/core/manager/middleware/adapter/git"
+	middlewareregistry "github.com/vincent-wuhan/opskeeper/core/manager/middleware/registry"
 )
 
 const runtimeLinkToolName = "git.find_runtime_link"

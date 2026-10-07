@@ -408,7 +408,7 @@ function ParamField({
             onChange={(e) => onChange(e.target.checked)}
             className="h-3.5 w-3.5 rounded border-zinc-700 bg-zinc-900"
           />
-          <span>{Boolean(value) ? 'true' : 'false'}</span>
+          <span>{value ? 'true' : 'false'}</span>
         </label>
       );
       break;

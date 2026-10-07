@@ -1,10 +1,10 @@
 # Default opskeeper bash skill policy (read-only baseline).
 #
 # Drop this file at /etc/opskeeper-edge/bash-policy.yaml on the edge host
-# and the bash skill (internal/edgeagent/bash) will merge it on top of
+# and the bash skill (core/edge/bash) will merge it on top of
 # cmdpolicy.DefaultReadOnly() at boot.
 #
-# Merge semantics (see internal/edgeagent/cmdpolicy/policy.go::LoadFromYAML):
+# Merge semantics (see core/edge/cmdpolicy/policy.go::LoadFromYAML):
 #   - binaries[*]: each entry FULLY REPLACES the same-name entry in the
 #     baseline. New names are appended. There is no per-field merge.
 #   - network_host_allowlist / path_allowlist: REPLACE when set.

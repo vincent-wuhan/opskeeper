@@ -314,7 +314,7 @@ export const TRIGGER_MODES: { code: TriggerMode; label: string }[] = TRIGGER_MOD
 });
 
 // BUILTIN_RULE_NAMES maps seeded rule_key → bilingual display name. Server
-// stores the seed names in Chinese (see internal/manager/data/alert/store/
+// stores the seed names in Chinese (see core/manager/data/alert/store/
 // seed_rules.go); we localize at render time without touching the DB.
 // Unknown rule_keys (user-created rules) fall through to rule.name verbatim.
 const BUILTIN_RULE_NAMES: Record<string, { zh: string; en: string }> = {

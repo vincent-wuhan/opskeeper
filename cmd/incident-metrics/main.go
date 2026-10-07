@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 
-	incident "github.com/vincent-wuhan/opskeeper/internal/control/incident"
+	incident "github.com/vincent-wuhan/opskeeper/core/domains/control/incident"
 )
 
 func main() {

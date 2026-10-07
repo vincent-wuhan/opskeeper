@@ -1,0 +1,113 @@
+# pig-ops.yaml — OpsKeeper governance manifest for the observability
+# package.
+#
+# This is the control plane's half of the read story. The read-only package
+# answers questions about the node it runs on; this one answers questions
+# about the fleet it belongs to — the metric series, the log stream, the
+# traces, the registered database sources, the code that was running.
+#
+# It is a separate package because those are separate promises. "This node
+# can examine itself" is true everywhere and costs nothing. "This node may
+# read the fleet's metric and log history" is a wider grant against data
+# that is not the node's, and an operator who wants the first has not
+# thereby agreed to the second. A manifest carrying both would be a
+# manifest whose weakest promise governed the strongest.
+#
+# Everything here is served by an upcall to the control plane rather than
+# by the edge. The Prometheus and Loki endpoints, the database sources and
+# the repository registry are configured in the manager, and a subprocess on
+# a node has no path to any of them.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-sre-observability
+  version: 0.1.0
+  vendor: opskeeper
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  targets: [edge]
+
+  # L1. Not because the tools are harmless, but because none of them
+  # changes anything: a PromQL range query and a git grep have no success
+  # state. A package that can only read cannot enter the approval queue,
+  # so nothing here waits on a human and nothing here can act on a
+  # conversation that ended badly.
+  #
+  # The ceiling is asserted, not just declared. The host re-derives each
+  # tool's class from the executor it finds and refuses any call whose
+  # observed class is worse than this, so a write tool that reached this
+  # package would fail closed at the gate rather than run.
+  safety_level: L1
+
+  # read, and only read. There is no write in this package, so there is no
+  # way to widen the grant by shipping one later without a version bump
+  # that a reviewer sees in the diff.
+  capabilities: [read]
+
+  # The tool inventory, and the host's allow-list: a tool the agent
+  # produces that is not named here is refused on every turn. It is
+  # therefore the review surface — twelve names, sorted, each one a thing
+  # somebody agreed this package may read.
+  #
+  # The declared class is a claim, not the decision. The host re-derives
+  # the class from the executor it finds for the tool and refuses any call
+  # whose observed class is worse than the one declared here, so
+  # understating a tool in this file does not buy it reach; it just makes
+  # the package fail closed.
+  tools:
+    # Sorted, as everywhere else: a review is a diff more often than it is
+    # a reading. Comments explain each entry; the order is not a grouping.
+    #
+    # The schemas behind these names are generated from the live registry
+    # (tools.go is a GENERATED file), and
+    # TestTheObservabilityToolsetMatchesTheRegistry fails the moment the
+    # copy and the executor disagree. So this list cannot quietly become a
+    # menu of tools the host no longer parses.
+    - { name: analyze_database_status, class: read }  # DB health and inventory from exporter metrics
+    - { name: get_edge_summary,        class: read }  # one edge's current state and its incidents
+    - { name: get_host_load,           class: read }  # load and pressure on one host
+    - { name: grep_source,             class: read }  # search a registered repository
+    - { name: list_database_sources,   class: read }  # which databases are registered and reachable
+    - { name: list_metric_catalog,     class: read }  # which metric names actually exist right now
+    - { name: list_repo_sources,       class: read }  # which repositories are registered
+    - { name: query_change_events,     class: read }  # audit history of what changed and who
+    - { name: query_logql,            class: read }  # the log stream, by LogQL
+    - { name: query_promql,           class: read }  # the metric series, by PromQL
+    - { name: query_traceql,          class: read }  # the trace store, by TraceQL
+    - { name: read_source,            class: read }  # read a file from a registered repository
+
+  # The host injects credentials for exactly these scopes. A scope not
+  # listed here is never handed to the package, so it cannot reach a
+  # credential it did not ask for — and asking is the reviewable act.
+  #
+  # There is no host.read here, and that is the point: this package reads
+  # the fleet, not the machine. A node whose operators do not want the
+  # local read package installed can still get these, and vice versa.
+  required_scopes:
+    - observability.read
+    - db.read
+    - alert.read
+
+  audit:
+    # The package reports tool activity; the host derives each ledger entry
+    # from its own gate events, so a package can neither forge nor suppress
+    # a record. `mutates` is always false — audit-ledger writes are
+    # host-only, and a manifest asking for them is refused at load rather
+    # than downgraded.
+    emits: true
+    mutates: false
+
+  approval:
+    # Read-only packages never enter the approval queue. There is no blast
+    # radius here, and asking for one on a package that cannot mutate is a
+    # load error rather than a warning.
+    required: false
+
+  install:
+    # rolling. Everything here is a read against an already-deployed
+    # backend, so a version change adds schemas rather than actions, and
+    # the canary wave (1 in 10, confirmed by the caller) is a real check
+    # rather than a formality. The repair package is pinned precisely
+    # because that is not true of it.
+    strategy: rolling
+    min_edge_version: 0.8.0

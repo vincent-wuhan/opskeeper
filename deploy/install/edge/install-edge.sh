@@ -26,6 +26,7 @@ SERVICE_USER=opskeeper-edge
 SERVICE_GROUP=opskeeper-edge
 BIN_DEST=/usr/local/bin/opskeeper-edge
 PLUGIN_BIN_DIR=/usr/local/lib/opskeeper-edge   # bundled plugin binaries (promtail, etc.)
+AGENT_BIN="${PLUGIN_BIN_DIR}/pig"             # the node AI agent the edge spawns
 STATE_DIR=/var/lib/opskeeper-edge               # agent state root (StateDirectory=)
 PLUGIN_WORK_DIR="${STATE_DIR}/plugins"       # rendered plugin configs + subprocess logs
 CONFIG_DIR=/etc/opskeeper-edge
@@ -164,6 +165,39 @@ chmod 0755 "$STATE_DIR"
 mkdir -p "$PLUGIN_WORK_DIR"
 chown "$SERVICE_USER":"$SERVICE_GROUP" "$PLUGIN_WORK_DIR" 2>/dev/null || true
 chmod 750 "$PLUGIN_WORK_DIR"
+
+# ---------- node AI agent (pig) ----------
+# Required, and the only bundled binary in this script that is. Everything
+# else here is a signal source the edge degrades without; `pig` is the process
+# the edge spawns to answer a question at all. A node without it starts,
+# authenticates, dials home, reports its metrics — and when an operator asks
+# why, offers the model an empty toolset with no error anywhere.
+#
+# So this one is a hard failure rather than a warning, and it self-checks by
+# actually running the binary. Existence is not the property that matters:
+# a truncated copy, a binary for the wrong libc, or a filesystem mounted
+# noexec all pass `-x` and fail at the first conversation. Spawning
+# `pig --version` here costs milliseconds and turns a silent production
+# failure into a failed install with a message that names the cause.
+PIG_SRC="${SCRIPT_DIR}/pig-${OS}-${ARCH}"
+if [[ ! -f "$PIG_SRC" ]]; then
+    PIG_SRC="${SCRIPT_DIR}/pig"
+fi
+if [[ ! -f "$PIG_SRC" ]]; then
+    log_error "pig-${OS}-${ARCH} not bundled; this node would come up with no AI tools at all."
+    log_error "  Build it with 'make build-pig-all' and re-run the installer."
+    exit 1
+fi
+log_info "installing pig to $AGENT_BIN"
+install -m 0755 -o root -g root "$PIG_SRC" "$AGENT_BIN"
+if ! pig_version="$("$AGENT_BIN" --version 2>&1)"; then
+    log_error "installed $AGENT_BIN but it does not run: $pig_version"
+    log_error "  The edge spawns this binary as a child process; a node that installs"
+    log_error "  with a broken agent reports healthy and answers every question with"
+    log_error "  an empty toolset. Refusing to continue."
+    exit 1
+fi
+log_info "pig reports: $pig_version"
 
 PROMTAIL_SRC="${SCRIPT_DIR}/promtail-${OS}-${ARCH}"
 if [[ -f "$PROMTAIL_SRC" ]]; then

@@ -117,8 +117,8 @@ fi
 echo
 echo "==> 10. 静态验证 (无需 opskeeper 运行)"
 echo "Backend handler 文件:"
-ls -la "$ROOT/internal/manager/server/agentteams/plugin_http.go"
-grep -c "v1/plugins" "$ROOT/internal/manager/server/agentteams/plugin_http.go" | xargs echo "  /v1/plugins/* 路由出现次数:"
+ls -la "$ROOT/core/manager/server/agentteams/plugin_http.go"
+grep -c "v1/plugins" "$ROOT/core/manager/server/agentteams/plugin_http.go" | xargs echo "  /v1/plugins/* 路由出现次数:"
 echo
 echo "Plugin sync interface:"
 grep -E "InstallPlugin" "$ROOT/internal/agentteams/plugin_sync.go" | head -5

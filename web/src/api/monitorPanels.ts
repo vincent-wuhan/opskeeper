@@ -1,7 +1,7 @@
 import { request } from './client';
 
 // MonitorPanel mirrors the wire shape of the manager-side
-// monitor_panels row (see internal/manager/model/monitor/model.go).
+// monitor_panels row (see core/manager/model/monitor/model.go).
 //
 // The Monitor page reads the list and renders each panel via
 // PromQLPanel — the wire shape is intentionally a superset of

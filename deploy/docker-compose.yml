@@ -289,8 +289,34 @@ services:
   # DuckDuckGo / Brave / Baidu / Sogou and returns a normalised JSON
   # response. Zero API key, zero quota. Only docker-internal port 8080
   # — manager reaches it at http://searxng:8080/search?q=...&format=json.
+  #
+  # It is behind a profile, and that is a correction rather than a preference.
+  #
+  # This used to read
+  #     image: ${SEARXNG_IMAGE:?set SEARXNG_IMAGE to a verified immutable image}
+  # which is a good rule (no floating tag) attached in a way that made the whole
+  # stack unstartable from a clean checkout: SEARXNG_IMAGE ships empty in
+  # .env.example, is documented nowhere, and no release pins one. Ten services,
+  # nine of which have nothing to do with web search, could not boot because one
+  # peripheral had no default.
+  #
+  # The pinning rule is kept; it is just asked of the person who opts in rather
+  # than of everybody. `make compose-search-up` refuses to start the profile
+  # without a pinned tag, and says so; `make compose-up` does not start it.
+  #
+  # Nothing depends_on this service, and the manager falls back to
+  # model.DefaultSearxngURL and reports an unreadable backend through the
+  # settings probe — so an operator who turns web search on without running the
+  # profile gets a configuration error naming the cause, which is the right
+  # place for it, rather than a stack that will not start.
+  #
+  # Note for anyone editing this: `${VAR:?...}` is evaluated while compose
+  # parses the file, BEFORE profiles are applied, so it fires for a service the
+  # run was never going to start. That is why the default is empty rather than
+  # why the check moved. Verified, not assumed.
   searxng:
-    image: ${SEARXNG_IMAGE:?set SEARXNG_IMAGE to a verified immutable image}
+    image: ${SEARXNG_IMAGE:-}
+    profiles: ["search"]
     container_name: opskeeper-searxng
     restart: unless-stopped
     environment:

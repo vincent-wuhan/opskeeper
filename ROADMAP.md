@@ -73,7 +73,7 @@ across sections.
 - **B.4** `✓` Network Layer-1 — cmdpolicy expansion (shipped)
   - 9 binaries: OVS / nft / conntrack / ipset / ethtool / bpftool / `ip netns`
   - read-side only; write-side gated for SOP
-  - source: `internal/edgeagent/cmdpolicy/policy.go`
+  - source: `core/edge/cmdpolicy/policy.go`
 - **B.5** `◐` Network Layer-2/3 skills [v1.0]
   - `host_ovs_show`, `host_netfilter_dump`, `host_conntrack_summary`
   - eBPF preset library — preset IDs only, never raw `bpftrace -e <body>`
@@ -146,10 +146,26 @@ across sections.
   - **D.4.9** Proposal audit trail
     - hash-chained entries (ties into I.4)
     - shareable proposal URL for retrospectives
-- **D.5** `□` Cost + token budget controls
-  - per-org / per-user monthly cap
-  - per-call hard timeout + token cap
-  - graceful degradation (smaller model / fewer iterations) before cutoff
+- **D.5** `◐` Cost + token budget controls
+  - `☑` per-node daily cap, enforced host-side on the gateway (`llmgw.NewAttributedBudget`,
+    `OPSKEEPER_LLM_EDGE_DAILY_TOKEN_LIMIT`) — one runaway node can no longer
+    spend the fleet's ceiling and lock every other node out (决策 355)
+  - `☑` per-call hard timeout (`OPSKEEPER_LLM_CALL_TIMEOUT_SECONDS`) — a hung
+    provider is abandoned with 504 rather than pinning a connection and a node's
+    investigation open (决策 356)
+  - `☑` per-call token cap (`OPSKEEPER_LLM_MAX_OUTPUT_TOKENS`) — clamped over the
+    node's own `max_completion_tokens`, never under it; the field a node controls
+    to buy tokens is no longer a field only the node honours
+  - `☑` per-call max_completion_tokens ceiling reaches the provider
+  - `☑` the console-side daily cap is actually fed — the kernel books each
+    settled reply to the same ledger it checks (决策 358; before this the cap was
+    checked but never recorded, so it never fired on the console)
+  - `☐` per-org / per-user monthly cap
+  - `◐` graceful degradation before cutoff — answers shorten as a node nears its
+    own daily allowance (`OPSKEEPER_LLM_EDGE_DEGRADE_PERCENT`, a quarter of the
+    allowance per call), so a running diagnosis finishes instead of being cut off
+    at 100% (决策 357); switching to a smaller **model** is not done — that is a
+    registry concern, not a gateway one
 
 ---
 
