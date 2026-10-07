@@ -1,7 +1,7 @@
 // runtime.go is the in-process orchestration entry the new kernel-based
 // agent path goes through — the cutover layer that legacy agent.go
 // bypasses entirely. The manager's HTTP service picks which path runs
-// based on the OPSKEEPER_AGENT_KERNEL feature flag (default = legacy).
+// 该选择由 OPSKEEPER_AGENT_KERNEL 特性开关控制（未设置时默认为 pig-sdk）。
 //
 // It is HOST-ONLY by design: the loop itself lives in the agent kernel
 // (core/pig/pigagent, reached through pigagent.Agent). Everything below is
