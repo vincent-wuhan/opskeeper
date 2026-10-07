@@ -49,7 +49,7 @@ help: ## 列出全部 target
 # build
 # ----------------------------------------------------------------------------
 
-.PHONY: build build-opskeeper build-opskeeper-edge build-plugins test-plugins verify-plugins audit-open-source version-check
+.PHONY: build build-opskeeper build-opskeeper-edge build-plugins test-plugins verify-plugins audit-open-source version-check pi-plugin-guard
 build: build-opskeeper build-opskeeper-edge ## 构建 opskeeper 与 opskeeper-edge
 
 build-opskeeper: ## 构建云端 opskeeper
@@ -62,6 +62,10 @@ build-opskeeper-edge: ## 构建边端 opskeeper-edge
 
 audit-open-source: ## 运行开源发布准入审计
 	python3 scripts/audit_open_source.py
+
+pi-plugin-guard: ## 校验 OPC / Pient / 垂域插件架构边界
+	python3 scripts/pi_plugin_guard_test.py
+	python3 scripts/pi_plugin_guard.py .
 
 build-plugins: ## 构建 AgentTeams 插件发布包
 	$(MAKE) -C plugins/agentteams-plugin-installer plugin-zip
