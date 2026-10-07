@@ -108,12 +108,10 @@ services:
       # default chat provider's model — no separate model config needed.
       OPSKEEPER_INVESTIGATOR_ENABLED: ${OPSKEEPER_INVESTIGATOR_ENABLED:-true}
       OPSKEEPER_INVESTIGATOR_MIN_SEVERITY: ${OPSKEEPER_INVESTIGATOR_MIN_SEVERITY:-warning}
-      # AIOps agent kernel. "graph" enables the eino graph kernel +
-      # SkillRegistry.Resolve activation-keyword filter (skills with
-      # activation:keyword stay out of the prompt unless the user query
-      # mentions a keyword) + ToolBag deferral pipeline. "legacy" =
-      # historical for-loop runner with all tools always full-schema.
-      # Default flipped to graph 2026-05-08; flip to legacy to bisect.
+      # AIOps agent kernel. "graph" is a retired alias for the PiG loop,
+      # retained for deployments that already pin it. "pig" uses the bare
+      # PiG agent loop, while an unset value uses the default "pig-sdk"
+      # coding.Session driver. "legacy" is the pre-2.0 fallback loop.
       OPSKEEPER_AGENT_KERNEL: ${OPSKEEPER_AGENT_KERNEL:-graph}
       # ToolBag deferral threshold. When tool count > this, specialty-tier
       # tools get redacted schemas (LLM must call ToolSearch to expand).
