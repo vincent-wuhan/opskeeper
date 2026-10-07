@@ -5,17 +5,17 @@
 - OpsKeeper 仓库：`release/20260922`，工作区在调研前无未提交变更。
 - Paperclip GitHub 元数据：TypeScript、MIT License、default branch `master`。
 - Paperclip 最新调研 commit：`0f14d261233c545aa6a8a38ec253c498a5130fff`，时间为 2026-09-27 UTC。
-- 本地存在 Paperclip 工作副本 `/Users/yueming/Workspace/Benyue/paperclip`，但其 `master` 较旧且包含未提交改动；因此规范判断以 GitHub API 拉取的最新 `PLUGIN_SPEC.md`、plugin type、validator、plugin webhook schema 和 approval schema 为准。
+- 本地存在 Paperclip 工作副本，但其 `master` 较旧且包含未提交改动；因此规范判断以 GitHub API 拉取的最新 `PLUGIN_SPEC.md`、plugin type、validator、plugin webhook schema 和 approval schema 为准。
 
 ## Implementation Tracking Snapshot (2026-09-30)
 
 Multica/OPC tracks implementation in staged issues. The current repository snapshot contains this feasibility specification only; it does not contain the connector runtime.
 
-- **S1 baseline and contract fixture (BENY-491): merged.** GitHub Paperclip PR #1 merged at `d6cb43c1c34b48c4adbaaee4920d259fcd2d7f72`; GitCode MR #1 merged at `9f235a0084913aa0ea9428a3f8927dc60a2f9ca1`.
-- **S2 Phase A read-only sync (BENY-492): independently verified, not merged.** The source archive is `paperclip-opskeeper-sync-source.tar.gz` (20,725 bytes, SHA-256 `157d0de4a7659d0399f1c9783bab12c93fbafd82a5510091ff0829cf6318ccb6`). Manifest gate, 10 unit/integration tests, 9 E2E checks, and TypeScript checking pass, but the archive has not been pushed to a Paperclip repository.
-- **S3 Phase B approval bridge (BENY-493): local patch/bundle delivered, not applied or merged.** The delivered Paperclip-side patch records 51/51 tests and includes apply/rollback evidence, but it still requires a credentialed operator to apply it to the authoritative Paperclip baseline, re-run validation, and create the review PR.
-- **S4 Phase C read-only tools and security review (BENY-494): merged.** GitHub Paperclip PR #2 merged at `cce7be1b26455b28fb1d903a44366009b37e5e11`; GitCode MR #2 merged at `8fb29cdbec67d1185e0b31b9459731cb4007df83`.
-- **S5 E2E/install/runbook/go-no-go (BENY-495): not started.** Self-hosted installation, disable/rollback, operator runbook, complete cross-phase E2E, and the final implementation report remain open.
+- **S1 baseline and contract fixture: merged.** GitHub Paperclip PR #1 merged at `d6cb43c1c34b48c4adbaaee4920d259fcd2d7f72`; GitCode MR #1 merged at `9f235a0084913aa0ea9428a3f8927dc60a2f9ca1`.
+- **S2 Phase A read-only sync: independently verified, not merged.** The source archive is `paperclip-opskeeper-sync-source.tar.gz` (20,725 bytes, SHA-256 `157d0de4a7659d0399f1c9783bab12c93fbafd82a5510091ff0829cf6318ccb6`). Manifest gate, 10 unit/integration tests, 9 E2E checks, and TypeScript checking pass, but the archive has not been pushed to a Paperclip repository.
+- **S3 Phase B approval bridge: local patch/bundle delivered, not applied or merged.** The delivered Paperclip-side patch records 51/51 tests and includes apply/rollback evidence, but it still requires a credentialed operator to apply it to the authoritative Paperclip baseline, re-run validation, and create the review PR.
+- **S4 Phase C read-only tools and security review: merged.** GitHub Paperclip PR #2 merged at `cce7be1b26455b28fb1d903a44366009b37e5e11`; GitCode MR #2 merged at `8fb29cdbec67d1185e0b31b9459731cb4007df83`.
+- **S5 E2E/install/runbook/go-no-go: not started.** Self-hosted installation, disable/rollback, operator runbook, complete cross-phase E2E, and the final implementation report remain open.
 
 Accordingly, future implementation tasks in `tasks.md` remain unchecked until their artifacts are accepted in the authoritative Paperclip repository or the relevant operational environment. Multica issue status or an attachment alone is not treated as repository-level completion.
 
