@@ -280,6 +280,9 @@ func (s *Supervisor) supervise(ctx context.Context, proc ports.AgentProcess) {
 		attempts := len(s.crashes)
 		exhausted := s.cfg.MaxCrashAttempts > 0 && attempts >= s.cfg.MaxCrashAttempts
 		s.degraded = exhausted
+		if exhausted {
+			s.lastError = fmt.Sprintf("agent crashed %d times in %s: %s", attempts, s.cfg.CrashWindow, reason)
+		}
 		s.backoff = growBackoff(s.backoff, s.cfg.RestartBackoff, s.cfg.RestartBackoffMax)
 		delay := s.backoff
 		s.mu.Unlock()
@@ -295,9 +298,6 @@ func (s *Supervisor) supervise(ctx context.Context, proc ports.AgentProcess) {
 			// the flag trustworthy: a fleet poll landing between the two
 			// would otherwise see a degraded node with nothing to say why,
 			// which is the one state an operator cannot act on.
-			s.mu.Lock()
-			s.lastError = fmt.Sprintf("agent crashed %d times in %s: %s", attempts, s.cfg.CrashWindow, reason)
-			s.mu.Unlock()
 			s.log.Error("agent process is crash-looping; not restarting",
 				"attempts", attempts, "window", s.cfg.CrashWindow, "last_exit", reason)
 			return
