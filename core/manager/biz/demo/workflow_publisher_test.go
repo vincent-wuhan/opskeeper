@@ -142,6 +142,17 @@ func TestMatrixWorkflowPublisherSignsAndSendsAuthorityEvent(t *testing.T) {
 	if message := body["body"].(string); !strings.Contains(message, "time_utc=") || !strings.Contains(message, "time_bjt=") {
 		t.Fatalf("authority message must expose both timezones: %q", message)
 	}
+	if body["format"] != "org.matrix.custom.html" {
+		t.Fatalf("authority message must use Matrix HTML formatting: %v", body["format"])
+	}
+	formattedMessage, _ := body["formatted_body"].(string)
+	if strings.Contains(formattedMessage, token) || strings.Contains(formattedMessage, "eyJ") {
+		t.Fatalf("formatted authority message must hide the machine token: %q", formattedMessage)
+	}
+	if !strings.Contains(formattedMessage, "机器凭证：默认隐藏") ||
+		!strings.Contains(formattedMessage, "阶段摘要：等待人工审批修复方案") {
+		t.Fatalf("formatted authority message must keep the human summary: %q", formattedMessage)
+	}
 	message := body["body"].(string)
 	for _, required := range []string{
 		"确认根因：症状：orders/inventory/audit 查询返回 503 或明显变慢",
@@ -172,6 +183,18 @@ func TestMatrixWorkflowPublisherSignsAndSendsAuthorityEvent(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(string(briefJSON)), "must-not-leak") {
 		t.Fatalf("structured decision brief must redact sensitive evidence: %s", briefJSON)
+	}
+}
+
+func TestWorkflowStepsMarkRecoveredVerificationCompleted(t *testing.T) {
+	steps := workflowSteps(demomodel.ScenarioStatusRecovered)
+	if len(steps) != 4 {
+		t.Fatalf("workflow steps = %+v", steps)
+	}
+	for _, step := range steps {
+		if step["status"] != "completed" {
+			t.Fatalf("recovered workflow steps must all be completed: %+v", steps)
+		}
 	}
 }
 
