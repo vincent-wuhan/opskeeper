@@ -87,6 +87,21 @@ concurrency:
 
 jobs:
 
+  pi-plugin-architecture:
+    name: Pi plugin architecture guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Enforce OPC / Pient / vertical plugin boundaries
+        run: make pi-plugin-guard
+
   # Every module on its own published tags, on its own clock.
   #
   # This used to be step 11 of build-test. It is the longest thing in the file
