@@ -1,6 +1,6 @@
-# dashboard-workflow-projection Specification
+## ADDED Requirements
 
-## Requirement: Project OpsKeeper Transitions
+### Requirement: Project OpsKeeper Transitions
 
 OpsKeeper TeamHarness SHALL emit a Matrix `m.room.message` containing both a human-readable body and an `agentteams.workflow` object when Manager accepts an incident request, successfully dispatches a Worker task, consumes a matching Worker result, or records an explicit admin approval decision.
 
@@ -11,7 +11,7 @@ OpsKeeper TeamHarness SHALL emit a Matrix `m.room.message` containing both a hum
 - **AND** Dashboard can merge it into the live task board without host changes
 - **AND** Element can display the same notice body
 
-## Requirement: Preserve Incident Authority
+### Requirement: Preserve Incident Authority
 
 Workflow projection SHALL NOT execute tasks, bypass HITL, mutate AgentTeams/Dashboard host state, or become the source of truth for incident progression.
 
@@ -21,7 +21,7 @@ Workflow projection SHALL NOT execute tasks, bypass HITL, mutate AgentTeams/Dash
 - **THEN** OpsKeeper logs the failure
 - **AND** continues the existing dispatch/result safety path
 
-## Requirement: Bound Duplicate Projections
+### Requirement: Bound Duplicate Projections
 
 The projector SHALL suppress unchanged snapshots and duplicate transitions, and persist only a bounded incident/task index.
 
