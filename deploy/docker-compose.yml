@@ -71,11 +71,11 @@ services:
       OPSKEEPER_OPENAI_API_KEY: ${OPSKEEPER_OPENAI_API_KEY:-}
       OPSKEEPER_OPENAI_MODEL: ${OPSKEEPER_OPENAI_MODEL:-gpt-4o}
       OPSKEEPER_OPENAI_BASE_URL: ${OPSKEEPER_OPENAI_BASE_URL:-}
-      # AIOps agent kernel. "graph" is a retired alias for the PiG loop,
-      # retained for deployments that already pin it. "pig" uses the bare
-      # PiG agent loop, while an unset value uses the default "pig-sdk"
-      # coding.Session driver. "legacy" is the pre-2.0 fallback loop.
-      OPSKEEPER_AGENT_KERNEL: ${OPSKEEPER_AGENT_KERNEL:-graph}
+      # AIOps agent 内核：graph 是为历史部署保留的拼写，等价于 PiG loop；
+      # pig 使用裸 PiG loop；未设置时默认使用 pig-sdk coding.Session 驱动；
+      # legacy 是 2.0 前的兼容循环；无法识别的值同样回退 legacy，
+      # 并在启动日志中告警。
+      OPSKEEPER_AGENT_KERNEL: ${OPSKEEPER_AGENT_KERNEL:-pig-sdk}
       # ToolBag deferral threshold. When tool count > this, specialty-tier
       # tools get redacted schemas (LLM must call ToolSearch to expand).
       # Default 30 is fine until marketplace grows the bag past it.
