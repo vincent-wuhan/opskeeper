@@ -17,4 +17,4 @@
 - [x] 3.1 Run focused pool-fixture Go tests.
 - [x] 3.2 Run TeamHarness Python unit and package validation tests.
 - [x] 3.3 Update release version metadata and build local release artifacts on macOS.
-- [x] 3.4 Obtain deployment approval, deploy the verified artifacts, and run a fresh-manifest public E2E.（BENY-622 公网证据：fresh pool manifest `477a8b2b4878eed3e1f87f1a9cdc7142`，HITL、恢复与归档全部通过。）
+- [x] 3.4 Obtain deployment approval, deploy the verified artifacts, and run a fresh-manifest public E2E.（公网证据：fresh pool manifest `477a8b2b4878eed3e1f87f1a9cdc7142`，HITL、恢复与归档全部通过。）
