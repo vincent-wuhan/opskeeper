@@ -19,6 +19,15 @@ Multica/OPC tracks implementation in staged issues. The current repository snaps
 
 Accordingly, future implementation tasks in `tasks.md` remain unchecked until their artifacts are accepted in the authoritative Paperclip repository or the relevant operational environment. Multica issue status or an attachment alone is not treated as repository-level completion.
 
+## Implementation Tracking Snapshot (2026-10-09)
+
+The current Paperclip plugin baseline is authoritative `master@cce7be1b26455b28fb1d903a44366009b37e5e11`. GitHub Paperclip PR #3 merged into `master` at `5541357c55b1d39f5b5350eac5993ea1bada1765` on 2026-10-09.
+
+- **Current SDK Phase A plugin: merged.** `packages/plugins/plugin-opskeeper-sync` now provides plugin ID `paperclip.opskeeper-sync` version `0.1.0`. It polls every minute through the host HTTP bridge, mirrors incidents and details into company-scoped plugin state, advances a cursor, merges idempotently, marks stale state, isolates one company failure from another, paginates visible companies, enforces HTTPS and host allowlisting, disables redirects, bounds requests and storage, validates deep-link schemes, resolves the token from a secret reference, and exposes only read-only lookup/detail/sync-state tools plus an incident-list dashboard widget.
+- **Validation.** Plugin tests pass at 2 files / 6 tests, followed by plugin typecheck and build. Repository typecheck and build pass. Full local `pnpm test:run` reached 13,573 passing tests, 84 skipped, and 13 failures in existing runtime-cache suites because macOS rejects renaming their read-only staging directories; a focused rerun reproduced the same `EACCES`. In GitHub CI, policy, typecheck/release registry, build, runner, all server/chat/workspace shards, serialized suites, e2e, canary dry run, Docker context integrity, and isolated native Runner checks passed. The fork repository's Dependency Review check remains unsupported and failed, matching merged PR #1 and PR #2; it was not a merge blocker.
+- **Accepted task updates.** Tasks 3.1, 3.3, 3.4, and 3.5 are complete in the authoritative Paperclip repository. Task 3.1 records the current SDK baseline above.
+- **Remaining gaps.** The UI is an incident list with deep links; timeline, RCA summary, and evidence are available through read-only tools but not yet a full detail page. The merged plugin does not yet implement per-principal tool rate limiting or its own audit log, the approval bridge, scoped OpsKeeper service account, live Paperclip + OpsKeeper installation E2E, source-removal tombstones, packaging into a self-hosted deployment, operator runbook, security review, or final go/no-go report. Therefore those tasks remain unchecked.
+
 ## Paperclip 能力
 
 Paperclip 插件 manifest V1 支持：

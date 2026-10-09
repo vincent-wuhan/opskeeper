@@ -21,11 +21,11 @@
 
 ## 3. Future Implementation Validation
 
-- [ ] 3.1 Pin a Paperclip release or commit for the first implementation and record its plugin API surface.
+- [x] 3.1 Pin a Paperclip release or commit for the first implementation and record its plugin API surface.
 - [ ] 3.2 Confirm or add an OpsKeeper scoped service account with read-only and approval-only scopes.
-- [ ] 3.3 Build a fake OpsKeeper contract server covering incident list/detail, archive, approval, and failure paths.
-- [ ] 3.4 Scaffold a Paperclip plugin manifest with minimal read-only capabilities.
-- [ ] 3.5 Implement incident polling, idempotent mapping, cursor persistence, and stale-state display.
+- [x] 3.3 Build a fake OpsKeeper contract server covering incident list/detail, archive, approval, and failure paths.
+- [x] 3.4 Scaffold a Paperclip plugin manifest with minimal read-only capabilities.
+- [x] 3.5 Implement incident polling, idempotent mapping, cursor persistence, and stale-state display.
 - [ ] 3.6 Add Paperclip UI surfaces for incident list, timeline, RCA summary, evidence links, and OpsKeeper deep links.
 - [ ] 3.7 Add read-only agent tools with schema validation, timeout, rate limit, and audit logging.
 - [ ] 3.8 Implement the approval bridge behind `approvalBridgeEnabled=false` and verify it remains disabled by default.
