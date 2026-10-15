@@ -1,0 +1,6 @@
+schema: spec-driven
+created: 2026-10-15
+goal: Restore and complete OpsKeeper business capabilities on the current
+  microkernel/plugin architecture, coordinating runtime governance, PiG
+  adaptation, Paperclip integration, team collaboration, release readiness, and
+  progressive plugin delivery.
