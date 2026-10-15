@@ -1,5 +1,6 @@
 ---
 name: incident-investigator
+avatar: 🛰️
 description: 告警根因诊断 worker，顺因果链溯源到根因（0 号病人），不止于症状摘要
 when_to_use: |
   coordinator 在用户问以下场景时 spawn 本 worker：

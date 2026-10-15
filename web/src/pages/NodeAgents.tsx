@@ -540,13 +540,14 @@ export default function NodeAgentsPage() {
               icon={Bot}
               title={tr('未打开会话', 'No conversation open')}
               hint={tr(
-                '选一个节点然后新建会话；会话建立后先挂上流再发消息，否则请求会被拒',
-                'Pick a node and open a conversation; the stream must be attached before the first message'
+                '先在右上角选一台设备，再点「新建会话」。连接建立后就能直接发消息给边端 Agent。',
+                'Pick a device at the top right, then click “New session”. Once it connects you can message the edge agent directly.',
               )}
+              className="flex flex-1 flex-col items-center justify-center gap-2 text-center"
             />
           ) : (
             <>
-              <div className="flex-1 space-y-3 overflow-auto rounded-xl border border-zinc-800/60 bg-zinc-900/40 p-4">
+              <div className="flex-1 space-y-3 overflow-auto surface-card rounded-rk-lg p-4">
                 {bubbles.length === 0 ? (
                   <p className="text-xs text-zinc-500">
                     {attached

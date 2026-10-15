@@ -490,6 +490,89 @@ func TestRunRefusesOverlappingTurnsOnOneSession(t *testing.T) {
 	}
 }
 
+// errorStep is a model reply that carries the provider's own failure: the
+// shape PiG's transport produces when a request is rejected before any
+// content streams.
+func errorStep(message string) ai.FauxResponseStep {
+	return ai.FauxStaticStep(ai.FauxResponse{
+		StopReason:   string(ai.StopReasonError),
+		ErrorMessage: message,
+	})
+}
+
+// TestKernelSurfacesAProviderErrorAsAFailedTurn pins the case that let a
+// MiniMax quota exhaustion reach the console as a finished, empty answer.
+//
+// PiG synthesises an assistant message with the transport error in
+// ErrorMessage and returns a nil Go error, so the loop settles as a normal
+// end_turn. Before this was read back off the reply, the turn reached the
+// host as a success carrying nothing — indistinguishable from a model that
+// simply had nothing to say, and with a different remedy: a quota error is
+// fixed at the provider, an empty completion is fixed by retrying.
+func TestKernelSurfacesAProviderErrorAsAFailedTurn(t *testing.T) {
+	const quota = "429 已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。"
+	model := newFauxModel(t, errorStep(quota))
+	sink := &collectSink{}
+	k, err := NewKernel(KernelOptions{
+		Models: &fauxResolver{model: model},
+		Deps: func(context.Context, ports.AgentRequest) (Deps, error) {
+			return Deps{Tools: staticBag{}}, nil
+		},
+		Now: fixedClock(),
+	})
+	if err != nil {
+		t.Fatalf("NewKernel: %v", err)
+	}
+
+	ctx := ports.WithSink(context.Background(), sink)
+	res, runErr := k.Run(ctx, ports.AgentRequest{SessionID: "s-1", UserText: "check the host", Role: "admin"})
+	if runErr == nil {
+		t.Fatal("Run returned no error: a provider failure was reported as a finished turn")
+	}
+	if !strings.Contains(runErr.Error(), quota) {
+		t.Errorf("error = %q, want the provider's own message so the host can classify it", runErr)
+	}
+	if res == nil || res.Stopped != TurnError {
+		t.Fatalf("result = %+v, want %q", res, TurnError)
+	}
+	// The console is told the turn failed before the caller inspects the
+	// error, so a host that only listens to the stream still shows a
+	// failure instead of a stream that stops mid-turn.
+	if !hasType(frameTypes(sink.Frames()), wire.StreamError) {
+		t.Error("no error frame: the console would render a turn that simply ended")
+	}
+}
+
+// TestKernelAcceptsAMessageThatCarriesNoError guards the other side of the
+// same read: an error-shaped stop reason with no message says nothing, and
+// inventing a failure for it would turn every degenerate-but-clean turn
+// into an apology.
+func TestKernelAcceptsAMessageThatCarriesNoError(t *testing.T) {
+	model := newFauxModel(t, textStep("done"))
+	k, err := NewKernel(KernelOptions{
+		Models: &fauxResolver{model: model},
+		Deps: func(context.Context, ports.AgentRequest) (Deps, error) {
+			return Deps{Tools: staticBag{}}, nil
+		},
+		Now: fixedClock(),
+	})
+	if err != nil {
+		t.Fatalf("NewKernel: %v", err)
+	}
+
+	ctx := ports.WithSink(context.Background(), &collectSink{})
+	res, err := k.Run(ctx, ports.AgentRequest{SessionID: "s-1", UserText: "hi", Role: "admin"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.Stopped != TurnEndTurn {
+		t.Errorf("stopped = %q, want %q", res.Stopped, TurnEndTurn)
+	}
+	if !strings.Contains(res.Content, "done") {
+		t.Errorf("content = %q, want the model's answer", res.Content)
+	}
+}
+
 func TestRunProducesNoFramesWithoutASink(t *testing.T) {
 	// The kernel reads the sink from the context, so a caller that does not
 	// want streaming simply does not install one. It must not panic on the

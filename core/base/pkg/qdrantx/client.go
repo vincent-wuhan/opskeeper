@@ -4,6 +4,14 @@
 // and search. The HTTP API is documented at
 // https://qdrant.github.io/qdrant/redoc/index.html.
 //
+// The package also owns two backend-independent pieces, kept here rather
+// than in a caller so they cannot drift from the wire types they describe:
+//
+//   - Store, the port implemented by this Client and by vecstore.Chromem
+//     (the embedded engine), so callers never branch on backend.
+//   - MatchPayload, the in-process twin of buildFilter, for backends that
+//     cannot run OpsKeeper's filters server-side.
+//
 // Conventions:
 //   - One collection per opskeeper deployment, default name "knowledge".
 //   - Vectors are float32; cosine distance.
@@ -176,21 +184,16 @@ func (c *Client) Upsert(ctx context.Context, collection string, points []Point) 
 }
 
 // DeleteByFilter removes every point whose payload matches the filter.
-// Used for "drop every doc owned by repo X" before a re-sync.
+// Used for "drop every doc owned by repo X" before a re-sync. Routes through
+// buildFilter so a []string value becomes match.any (array containment) — the
+// hand-rolled value-only clauses this used to emit sent `match.value: [...]`
+// for array payloads like tenant_scopes, which qdrant rejects.
 func (c *Client) DeleteByFilter(ctx context.Context, collection string, mustMatch map[string]any) error {
-	if len(mustMatch) == 0 {
+	filter := buildFilter(mustMatch)
+	if filter == nil {
 		return fmt.Errorf("qdrant: DeleteByFilter requires at least one match clause (refusing to delete all)")
 	}
-	conds := make([]map[string]any, 0, len(mustMatch))
-	for k, v := range mustMatch {
-		conds = append(conds, map[string]any{
-			"key":   k,
-			"match": map[string]any{"value": v},
-		})
-	}
-	body := map[string]any{
-		"filter": map[string]any{"must": conds},
-	}
+	body := map[string]any{"filter": filter}
 	resp, err := c.do(ctx, http.MethodPost, "/collections/"+collection+"/points/delete?wait=true", body)
 	if err != nil {
 		return err

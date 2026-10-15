@@ -13,6 +13,16 @@ export interface Approval {
   source: string;
   session_id?: string;
   status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed';
+  // Producer's own statement of how far the action reaches (approval
+  // model.go:59-79). Present on rows written since 2d58a31; absent on older
+  // rows, hence optional. GET /v1/approvals/{id} serialises the whole model
+  // row, so these already reach the browser.
+  risk_class?: string;
+  blast_radius?: string;
+  target?: string;
+  // JSON string of Signer[] (user_id/role/at); present once signatures exist.
+  // A pending row with one signer means dual-sign is still waiting for another.
+  signers?: string;
   proposed_by: number;
   approved_by?: number;
   reason?: string;

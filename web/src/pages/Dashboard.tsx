@@ -281,7 +281,7 @@ export default function DashboardPage() {
   }, []);
 
   const lastRefreshedLabel = lastRefreshedAt
-    ? formatRefreshedAgo(now.getTime() - lastRefreshedAt.getTime())
+    ? formatRefreshedAgo(now.getTime() - lastRefreshedAt.getTime(), tr)
     : tr('尚未刷新', 'not refreshed yet');
 
   return (
@@ -379,7 +379,7 @@ export default function DashboardPage() {
                   {tr('平均 CPU · 平均 MEM · 在线设备', 'Avg CPU · Avg MEM · Online')}
                 </span>
               </div>
-              <div className="flex-1 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+              <div className="flex-1 overflow-hidden surface-card rounded-2xl p-4">
                 <ClusterTrend
                   cpu={cpuTrend}
                   mem={memTrend}
@@ -648,7 +648,7 @@ function ClusterPosture({
   );
 
   return (
-    <div className="flex h-full flex-col justify-between gap-4 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+    <div className="flex h-full flex-col justify-between gap-4 surface-card rounded-2xl p-4">
       <div className="flex items-baseline gap-2">
         <span className="text-2xl font-semibold tabular-nums text-zinc-100">
           {initialLoading ? '—' : onlineCount}
@@ -663,7 +663,7 @@ function ClusterPosture({
 
       <div>
         <div className="mb-1 flex items-center justify-between">
-          <span className="text-[10px] uppercase tracking-wider text-zinc-500">
+          <span className="border-b border-zinc-800/60 bg-zinc-950/40 text-left text-[11px] uppercase tracking-wider text-zinc-500">
             {tr('在线数 · 24h', 'Online count · 24h')}
           </span>
           <span className="text-[10px] tabular-nums text-zinc-600">
@@ -705,7 +705,7 @@ function ClusterPosture({
       </div>
 
       <div>
-        <div className="mb-1.5 text-[10px] uppercase tracking-wider text-zinc-500">{tr('角色分布', 'Role distribution')}</div>
+        <div className="mb-1.5 border-b border-zinc-800/60 bg-zinc-950/40 text-left text-[11px] uppercase tracking-wider text-zinc-500">{tr('角色分布', 'Role distribution')}</div>
         <div className="flex flex-wrap gap-1.5">
           {roles.length === 0 ? (
             <span className="text-[11px] text-zinc-600">—</span>
@@ -774,7 +774,7 @@ function KpiCard({
     : '—';
 
   return (
-    <div className="flex flex-col rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+    <div className="flex flex-col surface-card rounded-2xl p-4">
       <div className="text-xs text-zinc-500">{label}</div>
       <div
         className={cn(
@@ -854,7 +854,7 @@ function AlertSeverityCard({
   const sum = data.reduce((acc, d) => acc + d.value, 0);
 
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40">
+    <section className="surface-card rounded-2xl">
       <header className="flex items-center justify-between border-b border-zinc-800/60 px-4 py-3">
         <h2 className="text-sm font-medium uppercase tracking-wider text-zinc-300">
           {tr('告警分级', 'Alerts by severity')}
@@ -966,7 +966,7 @@ function NoisyRulesCard({
   }, [incidents]);
 
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40">
+    <section className="surface-card rounded-2xl">
       <header className="flex items-center justify-between border-b border-zinc-800/60 px-4 py-3">
         <h2 className="text-sm font-medium uppercase tracking-wider text-zinc-300">
           {tr('告警源 top 5', 'Top 5 noisy rules')}
@@ -1032,13 +1032,12 @@ function severityRank(s: string): number {
   }
 }
 
-function formatRefreshedAgo(deltaMs: number): string {
-  if (!Number.isFinite(deltaMs) || deltaMs < 0) return 'just now';
+function formatRefreshedAgo(deltaMs: number, tr: (zh: string, en: string) => string): string {
+  if (!Number.isFinite(deltaMs) || deltaMs < 5_000) return tr('刚刚', 'just now');
   const sec = Math.floor(deltaMs / 1000);
-  if (sec < 5) return 'just now';
-  if (sec < 60) return `${sec}s ago`;
+  if (sec < 60) return tr(`${sec} 秒前`, `${sec}s ago`);
   const min = Math.floor(sec / 60);
-  if (min < 60) return `${min}m ago`;
+  if (min < 60) return tr(`${min} 分钟前`, `${min}m ago`);
   const hr = Math.floor(min / 60);
-  return `${hr}h ago`;
+  return tr(`${hr} 小时前`, `${hr}h ago`);
 }

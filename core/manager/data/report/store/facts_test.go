@@ -36,6 +36,9 @@ func newFactsDB(t *testing.T) *gorm.DB {
 			action TEXT, resource_type TEXT, resource_name TEXT, user_email TEXT)`,
 		// Fleet now reads the devices table (online + roles bit field).
 		`CREATE TABLE devices (id INTEGER PRIMARY KEY, online BOOLEAN, roles INTEGER, deleted_at DATETIME)`,
+		// 待审批队列事实按表名查 approvals(状态 + signers_json)。
+		`CREATE TABLE approvals (
+			id TEXT PRIMARY KEY, status TEXT, signers_json TEXT)`,
 	}
 	for _, s := range stmts {
 		if err := db.Exec(s).Error; err != nil {
@@ -217,5 +220,48 @@ func TestFactsCollector_EmptyPeriodNoError(t *testing.T) {
 	// Hero still present (all zeros), so the calm report renders cards.
 	if len(facts.Hero) != 4 {
 		t.Errorf("hero cards = %d, want 4 even when empty", len(facts.Hero))
+	}
+}
+
+func TestFactsCollector_PendingApprovals(t *testing.T) {
+	db := newFactsDB(t)
+	ctx := context.Background()
+	period := bizreport.Period{
+		Start: mustParse(t, "2026-06-01T00:00:00Z"),
+		End:   mustParse(t, "2026-06-08T00:00:00Z"),
+	}
+
+	// 3 条可计数 pending(0 签 / 1 签 / 1 签)+ 1 条不可解析(读作 0 签)+ 1 条已决(不计入)。
+	db.Exec(`INSERT INTO approvals (id,status,signers_json) VALUES
+		('a1','pending',NULL),
+		('a2','pending','[{"user_id":1,"role":"admin","at":"2026-06-02T00:00:00Z"}]'),
+		('a3','pending','[{"user_id":2,"role":"admin","at":"2026-06-02T00:00:00Z"}]'),
+		('a4','approved','[{"user_id":1,"role":"admin","at":"2026-06-01T00:00:00Z"},{"user_id":2,"role":"admin","at":"2026-06-01T00:00:00Z"}]'),
+		('a5','pending','{bad')`)
+
+	fc := NewFactsCollector(db, nil)
+	facts, err := fc.Collect(ctx, period, period, bizreport.Scope{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts.PendingApprovals.Total != 4 { // a1..a3 + a5
+		t.Errorf("pending total = %d, want 4", facts.PendingApprovals.Total)
+	}
+	if facts.PendingApprovals.Unsigned != 2 { // a1 + a5(不可解析读作 0 签)
+		t.Errorf("pending unsigned = %d, want 2", facts.PendingApprovals.Unsigned)
+	}
+	if facts.PendingApprovals.Partial != 2 { // a2 + a3
+		t.Errorf("pending partial = %d, want 2", facts.PendingApprovals.Partial)
+	}
+
+	// 时点快照语义:换一个不含任何数据的周期,队列仍须原样返回(不受 period 过滤)。
+	other, err := fc.Collect(ctx,
+		bizreport.Period{Start: mustParse(t, "2020-01-01T00:00:00Z"), End: mustParse(t, "2020-01-02T00:00:00Z")},
+		bizreport.Period{}, bizreport.Scope{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if other.PendingApprovals.Total != 4 || other.PendingApprovals.Partial != 2 {
+		t.Errorf("pending queue must be point-in-time, got %+v", other.PendingApprovals)
 	}
 }

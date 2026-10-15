@@ -357,6 +357,29 @@ describe('PluginMarketplacePage', () => {
     expect(screen.getByText('sha256:abcdef0123456789')).toBeInTheDocument();
     expect(screen.getByText('0.4.1')).toBeInTheDocument();
   });
+
+  it('offers read-only jumps to the release console and the node install surface', async () => {
+    server.use(...baseHandlers());
+    render(
+      <MemoryRouter>
+        <PluginMarketplacePage />
+      </MemoryRouter>
+    );
+    // 发布控制台(已存在)+ 节点安装面(新增)
+    expect(
+      await screen.findByRole('link', { name: /发布控制台|Release console/ })
+    ).toHaveAttribute('href', '/admin/plugins');
+    expect(
+      screen.getByRole('link', { name: /节点安装面|Node install surface/ })
+    ).toHaveAttribute('href', '/devices');
+    // 不渲染任何 install/approve 假动作、没有第二套发布模型
+    expect(
+      screen.queryByRole('button', { name: /^Install|^安装$/ })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /^Approve|^批准/ })
+    ).not.toBeInTheDocument();
+  });
 });
 
 // A container that selected its resources by manifest is the one conversion

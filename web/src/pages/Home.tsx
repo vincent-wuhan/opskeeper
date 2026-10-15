@@ -20,9 +20,19 @@ import { ChatInput, type ModelSelection } from '@/components/ChatInput';
 import { useModelSelection } from '@/store/modelSelection';
 import { PromptCard } from '@/components/PromptCard';
 import { StatusRow } from '@/components/StatusRow';
+import { AgentAvatar } from '@/components/AgentAvatar';
+import { useAgents, avatarFor } from '@/store/agents';
+import { Chip } from '@/components/ui/Chip';
+// personaLabel resolves an agent_id to its localized display name — same
+// tables AgentBadge renders from. Don't re-declare a mapping here.
+import { personaLabel } from '@/components/AgentBadge';
+import { listAgents, type AgentSummary } from '@/api/agents';
 import { createSession, listModels, type LLMProvider } from '@/api/chat';
 import { setSetting, invalidateLLMRouter } from '@/api/settings';
 import { listEdges } from '@/api/edges';
+import { listIncidents, type Incident } from '@/api/alerts';
+import { useApprovalBadge } from '@/store/approvalBadge';
+import { usePermissions } from '@/store/me';
 import { useI18n } from '@/i18n/locale';
 
 // Hero 标语 —— 全部走"助理向用户报到"语气：听候差遣 / 今天能做些什么 /
@@ -30,6 +40,25 @@ import { useI18n } from '@/i18n/locale';
 // 偏哲学的（"Production is calm. So are you" / "Reset 之前先 Read"）
 // 撤掉了，节奏不像助理在跟你打招呼。
 type Greeting = { zh: string; en: string };
+
+// NOT_CHATTABLE = 后端 persona 里不该在首页做成快捷卡的（点了都是死路）。
+//   'default'  —— 虚拟 persona。上面那个大输入框 startSession 绑的就是它，
+//     点它的卡 ≡ 在输入框少写一句 prompt，零信息量。
+//   'reporter' —— agents/reporter.md 的 frontmatter 写明「由 report 调度器
+//     / 手动"立即生成"触发（非用户 chat spawn）」且 tools: []。它等的输入是
+//     一份 ReportFacts JSON，由后端调度器喂，用户点开只会得到一个没有工具、
+//     在等不存在输入的死会话。
+//
+// 判据只能是人名 —— critic / reviewer 同样是 tools: [] + read-only，但它们
+// 是完全正常的对话 persona（Manager spawn 后质疑诊断结论 / 二审高危操作），
+// 用 tools.length 或 permission_mode 当判据会误杀。
+//
+// 这是一份前端硬编码的重复真相（仓库既有同类：AgentAvatar.PERSONA_VISUALS
+// 11 条、AGENT_LABELS_ZH/EN、PERSONA_ALIASES），将来若新增非对话 worker
+// persona 需同步此表；根治要后端给 AgentSummary 加 chat_capable 字段，
+// 超出本 change 的零后端约束，已记 deferred。
+const NOT_CHATTABLE = new Set(['default', 'reporter']);
+
 const GREETINGS: Greeting[] = [
   { zh: '听候差遣', en: 'At your service.' },
   { zh: '随时待命', en: 'Ready when you are.' },
@@ -141,13 +170,36 @@ function samplePrompts(n: number): typeof PROMPT_POOL {
   return pool.slice(0, n);
 }
 
+// 时段问候（眉标）。tr 作为参数传入 —— locale.ts 的 tr 只在调用时读取
+// 当前语言，模块作用域调用会被求值一次并冻在首次加载的语言上。
+function greetingFor(hour: number, tr: (zh: string, en: string) => string): string {
+  if (hour < 5) return tr('凌晨好', 'Still up');
+  if (hour < 11) return tr('早上好', 'Good morning');
+  if (hour < 13) return tr('中午好', 'Good noon');
+  if (hour < 18) return tr('下午好', 'Good afternoon');
+  return tr('晚上好', 'Good evening');
+}
+
 export default function HomePage() {
   const { tr } = useI18n();
   const navigate = useNavigate();
+  const byName = useAgents((s) => s.byName);
   const [draft, setDraft] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [edgeTotal, setEdgeTotal] = useState<number | null>(null);
+  // 首页摘要用的未关闭事件总数 + 「进行中」卡要渲染的那几条 items。
+  // 同一份响应一次 setState：openTotal 是摘要行数字，openIncidents 是卡片列表。
+  // 摘要行**必须**读 total 而不是 openIncidents.length —— 后端
+  // core/manager/server/alert/http.go:171 明确注释过 len(items) 恒 <= page_size，
+  // 拿 items 长度当总数会静默少报。
+  const [openTotal, setOpenTotal] = useState(0);
+  const [openIncidents, setOpenIncidents] = useState<Incident[]>([]);
+  // 待审批数字复用侧栏的审批 badge store（自带 admin 门禁 + 30s 轮询），
+  // 首页不再单独发 /v1/approvals 请求 —— 那条路由每个 handler 都在
+  // requireAdmin 之后，非 admin 打过去是必然 403。
+  const pendingApprovals = useApprovalBadge((s) => s.pending);
+  const { isAdmin } = usePermissions();
   const [providers, setProviders] = useState<LLMProvider[]>([]);
   // Model selection lives in a persisted store (shared with ChatThread), so a
   // pick survives navigation + reload and the launched session inherits it.
@@ -158,10 +210,18 @@ export default function HomePage() {
   const selectedModel = storeModel ?? catalogDefault;
   // SearXNG ships zero-key zero-quota in our compose stack — leave on by default.
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
+  // 「你的 Agent」快捷卡。persona id 就是 AgentSummary.name（没有单独的
+  // id 字段）—— 与 Agents.tsx 的 createSession({ agent_id: agent.name }) 一致。
+  const [agents, setAgents] = useState<AgentSummary[]>([]);
+  // 防连点：正在建会话的 persona id。刻意不复用 submitting —— 那是主
+  // 输入框的语义，两者不该互相锁死。
+  const [startingAgent, setStartingAgent] = useState<string | null>(null);
 
   // 进首页时随机一条问候 + 4 张 prompt 卡；mount 期间不变。
   const greetingPair = useMemo(() => GREETINGS[Math.floor(Math.random() * GREETINGS.length)], []);
   const greeting = tr(greetingPair.zh, greetingPair.en);
+  // 时段问候在渲染期求值（而非模块作用域），语言切换后才会跟着重绘。
+  const hourGreeting = greetingFor(new Date().getHours(), tr);
   // Pin the webpage-generator card first, then 3 random suggestions.
   const prompts = useMemo(() => samplePrompts(4), []);
 
@@ -174,6 +234,21 @@ export default function HomePage() {
       .catch(() => {
         // On failure, assume servers exist so we don't show the empty-state CTA on a transient error.
         if (!cancelled) setEdgeTotal(null);
+      });
+    // pageSize 5 —— 「进行中」卡要渲染前几条 items。仍留在 Task 12 留下的这个
+    // effect 里（它有 cancelled 守卫）；另起一个 effect 会重复发请求且缺守卫。
+    listIncidents({ status: 'open', pageSize: 5 })
+      .then((r) => {
+        if (cancelled) return;
+        setOpenTotal(r.total ?? 0);
+        setOpenIncidents(r.items ?? []);
+      })
+      .catch(() => {
+        // Best-effort chrome — the header summary keeps its previous number
+        // rather than blanking. /alerts surfaces the real error if clicked.
+        if (cancelled) return;
+        setOpenTotal(0);
+        setOpenIncidents([]);
       });
     listModels()
       .then((cat) => {
@@ -197,6 +272,25 @@ export default function HomePage() {
       })
       .catch(() => {
         if (!cancelled) setProviders([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // persona 快捷卡。best-effort: 拉不到就整段不渲染，绝不把首页拖进错误态。
+  // 取后端返回的前 6 个 —— Agents.tsx 的 builtinRank/BUILTIN_ORDER 排序是
+  // 该文件的模块私有，本任务不动它（顺序可能与档案墙不一致，已记 deferred）。
+  useEffect(() => {
+    let cancelled = false;
+    listAgents()
+      .then((r) => {
+        // 先 filter 再 slice，排掉的空位才由真正的 persona 补位；反过来
+        // slice 再 filter 会永远少一格。
+        if (!cancelled) setAgents(r.items.filter((a) => !NOT_CHATTABLE.has(a.name)).slice(0, 6));
+      })
+      .catch(() => {
+        if (!cancelled) setAgents([]);
       });
     return () => {
       cancelled = true;
@@ -244,33 +338,71 @@ export default function HomePage() {
     }
   }
 
-  const showEmptyState = edgeTotal === 0;
+  // 从 persona 快捷卡直达一个新会话。失败复用首页既有的 error 展示块
+  // （上面那个 role="alert"），不再造第二套错误 UI。成功后直接导航 —— 没有
+  // initialPrompt 可传，所以不需要 state 参数。
+  async function startWith(agentName: string) {
+    if (startingAgent) return;
+    setError(null);
+    setStartingAgent(agentName);
+    try {
+      const label = personaLabel(agentName, tr);
+      const session = await createSession({ title: label.slice(0, 30), agent_id: agentName });
+      navigate(`/chat/${session.id}`);
+    } catch (err) {
+      setError((err as Error).message || tr('创建会话失败', 'Failed to create session'));
+      setStartingAgent(null);
+    }
+  }
 
+  const showEmptyState = edgeTotal === 0;
   return (
     <main className="flex flex-1 flex-col overflow-hidden">
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-3xl flex-col items-stretch px-6 pb-16 pt-16 sm:pt-20">
           <StatusRow />
 
-          <h1 className="mb-8 mt-8 text-center text-3xl font-semibold tracking-tight text-zinc-100">
+          <p className="mt-8 text-center text-sm text-zinc-500">
+            {hourGreeting}
+          </p>
+
+          <h1 className="mb-2 mt-1 text-center text-3xl font-semibold tracking-tight text-zinc-100">
             {greeting}
           </h1>
 
-          <ChatInput
-            value={draft}
-            onChange={setDraft}
-            onSubmit={(p) => {
-              setDraft('');
-              void startSession(p.text);
-            }}
-            disabled={submitting}
-            autoFocus
-            providers={providers}
-            selectedModel={selectedModel}
-            onModelChange={handleModelChange}
-            webSearchEnabled={webSearchEnabled}
-            onWebSearchToggle={setWebSearchEnabled}
-          />
+          <p className="mb-8 text-center text-sm text-zinc-400">
+            {tr('未关闭事件', 'Open incidents')}:{' '}
+            <span className="text-zinc-200">{openTotal}</span>
+            {isAdmin && (
+              <>
+                {' · '}
+                {tr('待审批', 'Pending approvals')}:{' '}
+                <span className="text-zinc-200">{pendingApprovals}</span>
+              </>
+            )}
+          </p>
+
+          {/* 只做抬升、不做表面 —— ChatInput 根自带 rounded-2xl +
+              border + bg(ChatInput.tsx:356)，再套一层有底色的卡片就是
+              双框。圆角必须留：阴影画在 wrapper 的 border-box 上，
+              不圆的话阴影是直角矩形，跟里面的圆角输入框对不上。 */}
+          <div className="rounded-2xl transition-shadow focus-within:shadow-pop">
+            <ChatInput
+              value={draft}
+              onChange={setDraft}
+              onSubmit={(p) => {
+                setDraft('');
+                void startSession(p.text);
+              }}
+              disabled={submitting}
+              autoFocus
+              providers={providers}
+              selectedModel={selectedModel}
+              onModelChange={handleModelChange}
+              webSearchEnabled={webSearchEnabled}
+              onWebSearchToggle={setWebSearchEnabled}
+            />
+          </div>
 
           {error && (
             <div
@@ -279,6 +411,88 @@ export default function HomePage() {
             >
               {error}
             </div>
+          )}
+
+          {/* 「你的 Agent」快捷卡：点一下直接开一个绑定该 persona 的新会话。
+              位置在提示词卡之上 —— 这一节最该被先看到的入口就是 persona，
+              提示词卡是退而求其次的备选。
+              用原生 <button> 而不是 <Card>：Card 的 as prop 只允许
+              div/section/article，渲染不出 button，而这个卡必须键盘可达。
+              .surface-card 提供卡面 + 弱边框，hover 用与 Card.tsx
+              interactive 分支一致的语义 token。 */}
+          {agents.length > 0 && (
+            <section className="mt-10">
+              <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+                {tr('你的 Agent', 'Your agents')}
+              </h2>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                {agents.map((a) => {
+                  const busy = startingAgent === a.name;
+                  return (
+                    <button
+                      key={a.name}
+                      type="button"
+                      disabled={busy || startingAgent !== null}
+                      onClick={() => void startWith(a.name)}
+                      className="surface-card flex flex-col items-center gap-2 rounded-2xl px-3 py-4 transition-colors hover:border-border hover:bg-card disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <AgentAvatar agentId={a.name} size={40} avatar={avatarFor(byName, a.name)} />
+                      <span className="truncate text-xs text-zinc-300">
+                        {personaLabel(a.name, tr)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* 「进行中」：未关闭事件 + 待审批入口。mt-8 是**分层间距**（32px），
+              不是把两节撕开 —— 上面 persona section 有 mt-10 顶部但没有底部间距，
+              两节又都带 <h2>，0 间距读起来像渲染坏了。persona 降级不渲染时
+              （listAgents 失败 → setAgents([])）上方是摘要行的 mb-8，同为 32px，
+              两种路径间距一致，不需要额外的条件类名。
+              审批只渲染**一张**泛化卡，不拉列表：/v1/approvals 每个 handler
+              都在 requireAdmin 之后，首页再发一次请求非 admin 必然 403
+              （Task 12 刚把这条请求整个删掉）。数字复用侧栏 badge store。 */}
+          {(openIncidents.length > 0 || (isAdmin && pendingApprovals > 0)) && (
+            <section className="mt-8">
+              <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+                {tr('进行中', 'In progress')}
+              </h2>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {openIncidents.map((inc) => (
+                  <button
+                    key={inc.id}
+                    type="button"
+                    onClick={() => navigate(`/incidents/${inc.id}`)}
+                    className="surface-card flex items-center gap-3 rounded-2xl px-4 py-3 text-left transition-colors hover:border-border hover:bg-card"
+                  >
+                    <span className="flex-1 truncate text-sm text-zinc-200">{inc.summary}</span>
+                    {/* IncidentSeverity 带 `| string` 兜底，不是穷尽联合类型 ——
+                        所以只判 critical，其余一律 warning，不写 switch。 */}
+                    <Chip tone={inc.severity === 'critical' ? 'danger' : 'warning'}>
+                      {inc.severity}
+                    </Chip>
+                  </button>
+                ))}
+                {isAdmin && pendingApprovals > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => navigate('/approvals')}
+                    className="surface-card flex items-center gap-3 rounded-2xl px-4 py-3 text-left transition-colors hover:border-border hover:bg-card"
+                  >
+                    <span className="flex-1 text-sm text-zinc-200">
+                      ⏸ {tr('等你审批', 'Waiting for your approval')} · {pendingApprovals}{' '}
+                      {tr('项', 'items')}
+                    </span>
+                    <span className="text-xs text-zinc-400">
+                      {tr('去审批', 'Review')} →
+                    </span>
+                  </button>
+                )}
+              </div>
+            </section>
           )}
 
           <div className="mt-10">
@@ -303,17 +517,26 @@ export default function HomePage() {
                 </span>
               </button>
             ) : (
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                {prompts.map((p) => (
-                  <PromptCard
-                    key={p.titleEn}
-                    title={tr(p.titleZh, p.titleEn)}
-                    description={tr(p.descZh, p.descEn)}
-                    icon={p.icon}
-                    onClick={() => void startSession(tr(p.promptZh, p.promptEn))}
-                  />
-                ))}
-              </div>
+              <>
+                {/* 「试试这些」= 下面这组既有 PromptCard（samplePrompts(4)）。
+                    tasks.md 2.6 说的「建议提示词卡」由它满足，本任务不新增第二组。
+                    标题必须留在**非空分支**里：外层那个 div-10 里是三元，零设备时
+                    渲染的是 onboarding CTA，挂着「试试这些」标题会与内容对不上。 */}
+                <h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+                  {tr('试试这些', 'Try these')}
+                </h2>
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                  {prompts.map((p) => (
+                    <PromptCard
+                      key={p.titleEn}
+                      title={tr(p.titleZh, p.titleEn)}
+                      description={tr(p.descZh, p.descEn)}
+                      icon={p.icon}
+                      onClick={() => void startSession(tr(p.promptZh, p.promptEn))}
+                    />
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </div>

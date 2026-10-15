@@ -1,5 +1,6 @@
 ---
 name: reviewer
+avatar: 🛡️
 description: 高危操作二审 reviewer，基于 Manager 供给的证据做只读决策
 when_to_use: |
   在 mutating / destructive 操作进入 HITL 或执行前调用。

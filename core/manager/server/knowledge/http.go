@@ -45,10 +45,12 @@ type Service interface {
 	CreateManualDoc(ctx context.Context, in biz.CreateManualDocInput) (*model.Doc, error)
 	UpdateManualDoc(ctx context.Context, id uint64, in biz.UpdateManualDocInput) (*model.Doc, error)
 	// MoveDoc relocates an org doc to a new folder path (drag-drop, ADR-029).
-	MoveDoc(ctx context.Context, id uint64, newPath string) (*model.Doc, error)
+	// tenantID gates the move to docs the caller's tenant can see.
+	MoveDoc(ctx context.Context, id uint64, newPath, tenantID string) (*model.Doc, error)
 	// UploadDoc ingests an org-uploaded file (ADR-028, source_type=upload).
 	UploadDoc(ctx context.Context, in biz.UploadDocInput) (*model.Doc, error)
-	DeleteDoc(ctx context.Context, id uint64) error
+	// DeleteDoc drops an org doc; tenantID gates it to visible docs.
+	DeleteDoc(ctx context.Context, id uint64, tenantID string) error
 	Search(ctx context.Context, q string, opts biz.SearchOptions) ([]biz.SearchHit, error)
 	ListPaths(ctx context.Context) (map[string]int, error)
 
@@ -59,10 +61,9 @@ type Service interface {
 	CreateRepo(ctx context.Context, in biz.CreateRepoInput) (*model.Repository, error)
 	Sync(ctx context.Context, id uint64) (*model.Repository, error)
 	DeleteRepo(ctx context.Context, id uint64) error
-	// SyncBuiltinVault syncs the platform vault into qdrant (source_type=vault):
-	// a live clone of the public github vault, falling back to the embedded
-	// snapshot offline (ADR-029). Returns (fileCount, source) where source is
-	// "cloud" or "embedded". Dedicated endpoint, not POST /repos/{id}/sync.
+	// SyncBuiltinVault syncs the platform vault into qdrant (source_type=vault)
+	// from the snapshot embedded in the binary. Returns (fileCount, "embedded").
+	// Dedicated endpoint, not POST /repos/{id}/sync.
 	SyncBuiltinVault(ctx context.Context) (int, string, error)
 
 	// SSH identities.
@@ -189,8 +190,8 @@ type repoDTO struct {
 	// IsBuiltin marks the embedded platform vault (url == builtin://vault).
 	// The frontend uses this to (a) hide it from the user-facing Repos list
 	// and (b) drive the Knowledge page's "同步内置知识库" sync button — so
-	// neither relies on fragile URL substring matching, which silently
-	// broke when the vault URL migrated builtin://vault → builtin://vault.
+	// neither relies on fragile URL substring matching, which has silently
+	// broken before when the vault URL scheme changed.
 	IsBuiltin bool      `json:"is_builtin"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -479,7 +480,7 @@ func (h *Handler) moveDoc(w http.ResponseWriter, r *http.Request) {
 	if prev, err := h.svc.GetDoc(r.Context(), id); err == nil && prev != nil {
 		fromPath = prev.Path
 	}
-	d, err := h.svc.MoveDoc(r.Context(), id, req.Path)
+	d, err := h.svc.MoveDoc(r.Context(), id, req.Path, tenantIDFromRequest(r))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -514,7 +515,7 @@ func (h *Handler) deleteDoc(w http.ResponseWriter, r *http.Request) {
 	if prev, err := h.svc.GetDoc(r.Context(), id); err == nil && prev != nil {
 		title, path, sourceType = prev.Title, prev.Path, prev.SourceType
 	}
-	if err := h.svc.DeleteDoc(r.Context(), id); err != nil {
+	if err := h.svc.DeleteDoc(r.Context(), id, tenantIDFromRequest(r)); err != nil {
 		writeErr(w, err)
 		return
 	}

@@ -27,6 +27,7 @@ func (f *fakeRepoStore) GetRepoByURL(context.Context, string) (*model.Repository
 }
 func (f *fakeRepoStore) CreateRepo(context.Context, *model.Repository) error       { return nil }
 func (f *fakeRepoStore) UpdateRepoSync(context.Context, uint64, int, string) error { return nil }
+func (f *fakeRepoStore) MarkRepoSyncFailed(context.Context, uint64, string) error  { return nil }
 func (f *fakeRepoStore) DeleteRepo(context.Context, uint64) error                  { return nil }
 func (f *fakeRepoStore) ListSSHIdentities(context.Context) ([]*model.SSHIdentity, error) {
 	return nil, nil

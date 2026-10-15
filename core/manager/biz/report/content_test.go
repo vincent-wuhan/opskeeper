@@ -213,3 +213,10 @@ func TestParseContent_MixedParagraphShapes(t *testing.T) {
 		t.Errorf("order or content wrong: %+v", got.Narrative.Paragraphs)
 	}
 }
+
+// §3.1 不引入新 Content 字段:待审批事实只走 prompt(叙事),不进 ContentJSON schema。
+func TestContent_HasNoPendingApprovalsField(t *testing.T) {
+	if strings.Contains(sampleContent().MustJSON(), "pending_approvals") {
+		t.Errorf("Content 不得携带 pending_approvals;它只属于 prompt")
+	}
+}

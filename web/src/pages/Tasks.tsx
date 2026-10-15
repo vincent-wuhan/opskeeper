@@ -5,10 +5,12 @@
 // shared ReportCards, scoped by schedule_id).
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, CalendarClock, ChevronDown, ChevronRight, Loader2, Pencil, Play, Plus, Power, Trash2, Zap } from 'lucide-react';
+import { ArrowLeft, CalendarClock, ChevronDown, ChevronRight, Loader2, Newspaper, Pencil, Play, Plus, Power, Trash2, Zap } from 'lucide-react';
 import { Modal } from '@/components/Modal';
+import { Button, EmptyState, useConfirm } from '@/components/ui';
 import { ReportCards } from '@/components/ReportCards';
 import { cn } from '@/lib/cn';
+import { DAILY_BRIEF_NAME_EN, DAILY_BRIEF_NAME_ZH, dailyBriefSeed } from '@/lib/dailyBrief';
 import { fullDateTime } from '@/lib/format';
 import { usePermissions } from '@/store/me';
 import { useI18n } from '@/i18n/locale';
@@ -58,6 +60,7 @@ function TaskList() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<ReportSchedule | null>(null);
   const [creating, setCreating] = useState(false);
+  const [seed, setSeed] = useState<Partial<ScheduleInput> | null>(null);
   const [oneoffOpen, setOneoffOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -84,6 +87,7 @@ function TaskList() {
       /* ignore */
     }
   }, []);
+  const confirm = useConfirm();
   const onToggle = useCallback(
     async (task: UnifiedTask) => {
       if (task.schedule_id == null) return;
@@ -94,12 +98,18 @@ function TaskList() {
   );
   const onDelete = useCallback(
     async (task: UnifiedTask) => {
-      if (!window.confirm(tr('删除这个任务？', 'Delete this task?'))) return;
+      const ok = await confirm({
+        title: tr('删除任务', 'Delete task'),
+        message: tr('删除这个任务？', 'Delete this task?'),
+        confirmLabel: tr('删除', 'Delete'),
+        danger: true,
+      });
+      if (!ok) return;
       if (task.kind === 'oneoff') await deleteTask(task.id);
       else if (task.schedule_id != null) await deleteSchedule(task.schedule_id);
       void load();
     },
-    [load, tr],
+    [load, tr, confirm],
   );
 
   return (
@@ -153,6 +163,23 @@ function TaskList() {
                         <span className="block text-[11px] text-zinc-500">{tr('按日报 / 周报 / 月报周期自动生成', 'Auto-generate on a daily / weekly / monthly cadence')}</span>
                       </span>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setSeed(dailyBriefSeed(channels, tr(DAILY_BRIEF_NAME_ZH, DAILY_BRIEF_NAME_EN)));
+                        setCreating(true);
+                      }}
+                      className="flex w-full items-start gap-2.5 border-t border-zinc-800/60 px-3 py-2 text-left hover:bg-zinc-800"
+                    >
+                      <Newspaper size={14} className="mt-0.5 shrink-0 text-sky-400/80" />
+                      <span>
+                        <span className="block text-xs text-zinc-100">{tr('每日值班简报', 'Daily on-call brief')}</span>
+                        <span className="block text-[11px] text-zinc-500">
+                          {tr('一键预填:每天 09:00 汇总昨夜事件与待审批,推送到飞书', 'One-click preset: 09:00 digest of last night + pending approvals, to Feishu')}
+                        </span>
+                      </span>
+                    </button>
                   </div>
                 </>
               )}
@@ -165,13 +192,36 @@ function TaskList() {
         {loading ? (
           <div className="py-16 text-center text-sm text-zinc-500">{tr('加载中…', 'Loading…')}</div>
         ) : items.length === 0 ? (
-          <div className="mx-auto max-w-2xl rounded-lg border border-dashed border-zinc-800 py-16 text-center text-sm text-zinc-400">
-            {tr('还没有任务。点「立即生成」做一次性报告，或「新建定时任务」排期。', 'No tasks yet. Click "Run now" for a one-shot, or create a scheduled task.')}
+          <div className="mx-auto max-w-2xl rounded-lg border border-dashed border-zinc-800 py-14">
+            {/* Carries the two real entry points instead of describing a
+                button the reader then has to go hunt for in the header
+                menu. Copy matches the menu items verbatim. */}
+            <EmptyState
+              icon={CalendarClock}
+              title={tr('还没有任务', 'No tasks yet')}
+              hint={tr(
+                '任务 = 一次性报告 + 定时排期。马上生成一份，或让日报 / 周报按周期自动产出。',
+                'A task is a one-shot report or a recurring schedule. Generate one now, or let it run on a daily / weekly cadence.',
+              )}
+              className="flex flex-col items-center justify-center gap-2 px-6 text-center"
+              action={
+                canMutate ? (
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <Button variant="primary" onClick={() => setOneoffOpen(true)}>
+                      <Zap size={12} /> {tr('立即生成（一次性）', 'Run now (one-shot)')}
+                    </Button>
+                    <Button variant="ghost" onClick={() => setCreating(true)}>
+                      <CalendarClock size={12} /> {tr('定时任务', 'Scheduled task')}
+                    </Button>
+                  </div>
+                ) : null
+              }
+            />
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-zinc-800/60 bg-zinc-900/40">
+          <div className="overflow-hidden surface-card rounded-rk-lg">
             <table className="w-full text-sm">
-              <thead className="border-b border-zinc-800/60 bg-zinc-950/40 text-[11px] uppercase tracking-wider text-zinc-500">
+              <thead className="border-b border-zinc-800/60 bg-zinc-950/40 text-left text-[11px] uppercase tracking-wider text-zinc-500">
                 <tr>
                   <th className="px-5 py-3 text-left font-medium">{tr('名称', 'Name')}</th>
                   <th className="px-4 py-3 text-left font-medium">{tr('类型', 'Type')}</th>
@@ -252,13 +302,16 @@ function TaskList() {
           <ScheduleForm
             channels={channels}
             initial={editing}
+            seed={creating ? seed : null}
             onClose={() => {
               setCreating(false);
               setEditing(null);
+              setSeed(null);
             }}
             onSaved={() => {
               setCreating(false);
               setEditing(null);
+              setSeed(null);
               void load();
             }}
           />
@@ -396,8 +449,9 @@ function IconBtn({ children, title, onClick, danger }: { children: ReactNode; ti
     <button
       type="button"
       title={title}
+      aria-label={title}
       onClick={onClick}
-      className={cn('rounded p-1.5 text-zinc-400 hover:bg-zinc-800', danger ? 'hover:text-red-300' : 'hover:text-zinc-200')}
+      className={cn('rounded-rk-sm p-1.5 text-zinc-400 hover:bg-zinc-800', danger ? 'hover:text-red-300' : 'hover:text-zinc-200')}
     >
       {children}
     </button>
@@ -494,21 +548,23 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 function ScheduleForm({
   channels,
   initial,
+  seed,
   onClose,
   onSaved,
 }: {
   channels: Channel[];
   initial: ReportSchedule | null;
+  seed?: Partial<ScheduleInput> | null;
   onClose(): void;
   onSaved(): void;
 }) {
   const { tr } = useI18n();
-  const [name, setName] = useState(initial?.name ?? '');
-  const [kind, setKind] = useState<ReportKind>(initial?.kind ?? 'weekly');
-  const [cron, setCron] = useState(initial?.cron_spec ?? '');
-  const [tz, setTz] = useState(initial?.timezone ?? DEFAULT_TZ);
-  const [chanIDs, setChanIDs] = useState<number[]>(initial?.channel_ids ?? []);
-  const [promptOverride, setPromptOverride] = useState(initial?.prompt_override ?? '');
+  const [name, setName] = useState(initial?.name ?? seed?.name ?? '');
+  const [kind, setKind] = useState<ReportKind>(initial?.kind ?? seed?.kind ?? 'weekly');
+  const [cron, setCron] = useState(initial?.cron_spec ?? seed?.cron_spec ?? '');
+  const [tz, setTz] = useState(initial?.timezone ?? seed?.timezone ?? DEFAULT_TZ);
+  const [chanIDs, setChanIDs] = useState<number[]>(initial?.channel_ids ?? seed?.channel_ids ?? []);
+  const [promptOverride, setPromptOverride] = useState(initial?.prompt_override ?? seed?.prompt_override ?? '');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 

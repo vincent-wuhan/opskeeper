@@ -230,10 +230,17 @@ export default function McpPage() {
             title={tr('还没有注册任何 MCP 服务', 'No MCP servers registered yet')}
             hint={
               isAdmin
-                ? tr('点右上「新建」接入一个外部 MCP server', 'Use "New server" above to register an external MCP server')
+                ? tr('接入一个外部 MCP server，它暴露的工具会进入 Agent / 工作流的工具箱。', 'Register an external MCP server — the tools it exposes join the Agent / workflow toolbox.')
                 : tr('请联系 admin 接入 MCP 服务', 'Ask an admin to register an MCP server')
             }
             className="flex h-40 flex-col items-center justify-center gap-2 text-center"
+            action={
+              isAdmin ? (
+                <Button variant="primary" onClick={() => setEditing({ id: null, input: emptyInput() })}>
+                  <Plus size={12} /> {tr('新建 MCP 服务', 'New MCP server')}
+                </Button>
+              ) : null
+            }
           />
         </Card>
       ) : (

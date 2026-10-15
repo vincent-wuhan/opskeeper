@@ -150,7 +150,7 @@ export default function SettingsChannels() {
           <Card className="overflow-hidden p-0">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-zinc-800/60 text-left text-[11px] uppercase tracking-wide text-zinc-500">
+                <tr className="border-b border-zinc-800/60 bg-zinc-950/40 text-left text-[11px] uppercase tracking-wider text-zinc-500">
                   <th className="px-4 py-2.5 font-medium">{tr('平台', 'Provider')}</th>
                   <th className="px-4 py-2.5 font-medium">{tr('名称', 'Name')}</th>
                   <th className="px-4 py-2.5 font-medium">app_id</th>

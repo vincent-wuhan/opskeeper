@@ -21,7 +21,7 @@ import { useObservability } from '@/store/observability';
 import { listEdges, type Edge, type EdgeRole } from '@/api/edges';
 import { onDevicesChanged } from '@/lib/events';
 import { injectDeviceIDFilter } from '@/lib/promql';
-import { RoleSelect, type RoleFilterValue } from '@/components/ui';
+import { LoadingState, RoleSelect, useConfirm, type RoleFilterValue } from '@/components/ui';
 import { useI18n, tr } from '@/i18n/locale';
 
 // Monitor renders the nine core fleet panels natively — no iframe, no
@@ -373,6 +373,7 @@ export default function MonitorPage() {
   const [userPanelsLoaded, setUserPanelsLoaded] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<MonitorPanel | null>(null);
+  const confirm = useConfirm();
 
   const reloadUserPanels = useCallback(() => {
     listMonitorPanels()
@@ -441,23 +442,30 @@ export default function MonitorPage() {
   }, []);
 
   const handleDeletePanel = useCallback(
-    (p: MonitorPanel) => {
-      if (!window.confirm(tr(
-        `确认删除面板 “${p.title}”？同步会从 Grafana opskeeper-monitor 仪表盘移除。`,
-        `Delete panel “${p.title}”? It will also be removed from the Grafana opskeeper-monitor dashboard.`,
-      ))) {
-        return;
-      }
-      void deleteMonitorPanel(p.id)
-        .then(() => reloadUserPanels())
-        .catch((err) => {
-          window.alert(tr(
-            `删除失败: ${(err as Error)?.message ?? '未知错误'}`,
-            `Delete failed: ${(err as Error)?.message ?? 'unknown error'}`,
-          ));
+    async (p: MonitorPanel) => {
+      const ok = await confirm({
+        title: tr('删除面板', 'Delete panel'),
+        message: tr(
+          `确认删除面板 “${p.title}”？同步会从 Grafana opskeeper-monitor 仪表盘移除。`,
+          `Delete panel “${p.title}”? It will also be removed from the Grafana opskeeper-monitor dashboard.`,
+        ),
+        confirmLabel: tr('删除', 'Delete'),
+        danger: true,
+      });
+      if (!ok) return;
+      try {
+        await deleteMonitorPanel(p.id);
+        await reloadUserPanels();
+      } catch (err) {
+        await confirm({
+          title: tr('删除失败', 'Delete failed'),
+          message: (err as Error)?.message ?? tr('未知错误', 'unknown error'),
+          alertOnly: true,
+          danger: true,
         });
+      }
     },
-    [reloadUserPanels],
+    [confirm, reloadUserPanels],
   );
 
   const handleSubmitPanel = useCallback(
@@ -609,6 +617,8 @@ export default function MonitorPage() {
             />
           );
         })()}
+
+        {!userPanelsLoaded && <LoadingState className="h-24" />}
 
         {userPanelsLoaded && userPanels.length > 0 && (
           <section>

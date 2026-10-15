@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -314,5 +315,118 @@ func TestTheGuardIsWhatIsBeingRead(t *testing.T) {
 	}
 	if len(withoutGuard) != 0 {
 		t.Fatalf("removing the guard did not change the answer: %v", withoutGuard)
+	}
+}
+
+// The sentence this replaced was "they wait for a schedule", which reads as
+// "the clock will come round". On this repository that was false in a way a
+// reader could not see from the output: GitHub fires `schedule` only for the
+// workflow file on the default branch, and the default branch's copy does not
+// contain the job at all. So the tool now looks, and says what it found.
+//
+// Two things have to hold, and they are opposite requirements on the same
+// function. It must not report the good news it cannot verify, and it must not
+// invent the bad news either — when the default branch's file cannot be read,
+// "unknown" is the only honest answer.
+func TestTheScheduleLineNamesTheJobTheDefaultBranchDoesNotHave(t *testing.T) {
+	ci, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatalf("read ci.yml: %v", err)
+	}
+	gates := ScheduleOnlyGates(string(ci))
+	if len(gates) == 0 {
+		t.Skip("no schedule-only gate in this tree, so there is nothing to say about")
+	}
+	// The report, not the helper. An earlier version of this test called
+	// scheduleReaches directly and stayed green while the sentence a reader
+	// actually sees was still the old wrong one — it tested the reasoning and
+	// not the output. What a reader reads is what has to be right.
+	var buf bytes.Buffer
+	report(&buf, string(ci))
+	got := buf.String()
+
+	// If the default branch's copy really does lack the gate, the line has to
+	// say so in those terms rather than leaving "wait for a schedule" standing
+	// as the reader's conclusion.
+	head, err := gitOutput("rev-parse", "--abbrev-ref", "origin/HEAD")
+	branch := strings.TrimSpace(head)
+	if err != nil || branch == "" {
+		// A checkout that never resolved origin/HEAD — a fork's pull-request
+		// CI is the common case — cannot say what the default branch has.
+		// That is the same class of unreadable as the file below it, and
+		// "unknown" is the only honest answer for both. Failing here would
+		// make a fork's tree unmergeable over a fact about the checkout
+		// rather than about the sentence under test.
+		if !strings.Contains(got, "unknown from here") {
+			t.Errorf("the default branch could not be resolved (%v) but the line says %q; "+
+				"an unknown branch is unknown, not evidence of anything", err, got)
+		}
+		return
+	}
+	raw, err := gitOutput("show", branch+":"+ciFile)
+	if err != nil {
+		if !strings.Contains(got, "unknown from here") {
+			t.Errorf("the default branch's %s could not be read (%v) but the line says %q; "+
+				"an unreadable file is unknown, not evidence of anything",
+				ciFile, err, got)
+		}
+		return
+	}
+	for _, g := range gates {
+		if strings.Contains(raw, g) {
+			continue
+		}
+		if !strings.Contains(got, "names NONE of them") {
+			t.Errorf("%s is absent from the default branch (%s) but the line says %q; "+
+				"the old wording left the reader believing the clock would reach it",
+				g, branch, got)
+		}
+		if !strings.Contains(got, g) {
+			t.Errorf("the line does not name %s, so a reader cannot tell which gate is meant: %q", g, got)
+		}
+	}
+}
+
+// The two failure modes of this function are both over-claiming, in opposite
+// directions, so the guard is a fixture rather than a mutation of the real
+// repository: this function's answer depends on a branch this test cannot
+// make fail on demand without a fixture remote.
+func TestAnUnreadableDefaultBranchIsReportedAsUnknownNotAsAbsence(t *testing.T) {
+	// A branch name that cannot exist, so `git show` fails the same way a
+	// repository with no fetched default branch would.
+	got := scheduleReachesFor("origin/definitely-not-a-branch", []string{"e2e-delivery-check"})
+	if !strings.Contains(got, "unknown from here") {
+		t.Errorf("an unreadable default branch produced %q; it must say it is unknown rather "+
+			"than guessing that the gate is missing from a file nobody read", got)
+	}
+	if strings.Contains(got, "names NONE of them") {
+		t.Errorf("an unreadable default branch produced %q; that sentence claims a fact about "+
+			"a file the tool never saw", got)
+	}
+}
+
+// The exact sentence this replaced, asserted absent. "wait for a schedule" is
+// not a stylistic preference: it reads as "the clock will come round", and on
+// this repository the clock is pointed at a file that does not have the job.
+// A test that only checks for the new wording passes just as happily when
+// both are printed, so the old one is pinned as forbidden.
+func TestTheOldWordingDoesNotComeBack(t *testing.T) {
+	ci, err := os.ReadFile(filepath.Join("..", "..", ".github", "workflows", "ci.yml"))
+	if err != nil {
+		t.Fatalf("read ci.yml: %v", err)
+	}
+	var buf bytes.Buffer
+	report(&buf, string(ci))
+	out := buf.String()
+	for _, banned := range []string{"wait for a schedule", "they wait for a schedule"} {
+		if strings.Contains(out, banned) {
+			t.Errorf("the report says %q again:\n%s\nThat sentence tells a reader the clock will "+
+				"reach these gates, which on this repository is false", banned, out)
+		}
+	}
+	// And the replacement has to actually be there, or "the old wording is
+	// gone" is satisfied by a tool that says nothing at all.
+	if !strings.Contains(out, "names NONE of them") && !strings.Contains(out, "unknown from here") {
+		t.Errorf("the report neither names the missing job nor says the file was unreadable:\n%s", out)
 	}
 }

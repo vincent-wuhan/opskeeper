@@ -1,6 +1,6 @@
 {
   "name": "opskeeper-sre-readonly",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "OpsKeeper node plugin: governance in pig-ops.yaml, Pi resource declarations here.",
   "pi": {
     "extensions": [

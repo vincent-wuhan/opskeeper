@@ -26,7 +26,7 @@
 # machinery this composition does not need: the observability package and
 # the repair package are installed per node, deliberately, by an operator.
 name: opskeeper-ops
-description: "OpsKeeper operations agent: read-only diagnosis — topology, host probes, alert rules — with the seven worker personas that use them."
+description: "OpsKeeper operations agent: read-only diagnosis — topology, host probes, alert rules — with the worker personas that use them."
 
 release:
   version: 0.1.0
@@ -59,9 +59,10 @@ extensions:
     origins: [local:extensions/opskeeper-gate]
     tools: []
 
-  # L1, 18 read tools: topology, host probes, alert rules. The node's first
-  # tier — everything here is a read, so none of it enters the approval
-  # queue, and the whole set is safe to point at production.
+  # L1, every tool this package declares, and every one of them a read:
+  # topology, host probes, alert rules. This is the node's first tier, and
+  # because a read touches no external system, none of it enters the
+  # approval queue and the whole set is safe to point at production.
   #
   # The tool list is the review surface and it is written out instead of
   # left to the extension, so that a tool added to the extension shows up
@@ -76,6 +77,7 @@ extensions:
       - find_topology_node
       - get_topology
       - host_dmesg
+      - host_file_inventory
       - host_grep_file
       - host_lsof
       - host_mtr
@@ -87,6 +89,7 @@ extensions:
       - host_sosreport
       - host_strace
       - host_tail_file
+      - host_top_processes
       - host_traceroute
       - query_alert_rules
 
@@ -97,7 +100,7 @@ extensions:
 # single skill, and PiG's baker loads the path and refuses when it finds
 # more than one definition without a name match — so the parent form
 # validates and then fails to build. Naming each skill is also what makes
-# the seven personas a reviewable list rather than a directory glob.
+# the personas a reviewable list rather than a directory glob.
 skills:
   - name: diagnose-readonly
     origins: [local:skills/diagnose-readonly]

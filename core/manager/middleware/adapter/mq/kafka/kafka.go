@@ -29,10 +29,12 @@
 //   - kafka.scale_consumer — a consumer group's parallelism is the number of
 //     client instances that join it. There is no admin API that changes it.
 //     Adding consumers is a deployment.
-//   - kafka.rebalance_history — Kafka exposes a group's CURRENT members and
-//     assignments (DescribeGroups), and no history of past rebalances. A
-//     tool that printed the current state under this name would be answering
-//     a different question than it was asked.
+//   - kafka.rebalance_history — this one is no longer in the list. Kafka
+//     exposes a group's CURRENT members and no history of them, so answering
+//     it meant building a collector from successive DescribeGroups answers
+//     rather than adding a call: see mq/rebalance.go. The tool now exists and
+//     says so, which is the whole difference between a name that was a naming
+//     decision and a name that was an unimplemented capability.
 //
 // Each of those is a naming decision about the golden corpus or the
 // platform's real capability, not an implementation gap, and each is
@@ -193,10 +195,11 @@ func mqOperationName(operation string) string {
 
 // RegisterTools registers the `kafka.` namespace.
 //
-// Six tools, all real:
+// Seven tools, all real:
 //
-//   - L0 (1)：topic_list
+//   - L0 (2)：topic_list / rebalance_history
 //   - L1 (3)：consumer_lag / partition_skew / broker_skew
+//   - L0 (1)：rebalance_history
 //   - L3 (1)：repartition
 func RegisterTools(reg *registry.Registry, a *Adapter) error {
 	tools := []registry.Tool{
@@ -216,6 +219,11 @@ func RegisterTools(reg *registry.Registry, a *Adapter) error {
 		makeTool("kafka.broker_skew", adapter.RiskL1Diagnostic, "broker 节点 + controller + 各分区 leader 分布",
 			nil, readOp(a, func(ctx context.Context, d reader, args map[string]any) ([]map[string]any, string, error) {
 				return d.BrokerStatus(ctx, args)
+			})),
+		makeTool("kafka.rebalance_history", adapter.RiskL0ReadOnly,
+			"consumer group 成员变更历史（由连续采样的 DescribeGroups 得出；窗口从 OpsKeeper 首次观测该组开始，不含更早的变更）",
+			map[string]string{"group": "string!", "since_minutes": "int", "limit": "int"}, readOp(a, func(ctx context.Context, d reader, args map[string]any) ([]map[string]any, string, error) {
+				return d.RebalanceHistory(ctx, args)
 			})),
 		makeTool("kafka.repartition", adapter.RiskL3HardWrite,
 			"把一个分区的副本集迁移到其它 broker（AlterPartitionReassignments）。必须给出完整目标副本列表；副本数变化需 allow_replica_factor_change 显式声明。接受请求 ≠ 迁移完成",
@@ -251,6 +259,7 @@ type reader interface {
 	InspectConsumerLag(ctx context.Context, args map[string]any) ([]map[string]any, string, error)
 	BrokerStatus(ctx context.Context, args map[string]any) ([]map[string]any, string, error)
 	PartitionSkew(ctx context.Context, args map[string]any) ([]map[string]any, string, error)
+	RebalanceHistory(ctx context.Context, args map[string]any) ([]map[string]any, string, error)
 }
 
 func (a *Adapter) reader() (reader, error) { return a.handle() }

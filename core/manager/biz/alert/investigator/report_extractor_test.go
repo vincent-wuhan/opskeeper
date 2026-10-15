@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -394,4 +395,141 @@ func itoa(n int64) string {
 		buf[i] = '-'
 	}
 	return string(buf[i:])
+}
+
+// TestExtractStructured_DegradedFallbackIsRecorded — a report whose
+// extraction failed must say so on the report itself. The zero values
+// ("[]" evidence, nil confidence) are indistinguishable from a genuine
+// finding of "nothing to report", and the UI renders both as a finished
+// report, so the reason has to travel in confidence_factors_json.
+func TestExtractStructured_DegradedFallbackIsRecorded(t *testing.T) {
+	cases := []struct {
+		name   string
+		sum    *fakeSummarizer
+		nilSum bool
+		reason string
+	}{
+		{
+			name:   "llm error",
+			sum:    &fakeSummarizer{err: errors.New("pigmodel: chat completion: context deadline exceeded")},
+			reason: "llm_error",
+		},
+		{
+			name:   "reply is prose, no JSON",
+			sum:    &fakeSummarizer{resp: replyOf("I think the cause is...")},
+			reason: "no_json_in_reply",
+		},
+		{
+			name: "reply is balanced but unparseable",
+			// Balanced braces, so extractJSONBlob finds it, but
+			// confidence cannot unmarshal into *float64.
+			sum:    &fakeSummarizer{resp: replyOf(`{"root_cause":"lock","confidence":"high"}`)},
+			reason: "json_parse_error",
+		},
+		{
+			name:   "no summarizer configured",
+			nilSum: true,
+			reason: "no_summarizer",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			uc := &Usecase{cfg: Config{SummarizerTimeout: time.Second}}
+			if !tc.nilSum {
+				uc.summarizer = tc.sum
+			}
+			fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, "narrative", 0, "")
+
+			var factors map[string]string
+			if err := json.Unmarshal([]byte(fields.ConfidenceFactorsJSON), &factors); err != nil {
+				t.Fatalf("confidence_factors_json is not valid JSON: %q", fields.ConfidenceFactorsJSON)
+			}
+			if factors["extraction"] != "fallback" {
+				t.Errorf("extraction = %q, want %q — a degraded report must not be mistaken for a clean one",
+					factors["extraction"], "fallback")
+			}
+			if factors["extraction_reason"] != tc.reason {
+				t.Errorf("extraction_reason = %q, want %q", factors["extraction_reason"], tc.reason)
+			}
+			// The human-readable narrative must survive the fallback —
+			// operators still get the whole answer, just not structured.
+			if fields.FindingsMD != "narrative" {
+				t.Errorf("findings_md = %q, want the worker answer preserved", fields.FindingsMD)
+			}
+		})
+	}
+}
+
+// TestExtractStructured_CleanExtractionIsNotMarkedDegraded — the
+// converse. Once extraction succeeds, the marker must be absent, or
+// every report starts claiming to have degraded.
+func TestExtractStructured_CleanExtractionIsNotMarkedDegraded(t *testing.T) {
+	uc := &Usecase{
+		summarizer: &fakeSummarizer{resp: replyOf(`{"root_cause":"lock queue","confidence":0.7}`)},
+		cfg:        Config{SummarizerTimeout: time.Second},
+	}
+	fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, "narrative", 1, "")
+
+	var factors map[string]any
+	if err := json.Unmarshal([]byte(fields.ConfidenceFactorsJSON), &factors); err != nil {
+		t.Fatalf("confidence_factors_json is not valid JSON: %q", fields.ConfidenceFactorsJSON)
+	}
+	if _, marked := factors["extraction"]; marked {
+		t.Errorf("clean extraction carries a degradation marker: %q", fields.ConfidenceFactorsJSON)
+	}
+	if fields.Confidence == nil {
+		t.Errorf("clean extraction dropped the model-reported confidence")
+	}
+}
+
+// TestExtractStructured_RootCauseFitsTheColumn — the extractor must not
+// write more runes than root_cause can hold, on either the extracted or
+// the fallback path. A real run against MiniMax-M3 produced a Chinese
+// root cause that SQLite silently accepted past the declared width only
+// because SQLite ignores VARCHAR lengths — the clamp is what keeps the
+// contract true on a real RDBMS.
+func TestExtractStructured_RootCauseFitsTheColumn(t *testing.T) {
+	// Spelled out rather than written as rootCauseMaxRunes: the point of
+	// this test is the contract with the root_cause column, so it must
+	// fail if the constant drifts away from 1024 rather than follow it.
+	const columnWidth = 1024
+	if rootCauseMaxRunes != columnWidth {
+		t.Fatalf("rootCauseMaxRunes = %d, want %d to match the root_cause column",
+			rootCauseMaxRunes, columnWidth)
+	}
+
+	longLine := strings.Repeat("锁等待", 600) // 1800 runes, well over the cap.
+
+	t.Run("extracted", func(t *testing.T) {
+		uc := &Usecase{
+			summarizer: &fakeSummarizer{resp: replyOf(`{"root_cause":"` + longLine + `"}`)},
+			cfg:        Config{SummarizerTimeout: time.Second},
+		}
+		fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, "narrative", 0, "")
+		if got := len([]rune(fields.RootCause)); got > columnWidth {
+			t.Errorf("extracted root_cause = %d runes, want <= %d", got, columnWidth)
+		}
+		if !strings.HasSuffix(fields.RootCause, "…") {
+			t.Errorf("a clamped root_cause should end with the ellipsis marker, got %q", fields.RootCause)
+		}
+	})
+
+	t.Run("fallback", func(t *testing.T) {
+		uc := &Usecase{
+			summarizer: &fakeSummarizer{err: errors.New("timeout")},
+			cfg:        Config{SummarizerTimeout: time.Second},
+		}
+		fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, longLine, 0, "")
+		if got := len([]rune(fields.RootCause)); got > columnWidth {
+			t.Errorf("fallback root_cause = %d runes, want <= %d", got, columnWidth)
+		}
+	})
+
+	t.Run("short answer is untouched", func(t *testing.T) {
+		uc := &Usecase{cfg: Config{SummarizerTimeout: time.Second}}
+		fields := uc.extractStructured(context.Background(), alertmodel.Incident{ID: 1}, "PG 锁队列源头是 pid 48213", 0, "")
+		if fields.RootCause != "PG 锁队列源头是 pid 48213" {
+			t.Errorf("root_cause = %q, want the answer verbatim", fields.RootCause)
+		}
+	})
 }

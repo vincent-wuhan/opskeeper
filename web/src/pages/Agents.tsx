@@ -13,14 +13,13 @@
 //   - "新建助理" button → modal with form for name / description /
 //     system_prompt / allowed_tools (multi-select from /v1/skills).
 //   - Delete button on user-defined cards (confirm modal).
-//   - "使用此助理" launches a new chat session pinned to this persona.
+//   - "开始对话" launches a new chat session pinned to this persona.
 //
 // The Side Panel will reuse the same /v1/agents data to populate its
 // agent switcher dropdown so this stays the single source.
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Bot,
   Copy,
   MessageSquarePlus,
   Pencil,
@@ -32,7 +31,9 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Modal } from '@/components/Modal';
-import { Button, Card, EmptyState, PageHeader } from '@/components/ui';
+import { AgentAvatar } from '@/components/AgentAvatar';
+import { useAgents, avatarFor } from '@/store/agents';
+import { Button, Card, Chip, EmptyState, PageHeader } from '@/components/ui';
 import {
   createUserAgent,
   deleteAgent,
@@ -153,7 +154,7 @@ export default function AgentsPage() {
         ) : filtered.length === 0 ? (
           <AgentsEmpty hasItems={items.length > 0} onCreate={() => setEditing({ mode: 'create' })} />
         ) : (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {filtered.map((a) => (
               <AgentCard
                 key={a.name}
@@ -255,6 +256,12 @@ function builtinRank(name: string): number {
   return idx === -1 ? BUILTIN_ORDER.length : idx;
 }
 
+// MAX_VISIBLE_TOOLS caps how many tool Chips a card spells out; the rest
+// fold into a single "+N" Chip so a long tool table can't blow out the
+// card. Module scope (not inside the component) so it isn't rebuilt on
+// every render and so tests can reason about the cap.
+const MAX_VISIBLE_TOOLS = 4;
+
 const SHORT_LABELS = new Proxy({} as Record<string, string>, {
   get: (_t, key: string) => {
     const zh = SHORT_LABELS_ZH[key];
@@ -276,9 +283,14 @@ function AgentCard({
 }) {
   const { tr } = useI18n();
   const navigate = useNavigate();
+  const byName = useAgents((s) => s.byName);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const toolCount = agent.tools?.length ?? 0;
+  const tools = agent.tools ?? [];
+  const toolCount = tools.length;
+  // 档案墙：工具集只列前 MAX_VISIBLE_TOOLS 个，其余折叠成 +N，避免长工具表撑爆卡片。
+  const visibleTools = tools.slice(0, MAX_VISIBLE_TOOLS);
+  const hiddenToolCount = toolCount - visibleTools.length;
   const isUser = agent.source === 'user';
   const canDelete = agent.source !== 'builtin' && agent.name !== 'default';
   // Short Chinese display name. Mirrors AgentBadge's mapping; falls
@@ -303,17 +315,29 @@ function AgentCard({
   }, [agent.name, busy, navigate, tr]);
 
   return (
-    <Card className="flex cursor-pointer flex-col transition-colors hover:bg-zinc-800/40" onClick={onView}>
+    <Card
+      role="button"
+      tabIndex={0}
+      className="group flex cursor-pointer flex-col transition-colors hover:bg-zinc-800/40"
+      onClick={onView}
+      onKeyDown={(e) => {
+        // 只响应打在卡片自身的按键：内部的编辑/删除按钮有自己的激活行为，
+        // 冒泡上来若再触发会双开详情。
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onView();
+        }
+      }}
+    >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex items-center gap-2">
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-indigo-500/20 text-indigo-300 ring-1 ring-inset ring-indigo-500/40">
-            <Bot size={14} />
-          </span>
+        <div className="min-w-0 flex items-center gap-3">
+          <AgentAvatar agentId={agent.name} size={40} avatar={avatarFor(byName, agent.name)} />
           <div className="min-w-0">
             <div className="truncate text-sm font-medium text-zinc-100" title={agent.name}>
               {displayName}
             </div>
-            <div className="mt-0.5 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
+            <div className="mt-0.5 flex items-center gap-1.5 border-b border-zinc-800/60 bg-zinc-950/40 text-left text-[11px] uppercase tracking-wider text-zinc-500">
               <span className="font-mono normal-case tracking-normal text-zinc-600">
                 {agent.name}
               </span>
@@ -331,7 +355,8 @@ function AgentCard({
                 onEdit();
               }}
               title={tr('编辑', 'Edit')}
-              className="rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+              aria-label={tr('编辑', 'Edit')}
+              className="rounded-rk-sm p-1 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
             >
               <Pencil size={11} />
             </button>
@@ -344,24 +369,12 @@ function AgentCard({
                 onDelete();
               }}
               title={isUser ? tr('删除', 'Delete') : tr('从助理列表中移除（重启后内置 persona 会自动加载回来）', 'Remove from the list (built-in personas reload automatically on restart)')}
-              className="rounded p-1 text-zinc-500 hover:bg-red-900/30 hover:text-red-300"
+              aria-label={isUser ? tr('删除', 'Delete') : tr('从助理列表中移除', 'Remove from the list')}
+              className="rounded-rk-sm p-1 text-zinc-500 hover:bg-red-900/30 hover:text-red-300"
             >
               <Trash2 size={11} />
             </button>
           )}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              void onUse();
-            }}
-            disabled={busy}
-            title={tr('用此助理开新会话', 'Start a new session with this assistant')}
-            className="ml-1 inline-flex items-center gap-1 rounded-md border border-indigo-500/40 bg-indigo-500/10 px-2 py-1 text-[11px] text-indigo-200 hover:bg-indigo-500/20 disabled:opacity-50"
-          >
-            <MessageSquarePlus size={11} />
-            {busy ? tr('创建中…', 'Creating…') : tr('使用此助理', 'Use this')}
-          </button>
         </div>
       </div>
       {err && <div className="mt-2 text-[11px] text-red-300">{err}</div>}
@@ -370,14 +383,46 @@ function AgentCard({
           {agent.description}
         </p>
       )}
-      <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px] text-zinc-500">
-        <span>{toolCount > 0 ? tr(`${toolCount} 个工具`, `${toolCount} tool(s)`) : tr('继承全部工具', 'Inherits all tools')}</span>
-        {agent.permission_mode === 'read-only' && (
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        {toolCount > 0 ? (
           <>
-            <span className="text-zinc-700">·</span>
-            <span className="text-emerald-400">{tr('只读', 'Read-only')}</span>
+            {visibleTools.map((t) => (
+              <Chip key={t} dense className="font-mono">
+                {t}
+              </Chip>
+            ))}
+            {hiddenToolCount > 0 && (
+              <Chip dense title={tr(`另有 ${hiddenToolCount} 个工具`, `${hiddenToolCount} more tool(s)`)}>
+                +{hiddenToolCount}
+              </Chip>
+            )}
           </>
+        ) : (
+          <span className="text-[11px] text-zinc-500">{tr('继承全部工具', 'Inherits all tools')}</span>
         )}
+        {agent.permission_mode === 'read-only' && (
+          <span className="text-[11px] text-emerald-400">{tr('只读', 'Read-only')}</span>
+        )}
+      </div>
+      <div className="mt-4">
+        {/* The card itself is the click target (role="button" above), so a
+            filled accent CTA on each of a dozen cards turned the grid into
+            purple soup. This stays a quiet pill and only picks up the brand
+            tint on hover/focus — the header's 「新建助理」 remains the one
+            loud CTA on the page. */}
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            void onUse();
+          }}
+          disabled={busy}
+          title={tr('用此助理开新会话', 'Start a new session with this assistant')}
+          className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-zinc-700/70 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:border-accent/50 hover:bg-accent/10 hover:text-accent focus-visible:border-accent/50 disabled:opacity-40"
+        >
+          <MessageSquarePlus size={11} />
+          {busy ? tr('创建中…', 'Creating…') : tr('开始对话', 'Start chatting')}
+        </button>
       </div>
     </Card>
   );

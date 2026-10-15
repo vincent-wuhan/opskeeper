@@ -310,6 +310,9 @@ func (k *SessionKernel) Run(ctx context.Context, req ports.AgentRequest) (*TurnR
 	}
 
 	res := gate.result(messages)
+	if perr := providerFailure(res.Reply); perr != nil {
+		return failTurn(mapper, sink, perr, false)
+	}
 	// A spent round cap is a cap, and reporting it as a plain end_turn would
 	// leave an operator reading a truncated investigation as a complete one.
 	// Kernel reports the same condition through TurnMaxIterations for the

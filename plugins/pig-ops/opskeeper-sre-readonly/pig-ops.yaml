@@ -8,7 +8,7 @@ apiVersion: opskeeper.io/v1
 kind: Plugin
 metadata:
   name: opskeeper-sre-readonly
-  version: 0.1.0
+  version: 0.2.0
   vendor: opskeeper
   homepage: https://github.com/vincent-wuhan/opskeeper
 spec:
@@ -56,6 +56,7 @@ spec:
     - { name: find_topology_node,  class: read }  # where one component lives
     - { name: get_topology,        class: read }  # the whole graph
     - { name: host_dmesg,          class: read , limits: {output_bytes: 262144, timeout_seconds: 60}}  # kernel ring buffer
+    - { name: host_file_inventory,  class: read , limits: {output_bytes: 262144, timeout_seconds: 120}}  # where the space under a path went
     - { name: host_grep_file,      class: read , limits: {output_bytes: 262144, timeout_seconds: 120}}  # search across log files
     - { name: host_lsof,           class: read , limits: {output_bytes: 262144, timeout_seconds: 60}}  # open files per process
     - { name: host_mtr,            class: read , limits: {output_bytes: 65536, timeout_seconds: 120}}  # combined traceroute and loss
@@ -67,6 +68,7 @@ spec:
     - { name: host_sosreport,      class: read , limits: {output_bytes: 524288, timeout_seconds: 600}}  # support bundle summary
     - { name: host_strace,         class: read , limits: {output_bytes: 131072, timeout_seconds: 300}}  # syscall trace of a pid
     - { name: host_tail_file,      class: read , limits: {output_bytes: 262144, timeout_seconds: 60}}  # follow a log file
+    - { name: host_top_processes,  class: read , limits: {output_bytes: 131072, timeout_seconds: 30}}  # this node's own processes, ranked by cpu or memory
     - { name: host_traceroute,     class: read , limits: {output_bytes: 65536, timeout_seconds: 120}}  # path to a host, hop by hop
     - { name: query_alert_rules,   class: read }  # what is firing
 
@@ -94,4 +96,7 @@ spec:
 
   install:
     strategy: rolling
+    # 这条轴此前整仓没有一条声明，于是兼容矩阵的 pig 那一列永远是绿的——
+    # 一列永远绿的矩阵与没有矩阵不可区分（决策 455）。本仓固定 PiG v0.4.0，就写它。
+    min_pig_version: 0.4.0
     min_edge_version: 0.7.0

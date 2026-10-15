@@ -177,18 +177,36 @@ func (r *router) run(session, name string, params map[string]any) (any, error) {
 		return nil, fmt.Errorf("%s was not run: %s", name, reply.Error)
 	}
 	if len(reply.Result) == 0 {
-		return map[string]any{}, nil
+		// An empty payload is still an answer, and it is still an answer
+		// the runtime has to be able to read. Returning an empty Go map
+		// would be read as a result object with no content -- the same
+		// shape bug as above, one step earlier.
+		return sdk.ToolResult{Content: "{}"}, nil
 	}
 
-	// The host's result is decoded rather than passed through as bytes.
-	// The agent renders whatever it gets, and a decoded value renders the
-	// same way in the transcript, in a tool card, and in a packed run.
+	// The host's result is decoded, and then handed back in the SHAPE the
+	// agent runtime reads a tool result in -- not in the shape the tool
+	// happens to produce.
+	//
+	// That distinction is the whole of this function's last step, and
+	// getting it wrong is invisible: the agent unmarshals a tool result
+	// into {content, details, is_error} and IGNORES every field it does
+	// not know. A tool that answers with its own JSON object is therefore
+	// not "rendered oddly" -- it is decoded into a result with no content
+	// at all, and the model is told "(no tool output)". No error, no
+	// warning, a tool card that looks like it ran.
+	//
+	// So the payload goes in as text, and the same bytes go in as details
+	// for anything that wants the structure without re-parsing text.
 	var out any
 	if err := json.Unmarshal(reply.Result, &out); err != nil {
 		return nil, fmt.Errorf(
 			"%s ran, but its result was not JSON this agent could read: %w", name, err)
 	}
-	return out, nil
+	return sdk.ToolResult{
+		Content: string(reply.Result),
+		Details: out,
+	}, nil
 }
 
 // schemaOf decodes one spec's raw schema literal.

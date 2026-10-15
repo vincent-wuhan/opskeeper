@@ -29,6 +29,12 @@ import (
 // re-derive any of the policy above it. A second derivation is where a
 // viewer's session quietly regains a mutating tool.
 
+// errEmptyModelReply marks a turn the model ended without producing a
+// single word: no text, no tool call on the final assistant message. The
+// kernel reports it as a normal end_turn, so the runtime is the layer that
+// must refuse to pass it off as an answer.
+var errEmptyModelReply = errors.New("model returned an empty completion")
+
 // kernelTurn is the resolved state one kernel turn runs with. It is a struct
 // rather than a parameter list because every field is already-decided policy:
 // a positional call would let a caller pass the unresolved bag and a reader
@@ -204,14 +210,23 @@ func (rt *Runtime) runKernelTurn(ctx context.Context, req *Request, t kernelTurn
 			createdAt = asst.CreatedAt
 		}
 	}
-	if content != "" {
-		reply.Message = &aiopsmodel.Message{
-			ID:        messageID,
-			SessionID: t.Sess.ID,
-			Role:      aiopsmodel.RoleAssistant,
-			Content:   &content,
-			CreatedAt: createdAt,
-		}
+	// An empty completion is a real failure mode of the reasoning models
+	// behind the OpenAI-compatible seam: the follow-up call after a tool
+	// result comes back with no text and no tool call, the kernel reads it
+	// as a normal end_turn, and the empty assistant message never reaches
+	// the transcript. Emitting Done here left the console with a finished
+	// tool card, no reply and no error — a turn that looks hung. The caps
+	// above get the same treatment for the same reason: a silent success is
+	// the one outcome an operator cannot act on.
+	if content == "" {
+		return rt.kernelFailure(ctx, t, emit, errEmptyModelReply)
+	}
+	reply.Message = &aiopsmodel.Message{
+		ID:        messageID,
+		SessionID: t.Sess.ID,
+		Role:      aiopsmodel.RoleAssistant,
+		Content:   &content,
+		CreatedAt: createdAt,
 	}
 	emit(Event{Type: EventDone, Done: reply})
 	return reply, nil

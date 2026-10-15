@@ -48,6 +48,17 @@ type ReportFacts struct {
 	// Usage is the platform-usage signal: chat sessions + LLM token spend
 	// over the period. The "用了多少" row.
 	Usage UsageFacts `json:"usage"`
+
+	// PendingApprovals 是审批收件箱队列的时点快照 —— 与其它所有事实不同,
+	// 它不按周期(period)过滤。它回答的是「此刻还有什么在等待」,这正是
+	// 日报「待审批项」一节所需要的。
+	//
+	// 它只携带计数,绝不携带「所需签署人数」。审批域刻意不在单行上暴露
+	// 签署要求:该规则活在 hitl gate(biz/approval Gate)里,不在审批行上;
+	// 前端也用自身策略常量渲染「需签 2」(web/src/lib/approvalSigners.ts
+	// DUAL_SIGN_REQUIRED)。在此处虚构一个「需签」数字,会让一个本层并不
+	// 拥有的策略出现第二个来源。
+	PendingApprovals PendingApprovals `json:"pending_approvals"`
 }
 
 // AssetFacts counts platform assets created within the period.
@@ -62,6 +73,15 @@ type UsageFacts struct {
 	Sessions         int   `json:"sessions"`
 	PromptTokens     int64 `json:"prompt_tokens"`
 	CompletionTokens int64 `json:"completion_tokens"`
+}
+
+// PendingApprovals 是当前待审批队列,一个时点快照。Total = status=pending
+// 的行数;Unsigned = 其中零签署的行数;Partial = 其中已 ≥1 人签署、仍未满签
+// 的行数(双签等待第二签)。不含「需签」数:参见 ReportFacts 上的字段注释。
+type PendingApprovals struct {
+	Total    int `json:"total"`
+	Unsigned int `json:"unsigned"`
+	Partial  int `json:"partial"`
 }
 
 // ResourceFacts is the fleet resource trend over the period. Available

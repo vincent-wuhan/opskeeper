@@ -255,7 +255,7 @@ function MessageBubble({
         isUser ? 'items-end' : 'items-start'
       )}
     >
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
+      <div className="flex items-center gap-1.5 border-b border-zinc-800/60 bg-zinc-950/40 text-left text-[11px] uppercase tracking-wider text-zinc-500">
         <span>{isUser ? tr('用户', 'User') : tr('助手', 'Assistant')}</span>
         <span>·</span>
         <span className="font-mono">{fmtClock(message.createdAt)}</span>

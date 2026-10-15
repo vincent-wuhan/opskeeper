@@ -20,6 +20,10 @@ import (
 // ToolNameQueryKnowledge is the wire name.
 const ToolNameQueryKnowledge = "query_knowledge"
 
+// previewMaxRunes caps each hit's preview (in runes) so a max_results=5 reply
+// stays under ~4k tokens.
+const previewMaxRunes = 800
+
 const queryKnowledgeDescription = "Semantic search over the operator's knowledge base (curated playbooks + synced git repos). " +
 	"Returns top-N matching docs with title / source / score / preview. Use natural-language queries " +
 	"— full sentences embed better than keyword bags."
@@ -186,9 +190,11 @@ func (t *QueryKnowledgeTool) InvokableRun(ctx context.Context, argsJSON string, 
 		preview := h.Doc.Content
 		// Cap at ~800 chars per hit so a max_results=5 reply stays
 		// under ~4k tokens. The LLM can re-ask for full content via
-		// a follow-up if needed (future doc-fetch tool).
-		if len(preview) > 800 {
-			preview = preview[:800] + "…"
+		// a follow-up if needed (future doc-fetch tool). Count runes, not
+		// bytes: a byte slice at 800 can bisect a multi-byte CJK character
+		// and emit a replacement char.
+		if r := []rune(preview); len(r) > previewMaxRunes {
+			preview = string(r[:previewMaxRunes]) + "…"
 			out.Truncated = true
 		}
 		out.Items = append(out.Items, queryKnowledgeHit{

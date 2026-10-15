@@ -196,6 +196,24 @@ type EdgeOptions struct {
 	// node with an empty tool list makes "the agent called a tool" true of
 	// nothing.
 	PackageTools []string
+	// ShippedPackageTools names the tools the node's package declares when
+	// the package is the REAL shipped one: plugins/pig-ops/
+	// opskeeper-sre-readonly, copied verbatim, extensions and all.
+	//
+	// It is a separate field from PackageTools because the two fixtures are
+	// different claims. PackageTools is a governance manifest with no
+	// extension behind it: it proves the node admitted a declaration, and
+	// it proves nothing about a tool being callable, because a declaration
+	// is a promise and nothing in that fixture keeps it. ShippedPackageTools
+	// copies the artifact a node actually installs, so the agent builds the
+	// real extension, registers the real tools, and a call the model makes
+	// lands in the real host executor.
+	//
+	// The two are not alternatives; the empty manifest is the cheaper test
+	// and this one is the one that can fail for the reasons a production
+	// node fails (the extension will not build, the gate refuses the call,
+	// the broker has no executor under that name).
+	ShippedPackageTools []string
 	// CollectorInterval is how often the node samples. Empty leaves the
 	// production default (10s), which is longer than these tests wait.
 	CollectorInterval time.Duration
@@ -243,6 +261,10 @@ func StartEdge(t *testing.T, env *Env, bearer string, opts EdgeOptions) *Edge {
 	}
 	edge.TelemetryWALDir = filepath.Join(edge.WorkDir, "telemetry")
 	packageRoot := writeAdmittedPackage(t, filepath.Join(edge.WorkDir, "packages"), opts.PackageTools...)
+	if len(opts.ShippedPackageTools) > 0 {
+		packageRoot = writeShippedReadonlyPackage(t, filepath.Join(edge.WorkDir, "packages"),
+			opts.ShippedPackageTools)
+	}
 
 	collectorMode := opts.CollectorMode
 	if collectorMode == "" {
@@ -607,6 +629,105 @@ spec:
 	// list is a list of packages, each reviewed on its own, so handing it
 	// the parent is a node looking for a manifest one level up.
 	return root
+}
+
+// writeShippedReadonlyPackage copies the real shipped read-only package into
+// the node's package set and narrows its governance manifest to the tools
+// under test.
+//
+// It copies rather than re-declares, because the point of this fixture is the
+// artifact a node installs: two Go extensions the agent has to build on the
+// node, a Pi package manifest, skills, and the governance manifest whose tool
+// list IS the host allow-list. A hand-written package with one fabricated tool
+// would pass without ever loading a real extension, which is the exact class
+// of green this repository has been burned by twice.
+//
+// The manifest is rewritten for one reason only: the shipped one declares
+// eighteen tools, and a test that wants to prove ONE tool crossed the gate
+// would have to make the model pick the right one of eighteen. Narrowing the
+// declaration narrows the allow-list to the same set, so the test asks for
+// the tool it declared and the gate is still the thing that allowed it. The
+// copy keeps the shipped identity (name, version, scopes, audit and approval
+// posture) so the node sees a package that looks like the real one.
+func writeShippedReadonlyPackage(t *testing.T, base string, tools []string) string {
+	t.Helper()
+	repo := repoRoot()
+	if repo == "" {
+		t.Fatalf("testenv: cannot locate repo root to copy the shipped package from")
+	}
+	src := filepath.Join(repo, "plugins", "pig-ops", "opskeeper-sre-readonly")
+	if _, err := os.Stat(filepath.Join(src, "pig-ops.yaml")); err != nil {
+		t.Fatalf("testenv: shipped read-only package not found at its shipped path: %v", err)
+	}
+	root := filepath.Join(base, "opskeeper-sre-readonly")
+	if err := copyTree(src, root); err != nil {
+		t.Fatalf("testenv: copy the shipped package: %v", err)
+	}
+
+	decls := make([]string, 0, len(tools))
+	for _, name := range tools {
+		decls = append(decls, fmt.Sprintf("    - { name: %s, class: read }", name))
+	}
+	manifest := `apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-sre-readonly
+  version: 0.1.0
+  vendor: opskeeper
+spec:
+  targets: [edge]
+  safety_level: L1
+  capabilities: [read]
+  tools:
+` + strings.Join(decls, "\n") + `
+  required_scopes:
+    - host.read
+  audit:
+    emits: true
+    mutates: false
+  approval:
+    required: false
+  install:
+    strategy: rolling
+    min_edge_version: 0.7.0
+`
+	if err := os.WriteFile(filepath.Join(root, "pig-ops.yaml"), []byte(manifest), 0o640); err != nil {
+		t.Fatalf("testenv: rewrite the shipped package's governance manifest: %v", err)
+	}
+	return root
+}
+
+// copyTree copies a directory tree, preserving the executable bit, which a
+// Go extension does not need but a package that ships a helper script does.
+func copyTree(src, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return os.MkdirAll(dst, 0o750)
+		}
+		target := filepath.Join(dst, rel)
+		switch {
+		case info.IsDir():
+			return os.MkdirAll(target, 0o750)
+		case info.Mode()&os.ModeSymlink != 0:
+			// A symlink in a shipped package is something to look at, not to
+			// reproduce: following it could pull in something outside the
+			// package, which is the shape of a supply-chain accident.
+			return fmt.Errorf("refusing to copy symlink %s from the shipped package", rel)
+		default:
+			body, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			return os.WriteFile(target, body, info.Mode().Perm())
+		}
+	})
 }
 
 // NodeConversations asks the control plane what conversations it believes

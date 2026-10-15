@@ -190,7 +190,7 @@ func (s *webSearchSkill) Metadata() skill.Metadata {
 			}},
 			{Name: "provider", Param: skill.Param{
 				Type: "enum", Default: "",
-				Enum: []string{"", providerSearxng, providerTavily, providerBrave},
+				Enum: append([]string{""}, RegisteredWebSearchProviders()...),
 				Desc: "强制使用哪个 provider；留空 = 走系统设置选择",
 			}},
 		},
@@ -264,16 +264,13 @@ func (s *webSearchSkill) Execute(ctx context.Context, params json.RawMessage) (j
 		provider = providerSearxng
 	}
 
-	switch provider {
-	case providerTavily:
-		return s.searchTavily(ctx, client, tavilyURL, resolver, p)
-	case providerBrave:
-		return s.searchBrave(ctx, client, braveURL, resolver, p)
-	case providerSearxng:
-		return s.searchSearxng(ctx, client, resolver, p)
-	default:
+	// Dispatch through the provider registry rather than a switch, so a
+	// provider a package registers is dispatchable without an edit here.
+	f, ok := lookupWebSearchProvider(provider)
+	if !ok {
 		return nil, fmt.Errorf("web_search: unknown provider %q", provider)
 	}
+	return f(s, ctx, client, tavilyURL, braveURL, resolver, p)
 }
 
 // ---- SearXNG sub-fn -------------------------------------------------

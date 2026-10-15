@@ -9,7 +9,7 @@
 import { useI18n } from '@/i18n/locale';
 import { Chip } from '@/components/ui/Chip';
 import { cn } from '@/lib/cn';
-import { PhaseStatusDot, type PhaseStatus } from './PhaseStatusDot';
+import { PhaseStatusDot, STATUS_LABEL_EN, STATUS_LABEL_ZH, type PhaseStatus } from './PhaseStatusDot';
 
 const PHASE_NAME_ZH: Record<string, string> = {
   detected: '检测到',
@@ -57,8 +57,12 @@ export function PhaseIndicator({ phase, status, duration, className }: PhaseIndi
     <div className={cn('flex items-center gap-2', className)}>
       <PhaseStatusDot status={status} />
       <span className="text-sm font-medium text-zinc-100">{tr(label, labelEn)}</span>
-      <Chip tone={STATUS_TONE[status]} dense>
-        {status}
+      <Chip
+        tone={STATUS_TONE[status]}
+        dense
+        className="motion-safe:transition-colors motion-safe:duration-200"
+      >
+        {tr(STATUS_LABEL_ZH[status], STATUS_LABEL_EN[status])}
       </Chip>
       {duration && (
         <span className="text-[11px] text-zinc-500 font-mono tabular-nums">{duration}</span>

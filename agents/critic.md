@@ -1,5 +1,6 @@
 ---
 name: critic
+avatar: ⚖️
 description: RCA 后置审计 worker，基于 Manager 供给的证据检查结论与因果链
 when_to_use: |
   在 severity >= critical 的 RCA 后调用。

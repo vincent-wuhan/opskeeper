@@ -67,8 +67,10 @@ import (
 	"strconv"
 
 	"github.com/vincent-wuhan/opskeeper/core/base/pkg/embedding"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/miniredisx"
 	"github.com/vincent-wuhan/opskeeper/core/base/pkg/qdrantx"
 	"github.com/vincent-wuhan/opskeeper/core/base/pkg/tracing"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/vecstore"
 	"github.com/vincent-wuhan/opskeeper/core/manager/observability/otelgenai"
 
 	pkglogquery "github.com/vincent-wuhan/opskeeper/core/base/pkg/logquery"
@@ -116,6 +118,8 @@ import (
 	"github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/agentkernel"
 	aiopschatprompt "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/chatprompt"
 	aiopschatruntime "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/chatruntime"
+	aiopsdatasource "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/datasource"
+	"github.com/vincent-wuhan/opskeeper/core/manager/middleware/pluginhost"
 
 	mcpclient "github.com/vincent-wuhan/opskeeper/core/base/pkg/mcpclient"
 	"github.com/vincent-wuhan/opskeeper/core/base/pkg/promptguard"
@@ -364,8 +368,23 @@ func main() {
 	// historical single-replica behaviour with no Redis dependency at
 	// all must set OPSKEEPER_LEADER_ENABLED=false (and the embedded
 	// compose already does so).
+	// Embedded mode (OPSKEEPER_EMBEDDED=true): Redis runs inside this
+	// process on a free loopback port, so no container is needed. It
+	// speaks real TCP, so the client below is unchanged — only Addr.
+	redisAddr := cfg.Redis.Addr
+	if cfg.Redis.Embedded {
+		mr, err := miniredisx.Start()
+		if err != nil {
+			log.Error("embedded redis", slog.Any("err", err))
+			os.Exit(1)
+		}
+		defer mr.Close()
+		redisAddr = mr.Addr()
+		log.Info("embedded redis enabled", slog.String("addr", redisAddr))
+	}
+
 	redisCli := redis.NewClient(&redis.Options{
-		Addr:         cfg.Redis.Addr,
+		Addr:         redisAddr,
 		Password:     cfg.Redis.Password,
 		DB:           cfg.Redis.DB,
 		DialTimeout:  cfg.Redis.Pool.DialTimeout,
@@ -375,9 +394,12 @@ func main() {
 
 	// WebSocket / 流式会话跨副本 fan-out（spec: openspec/changes/websocket-fanout）。
 	// 复用 platform-base-ha 已有的 Redis 客户端；PodID 与 leader.Manager 同源。
+	// 内嵌模式是单副本，没有第二个实例需要广播，因此跳过订阅。
 	wsfanoutMetrics := wsfanout.NewMetrics(prometheus.NewRegistry())
 	wsfanoutWiring := wsfanout.NewWiring(redisCli, wsfanout.NewPodID(os.Getenv(wsfanout.EnvInstanceIDOverride)), wsfanoutMetrics, log.With(slog.String("comp", "wsfanout")))
-	go wsfanoutWiring.Control().SubscribeLoop(rootCtx)
+	if !cfg.Redis.Embedded {
+		go wsfanoutWiring.Control().SubscribeLoop(rootCtx)
+	}
 	// Best-effort ping so misconfiguration surfaces in boot logs. We
 	// don't fail boot — leader election itself will retry on every
 	// electLoop tick. Done synchronously so the operator sees the
@@ -753,6 +775,7 @@ func main() {
 	// promTester is wired below if cfg.Prom.Enabled — left nil for the
 	// disabled case so the integration handler can 503 cleanly.
 	var integrationHandler *managerserverintegration.Handler
+	var capabilityHandler *managerserversystemhealth.CapabilitiesHandler
 
 	// Embedded-Grafana SA bootstrap. Runs in a goroutine because:
 	//   1. Grafana container often isn't healthy yet when manager boots
@@ -1670,23 +1693,79 @@ func main() {
 	// callback chain checks before each ChatModel turn — see Phase 4 cbDeps
 	// build below where the checker is set when the limit > 0.
 	aiopsRepo := manageraiopsdata.NewBizRepo(db)
+	// The observability query backends are microkernel plugins, not three
+	// inline fields. Each configured backend is admitted and activated into a
+	// control-plane datasource host, and the tool registry reads the resolved
+	// Set — so query_promql / query_logql / query_traceql register for exactly
+	// the signals a backend was provided for. That is the same conditional
+	// registration the three nil checks gave, expressed once, and it is what
+	// makes a fourth backend (VictoriaMetrics, Elasticsearch) a new plugin
+	// rather than a fourth field here.
+	// ONE control-plane kernel host. The observability datasources and any
+	// manager-targeted package register into the SAME registry, so the
+	// capability inventory answers "what can this deployment reach" in one
+	// place rather than one answer per subsystem — and a package's entry
+	// sits beside a datasource's entry, on the same rollback path.
+	pluginLog := log.With(slog.String("comp", "pluginhost"))
+	managerPluginsDir := os.Getenv("OPSKEEPER_MANAGER_PLUGINS_DIR")
+	ph := pluginhost.New(managerPluginsDir, aiopsdatasource.ManagerPolicy(), pluginLog)
+	capabilityHandler = managerserversystemhealth.NewCapabilitiesHandler(ph)
+
+	dsBackends := aiopsdatasource.Backends{}
 	// PromQuerier is the interface tools/registry takes; passing a typed-nil
-	// *Client would yield a non-nil interface and bypass the conditional
-	// tool registration. Explicitly hand it nil when Prom is disabled.
-	var promQuerier aiopstools.PromQuerier
+	// *Client would yield a non-nil interface and bypass the conditional tool
+	// registration, so a disabled backend stays nil all the way through.
 	if promQueryClient != nil {
-		promQuerier = promQueryClient
+		dsBackends.Prom = promQueryClient
 	}
-	// LogQuerier / TraceQuerier mirror the same pattern: build a client
-	// only when the URL is configured so the corresponding query_logql /
-	// query_traceql tools register conditionally.
-	var logQuerier aiopstools.LogQuerier
+	// LogQuerier / TraceQuerier mirror the same pattern: build a client only
+	// when the URL is configured.
 	if cfg.Logs.URL != "" {
-		logQuerier = pkglogquery.New(cfg.Logs.URL, log.With(slog.String("comp", "aiops-logquery")))
+		dsBackends.Logs = pkglogquery.New(cfg.Logs.URL, log.With(slog.String("comp", "aiops-logquery")))
 	}
-	var traceQuerier aiopstools.TraceQuerier
 	if cfg.Traces.URL != "" {
-		traceQuerier = pkgtracequery.New(cfg.Traces.URL, log.With(slog.String("comp", "aiops-tracequery")))
+		dsBackends.Traces = pkgtracequery.New(cfg.Traces.URL, log.With(slog.String("comp", "aiops-tracequery")))
+	}
+	dsSet, dsErr := aiopsdatasource.Activate(ph.Kernel(), dsBackends)
+	if dsErr != nil {
+		log.Error("datasource activation", slog.Any("err", dsErr))
+		os.Exit(1)
+	}
+	log.Info("control-plane plugin capabilities",
+		slog.Any("plugins", ph.Kernel().Live()),
+		slog.Any("kind_counts", ph.Kernel().Inventory().KindCounts),
+		slog.Bool("prom", dsSet.Prom() != nil),
+		slog.Bool("loki", dsSet.Logs() != nil),
+		slog.Bool("tempo", dsSet.Traces() != nil),
+	)
+
+	// The manager plugin host: load any manager-targeted packages from the
+	// configured directory. This is the control plane's half of the plugin
+	// story — the node has always been able to host a package; this lets the
+	// manager do the same, through the same manifest and the same gate.
+	//
+	// The directory is optional and env-gated: a deployment with no
+	// third-party manager packages has none, and a missing directory is not
+	// an error (it is the default state). A package whose manifest is above
+	// the control-plane ceiling, or aimed at an edge, is reported and
+	// skipped rather than stopping the others.
+	if dir := managerPluginsDir; dir != "" {
+		if _, statErr := os.Stat(dir); statErr == nil {
+			rep, loadErr := ph.Load(context.Background())
+			if loadErr != nil {
+				log.Error("manager plugin load", slog.String("dir", dir), slog.Any("err", loadErr))
+			} else {
+				log.Info("manager plugins loaded",
+					slog.String("dir", dir),
+					slog.Any("activated", rep.Activated),
+					slog.Any("skipped", rep.Skipped),
+					slog.Any("no_activator", rep.NoActivator),
+					slog.Int("refused", len(rep.Refused)),
+				)
+			}
+		} else {
+			log.Warn("manager plugin directory does not exist", slog.String("dir", dir))
+		}
 	}
 	// The one tool-registry wiring for this binary, as a value rather than
 	// as a constructor call: the fields that exist now are filled now, and
@@ -1697,9 +1776,9 @@ func main() {
 		Caller:  fbClient,
 		Edges:   edgeUC,
 		Devices: deviceUC,
-		Prom:    promQuerier,
-		Logs:    logQuerier,
-		Trace:   traceQuerier,
+		Prom:    dsSet.Prom(),
+		Logs:    dsSet.Logs(),
+		Trace:   dsSet.Traces(),
 		Alerts:  alertUC,
 		Log:     log,
 	}
@@ -1896,16 +1975,41 @@ func main() {
 		Dim:      embDim,
 		Log:      log.With(slog.String("comp", "embedding")),
 	})
-	qdrantURL := os.Getenv("OPSKEEPER_QDRANT_URL")
-	if qdrantURL == "" {
-		qdrantURL = "http://qdrant:6333"
-	}
 	var (
 		knowledgeUC *managerbizknowledge.Usecase
 		// qdrantClient 在更广作用域声明，供 chatdiagnose KB wire-up 复用
 		//（core/manager/data/chatdiagnose/store.NewQdrantPatternRepo 需要同一个 client）
-		qdrantClient = qdrantx.New(qdrantURL, log.With(slog.String("comp", "qdrant")))
+		qdrantClient qdrantx.Store
+		// qdrantURL 只在 qdrant 后端下有值；内嵌后端没有外部服务，
+		// systemhealth 靠 VectorBackend 判断是否还需要探测它。
+		qdrantURL string
 	)
+	// 两种后端实现同一个端口（qdrantx.Store），由 vecstore 注册表按名字构建：
+	// 默认（未设置 OPSKEEPER_VECTOR_BACKEND）是外部 qdrant，可被多副本共享；
+	// chromem 是内嵌后端，让全新 checkout 无需任何外部服务。第三个后端是
+	// 向注册表登记一个工厂，不是在这里加一个新分支。
+	qdrantURL = os.Getenv("OPSKEEPER_QDRANT_URL")
+	if qdrantURL == "" {
+		qdrantURL = "http://qdrant:6333"
+	}
+	vectorBackend := cfg.Vector.Backend
+	if vectorBackend == "" {
+		vectorBackend = "qdrant"
+	}
+	vec, vecErr := vecstore.Build(vectorBackend, vecstore.Config{
+		QdrantURL:  qdrantURL,
+		ChromemDir: cfg.Vector.ChromemDir,
+	}, log.With(slog.String("comp", "vector")))
+	if vecErr != nil {
+		log.Error("knowledge: open vector store",
+			slog.String("backend", vectorBackend), slog.Any("err", vecErr))
+		os.Exit(1)
+	}
+	qdrantClient = vec
+	log.Info("knowledge: vector store enabled",
+		slog.String("backend", vectorBackend),
+		slog.String("url", qdrantURL),
+		slog.String("dir", cfg.Vector.ChromemDir))
 	{
 		// Build with a nil embedder when one isn't configured — the
 		// usecase exposes read paths (ListDocs/Repos/GetDoc/ListPaths)
@@ -1933,10 +2037,9 @@ func main() {
 			// GitHub-PAT-via-GIT_ASKPASS resolver wiring
 			// removed. SSH-style repos use ssh_identities; HTTPS auth
 			// returns in P3 via credential.helper.
-			// Built-in vault seed (ADR-029) — default-on, source fixed to
-			// the public github.com/builtin://vault with the embedded
-			// snapshot as the offline fallback. The source is NOT operator-
-			// configurable: the old OPSKEEPER_BUILTIN_VAULT_URL "point it at a
+			// Built-in vault seed (ADR-029) — default-on, source fixed to the
+			// snapshot embedded in the binary (go:embed). The source is NOT
+			// operator-configurable: the old OPSKEEPER_BUILTIN_VAULT_URL "point it at a
 			// git mirror" path was removed because it registered the vault as
 			// a knowledge_repos row and leaked it into the 代码仓库 / Repos
 			// list — Repos is for user code the Agent analyzes, never platform
@@ -1945,10 +2048,9 @@ func main() {
 			// Why default-on: empty knowledge bases at first boot were
 			// repeatedly mistaken for "RAG broke" — the operator expects at
 			// least the platform playbooks to be there. The background sync
-			// (cloud clone, embedded fallback) must not stall the HTTP
-			// listener, so it runs in a goroutine and only when the vault
-			// isn't already indexed. The Knowledge page "云端同步" button
-			// re-runs the same SyncBuiltinVault path on demand.
+			// must not stall the HTTP listener, so it runs in a goroutine and
+			// only when the vault isn't already indexed. The Knowledge page's
+			// 内置知识库 sync button re-runs the same SyncBuiltinVault path on demand.
 			if seed := strings.TrimSpace(os.Getenv("OPSKEEPER_BUILTIN_VAULT_SEED")); seed == "-" || strings.EqualFold(seed, "off") {
 				log.Info("knowledge: built-in vault seed disabled via env")
 			} else {
@@ -2511,14 +2613,14 @@ func main() {
 	// one metric and a log line, which cannot tell a bloated table from a
 	// stuck vacuum from a slow query.
 	var loopInvestigatorToolset managerbizloop.InvestigatorToolset = managerbizloop.NoopInvestigatorToolset{}
-	if promQuerier != nil || logQuerier != nil {
+	if dsSet.Prom() != nil || dsSet.Logs() != nil {
 		// The labels source is what lets a remediation dispatch name the
 		// object it acts on. Without it the evidence chain holds only a
 		// metric and a log line, and every write action refuses at
 		// dispatch for want of a pod name, queue or unit the firing alert
 		// already carried.
 		loopInvestigatorToolset = managerbizloopinvestigatorreal.NewWithLabels(
-			promQuerier, logQuerier, managerbizloop.NewAlertLabelsAdapter(loopAlertReader{repo: alertRepo}), log).
+			dsSet.Prom(), dsSet.Logs(), managerbizloop.NewAlertLabelsAdapter(loopAlertReader{repo: alertRepo}), log).
 			// The probes are how the investigation learns which table is
 			// bloating and which node is NotReady, instead of inferring
 			// it from a restart rate that looks the same either way.
@@ -2729,8 +2831,9 @@ func main() {
 	// ConversationRepo: SQL-backed (data/chatdiagnose/store) when
 	// sqlDB is set, falls back to in-memory fakes otherwise so the
 	// service stays exercisable in dev/test.
-	// KBLookup / ChatRuntime / AuditLogger: no-op stubs for now;
-	// replaced by real impls in Day 7+ chatruntime-side integration.
+	// KBLookup / ChatRuntime / AuditLogger are the real adapters wired
+	// above; chatDiagRuntime degrades to a nil-runtime ReAct when no LLM
+	// is configured, which the biz layer handles.
 	var chatDiagRepo managerbizchatdiagnose.ConversationRepo
 	if db != nil {
 		chatDiagRepo = managerdatachatdiagnosestore.NewConversationRepoDB(db)
@@ -2749,13 +2852,29 @@ func main() {
 		chatDiagReAct.rt = chatRT
 	}
 	chatDiagRuntime := chatDiagReAct
+	// Feature switches. Without this option the service keeps the zero
+	// ChatFeatureFlag and POST /chat/diagnose 403s for the life of the
+	// process — the flag had no other injection point. Promote stays on
+	// by default (biz default) and only turns off when explicitly set to
+	// "false"; diagnose and KB-first default off, matching the biz docs.
+	chatDiagFlag := managerbizchatdiagnose.ChatFeatureFlag{
+		ChatDiagnoseEnabled: os.Getenv("OPSKEEPER_CHAT_DIAGNOSE_ENABLED") == "true",
+		KBFirstEnabled:      os.Getenv("OPSKEEPER_CHAT_KB_FIRST_ENABLED") == "true",
+		ChatPromoteEnabled:  os.Getenv("OPSKEEPER_CHAT_PROMOTE_ENABLED") != "false",
+	}
 	chatDiagSvc := managerbizchatdiagnose.NewChatDiagnoseService(
 		chatDiagRepo,
 		chatDiagKB,
 		chatDiagRuntime,
 		chatDiagLoopAdapter,
 		chatDiagAudit,
+		managerbizchatdiagnose.WithFeatureFlag(chatDiagFlag),
 	)
+	if chatDiagFlag.ChatDiagnoseEnabled {
+		log.Info("chat diagnose entry enabled (OPSKEEPER_CHAT_DIAGNOSE_ENABLED=true)",
+			"kb_first", chatDiagFlag.KBFirstEnabled,
+			"promote", chatDiagFlag.ChatPromoteEnabled)
+	}
 
 	// Loop HTTP handler — three routes (trigger / timeline / verify).
 	// Day 6+: VerifyRecoveryCaller is wired to the real
@@ -2798,6 +2917,7 @@ func main() {
 		FrontierDisabled:    cfg.FrontierClient.Disabled,
 		LLMConfigured:       cfg.OpenAI.APIKey != "",
 		EmbeddingConfigured: embErr == nil,
+		VectorBackend:       cfg.Vector.Backend,
 		QdrantURL:           qdrantURL,
 		QdrantCollection:    managerbizknowledge.CollectionName,
 	}, managersvcsystemhealth.Dependencies{
@@ -2907,6 +3027,19 @@ func main() {
 		}
 	}
 	mpPinnedKey := os.Getenv("OPSKEEPER_MARKETPLACE_PINNED_PUBKEY")
+	// Remote registry indexes, in "name=url" form, comma separated:
+	//
+	//   OPSKEEPER_MARKETPLACE_REGISTRIES=opskeeper-official=https://internal/registry/index.json,mirror=https://mirror/index.json
+	//
+	// The name is checked against the marketplace allowlist (AllowedSources)
+	// when a row is installed, so a registry becomes usable by being *named*
+	// here and *allowed* there — configuring a URL is not on its own a grant.
+	// That split is deliberate: pointing the catalog at a registry is a normal
+	// operation, admitting an install from it is a policy decision.
+	mpRegistries := parseRegistryIndexes(os.Getenv("OPSKEEPER_MARKETPLACE_REGISTRIES"))
+	if len(mpRegistries) > 0 {
+		log.Info("marketplace registries", slog.Int("count", len(mpRegistries)))
+	}
 	// Skill roots — see boot LoadAll block downstream for the full
 	// rationale. Defined here too because marketplace UC is wired
 	// before that block runs.
@@ -2924,6 +3057,7 @@ func main() {
 		AllowedSources:       []string{"opskeeper-official", "local"},
 		RequireSignedSources: mpRequireSigned,
 		SignaturePinnedKey:   mpPinnedKey,
+		RegistryIndexes:      mpRegistries,
 		DevMode:              mpDevMode,
 	}, log.With(slog.String("comp", "marketplace")))
 	// Legacy container -> PiG package conversion (PLAN D2). The route is
@@ -3654,6 +3788,9 @@ func main() {
 			}
 			settingHandler.Register(protected)
 			integrationHandler.Register(protected)
+			if capabilityHandler != nil {
+				capabilityHandler.Register(protected)
+			}
 			marketplaceHandler.Register(protected)
 			pluginReleaseHandler.Register(protected)
 			// Every route here is admin: enrolment mints a credential
@@ -4286,6 +4423,37 @@ func (a edgeAuthAdapter) AuthenticateEdge(ctx context.Context, accessKey, secret
 // falling back to "" if all are empty. Used at the LLM provider wiring
 // site to layer "config → env default → hard-coded default" without
 // nesting ternaries.
+// parseRegistryIndexes reads the registry env var.
+//
+// A malformed entry is dropped with a nil result rather than guessed at. The
+// cost of dropping is a registry the operator configured that silently does
+// not appear; the cost of guessing is fetching a URL nobody wrote down, which
+// is the kind of thing an allowlist exists to prevent. Either way the caller
+// logs the count, so a config that parsed to nothing is visible at boot.
+func parseRegistryIndexes(v string) []managerbizmarketplace.RegistryIndex {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil
+	}
+	var out []managerbizmarketplace.RegistryIndex
+	for _, part := range strings.Split(v, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		name, url, ok := strings.Cut(part, "=")
+		if !ok {
+			continue
+		}
+		name, url = strings.TrimSpace(name), strings.TrimSpace(url)
+		if name == "" || url == "" {
+			continue
+		}
+		out = append(out, managerbizmarketplace.RegistryIndex{Name: name, URL: url})
+	}
+	return out
+}
+
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if v != "" {

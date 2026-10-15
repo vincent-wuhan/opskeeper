@@ -508,6 +508,29 @@ var tools = []toolSpec{
 	},
 
 	{
+		Name:        "kafka.rebalance_history",
+		Label:       "kafka.rebalance_history",
+		Description: "consumer group 成员变更历史（由连续采样的 DescribeGroups 得出；窗口从 OpsKeeper 首次观测该组开始，不含更早的变更）",
+		Parameters: `{
+  "properties": {
+    "group": {
+      "type": "string"
+    },
+    "limit": {
+      "type": "integer"
+    },
+    "since_minutes": {
+      "type": "integer"
+    }
+  },
+  "required": [
+    "group"
+  ],
+  "type": "object"
+}`,
+	},
+
+	{
 		Name:        "kafka.topic_list",
 		Label:       "kafka.topic_list",
 		Description: "列出所有 topic 及其分区与 leader",

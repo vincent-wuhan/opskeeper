@@ -50,6 +50,7 @@ type RepoStore interface {
 	GetRepoByURL(ctx context.Context, url string) (*model.Repository, error)
 	CreateRepo(ctx context.Context, repo *model.Repository) error
 	UpdateRepoSync(ctx context.Context, id uint64, fileCount int, syncErr string) error
+	MarkRepoSyncFailed(ctx context.Context, id uint64, syncErr string) error
 	DeleteRepo(ctx context.Context, id uint64) error
 
 	// SSH identities — managed in the same data layer for
@@ -63,18 +64,10 @@ type RepoStore interface {
 	DeleteSSHIdentity(ctx context.Context, id uint64) error
 }
 
-// QdrantClient is the narrow qdrant surface. *qdrantx.Client satisfies
-// it; tests can inject a fake.
-type QdrantClient interface {
-	EnsureCollection(ctx context.Context, name string, dim int) error
-	EnsurePayloadIndex(ctx context.Context, collection, field, schema string) error
-	Upsert(ctx context.Context, collection string, points []qdrantx.Point) error
-	DeleteByFilter(ctx context.Context, collection string, mustMatch map[string]any) error
-	DeleteByID(ctx context.Context, collection string, id uint64) error
-	GetPoints(ctx context.Context, collection string, ids []uint64) ([]qdrantx.SearchHit, error)
-	Search(ctx context.Context, collection string, vector []float32, opts qdrantx.SearchOpts) ([]qdrantx.SearchHit, error)
-	Scroll(ctx context.Context, collection string, opts qdrantx.ScrollOpts) (*qdrantx.ScrollResult, error)
-}
+// QdrantClient is the vector-store surface this usecase needs. It is an
+// alias for the port in qdrantx so both the HTTP qdrant client and the
+// embedded backend satisfy it — and tests can inject a fake.
+type QdrantClient = qdrantx.Store
 
 type payloadMigrator interface {
 	SetPayloadByFilter(
@@ -291,28 +284,25 @@ func (u *Usecase) UploadDoc(ctx context.Context, in UploadDocInput) (*model.Doc,
 }
 
 // ingestUpload (re)chunks one org-uploaded file into qdrant under
-// source_type=upload, keyed on d.URL (the file's stable identity). It first
-// sweeps any prior version of the same url so a now-shorter body leaves no
-// stale high-index chunks behind, then chunk → embed → upsert. Shared by
+// source_type=upload, keyed on d.URL (the file's stable identity). It embeds
+// first, then sweeps any prior version of the same url (so a now-shorter body
+// leaves no stale high-index chunks behind), then upserts — an embed failure
+// must not delete the doc before the replacement exists. Shared by
 // UploadDoc (initial multipart ingest) and UpdateManualDoc's upload branch
 // (in-place edit of an already-uploaded file, ADR-028 组织CRUD). The sweep is
-// scoped to this exact (source_type=upload, url) — it never touches other
-// docs, and a vault re-sync never touches these (its delete is scoped to
-// source_type=vault). Returns the logical doc (head chunk id).
+// scoped to this exact (source_type=upload, url, tenant_scopes) — it never
+// touches other docs, and a vault re-sync never touches these (its delete is
+// scoped to source_type=vault). Returns the logical doc (head chunk id).
 func (u *Usecase) ingestUpload(ctx context.Context, d model.Doc) (*model.Doc, error) {
 	if uploadScope(d) == "" {
 		return nil, fmt.Errorf("%w: tenant scope required", errs.ErrUnauthorized)
 	}
-	if err := u.vec.DeleteByFilter(ctx, CollectionName, map[string]any{
-		"source_type":   model.SourceUpload,
-		"url":           d.URL,
-		"tenant_scopes": d.TenantScopes,
-	}); err != nil {
-		return nil, fmt.Errorf("knowledge: clear prior upload: %w", err)
-	}
-
+	// Embed the whole body before clearing the prior chunks (same rationale as
+	// the repo/vault paths): a transient embedder failure on an in-place edit
+	// must not delete the doc the operator is editing.
 	parts := splitForChunks(d.Content)
 	const batch = 32
+	vectors := make([][]float32, 0, len(parts))
 	for i := 0; i < len(parts); i += batch {
 		end := i + batch
 		if end > len(parts) {
@@ -326,18 +316,35 @@ func (u *Usecase) ingestUpload(ctx context.Context, d model.Doc) (*model.Doc, er
 			}
 			texts = append(texts, truncateForEmbedding(body))
 		}
-		vectors, err := u.embed.Embed(ctx, texts)
+		batchVectors, err := u.embed.Embed(ctx, texts)
 		if err != nil {
 			return nil, fmt.Errorf("knowledge: embed upload batch %d: %w", i, err)
 		}
-		points := make([]qdrantx.Point, 0, len(vectors))
-		for k, v := range vectors {
-			j := i + k
+		vectors = append(vectors, batchVectors...)
+	}
+
+	// Sweep any prior version of the same url so a now-shorter body leaves no
+	// stale high-index chunks behind (scoped to this exact url + tenant scope).
+	if err := u.vec.DeleteByFilter(ctx, CollectionName, map[string]any{
+		"source_type":   model.SourceUpload,
+		"url":           d.URL,
+		"tenant_scopes": d.TenantScopes,
+	}); err != nil {
+		return nil, fmt.Errorf("knowledge: clear prior upload: %w", err)
+	}
+
+	for i := 0; i < len(parts); i += batch {
+		end := i + batch
+		if end > len(parts) {
+			end = len(parts)
+		}
+		points := make([]qdrantx.Point, 0, end-i)
+		for j := i; j < end; j++ {
 			body := parts[j]
 			if j == 0 {
 				body = d.Title + "\n\n" + parts[j]
 			}
-			points = append(points, uploadChunkPoint(d.URL, j, len(parts), v, d, body))
+			points = append(points, uploadChunkPoint(d.URL, j, len(parts), vectors[j], d, body))
 		}
 		if err := u.vec.Upsert(ctx, CollectionName, points); err != nil {
 			return nil, fmt.Errorf("knowledge: upsert upload batch %d: %w", i, err)
@@ -514,20 +521,6 @@ func docVisibleToTenant(d *model.Doc, tenantID string) bool {
 	return false
 }
 
-func tenantIDFromContext(ctx context.Context) (string, bool) {
-	caller, ok := tenantctx.From(ctx)
-	if !ok {
-		return "", false
-	}
-	if caller.AgentTeams != nil && caller.AgentTeams.TenantID != "" {
-		return caller.AgentTeams.TenantID, true
-	}
-	if caller.UserID != 0 {
-		return fmt.Sprint(caller.UserID), true
-	}
-	return "", false
-}
-
 // ListDocs streams via qdrant scroll filtered by source/repo/path/tag.
 // Listings show one entry per file even when the file got chunked into
 // multiple qdrant points.
@@ -689,8 +682,9 @@ func (u *Usecase) GetDoc(ctx context.Context, id uint64) (*model.Doc, error) {
 // changes; title/content/tags are preserved. Manual docs re-upsert in place;
 // uploaded files re-ingest under their stable url (path lives in every chunk
 // payload, so it's a full re-embed — moves are user-initiated and rare, so
-// the cost is acceptable). Vault/repo docs reject — they're read-only.
-func (u *Usecase) MoveDoc(ctx context.Context, id uint64, newPath string) (*model.Doc, error) {
+// the cost is acceptable). Vault/repo docs reject — they're read-only. Same
+// tenant gate as UpdateManualDoc: you can only move a doc your tenant sees.
+func (u *Usecase) MoveDoc(ctx context.Context, id uint64, newPath, tenantID string) (*model.Doc, error) {
 	if u.embed == nil {
 		return nil, fmt.Errorf("%w: embedder not configured (set OPSKEEPER_EMBEDDING_API_KEY)", errs.ErrNotWiredYet)
 	}
@@ -701,6 +695,9 @@ func (u *Usecase) MoveDoc(ctx context.Context, id uint64, newPath string) (*mode
 	path := normalizePath(newPath)
 	switch existing.SourceType {
 	case model.SourceManual:
+		if !docVisibleToTenant(existing, tenantID) {
+			return nil, errs.ErrForbidden
+		}
 		existing.Path = path
 		existing.UpdatedAt = time.Now().UTC()
 		if err := u.upsertDoc(ctx, existing); err != nil {
@@ -708,6 +705,9 @@ func (u *Usecase) MoveDoc(ctx context.Context, id uint64, newPath string) (*mode
 		}
 		return existing, nil
 	case model.SourceUpload:
+		if !docVisibleToTenant(existing, tenantID) {
+			return nil, errs.ErrForbidden
+		}
 		return u.ingestUpload(ctx, model.Doc{
 			SourceType:   model.SourceUpload,
 			TenantScopes: existing.TenantScopes,
@@ -727,8 +727,11 @@ func (u *Usecase) MoveDoc(ctx context.Context, id uint64, newPath string) (*mode
 
 // DeleteDoc removes an org-owned doc (ADR-028 组织CRUD): a manual doc (single
 // point) or an uploaded file (every chunk of its url). Vault/repo docs reject
-// — unsync the whole source to drop them.
-func (u *Usecase) DeleteDoc(ctx context.Context, id uint64) error {
+// — unsync the whole source to drop them. Same tenant gate as
+// UpdateManualDoc: you can only delete a doc your tenant can see, so a
+// cross-tenant caller hitting ErrForbidden on edit can't bypass it by
+// deleting instead.
+func (u *Usecase) DeleteDoc(ctx context.Context, id uint64, tenantID string) error {
 	d, err := u.scrollOneByID(ctx, id)
 	if err != nil {
 		return err
@@ -738,8 +741,14 @@ func (u *Usecase) DeleteDoc(ctx context.Context, id uint64) error {
 	}
 	switch d.SourceType {
 	case model.SourceManual:
+		if !docVisibleToTenant(d, tenantID) {
+			return errs.ErrForbidden
+		}
 		return u.vec.DeleteByID(ctx, CollectionName, id)
 	case model.SourceUpload:
+		if !docVisibleToTenant(d, tenantID) {
+			return errs.ErrForbidden
+		}
 		// Uploaded files are multi-chunk; drop every chunk of this url.
 		return u.vec.DeleteByFilter(ctx, CollectionName, map[string]any{
 			"source_type": model.SourceUpload,
@@ -1197,14 +1206,14 @@ func (u *Usecase) Sync(ctx context.Context, id uint64) (*model.Repository, error
 	if err != nil {
 		return nil, err
 	}
+	// Repo docs are globally visible. Repo registrations are shared
+	// infrastructure — ListRepos/DeleteRepo/Sync are unscoped, so every
+	// caller sees and can re-sync every repo. Scoping the *docs* to
+	// whoever happened to click sync made repo knowledge appear and
+	// vanish depending on the last syncer (A syncs → only A retrieves;
+	// B re-syncs → docs flip to B and A loses them). Same rationale as
+	// the vault: platform/团队-shared content is global.
 	repoScopes := []string{globalTenantScope}
-	if !IsBuiltinVaultURL(repo.URL) {
-		tenantID, ok := tenantIDFromContext(ctx)
-		if !ok {
-			return nil, fmt.Errorf("%w: tenant_id required", errs.ErrUnauthorized)
-		}
-		repoScopes = tenantScopes(tenantID)
-	}
 	dir := u.repoDir(id)
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return nil, fmt.Errorf("knowledge: mkdir parent: %w", err)
@@ -1285,16 +1294,6 @@ func (u *Usecase) Sync(ctx context.Context, id uint64) (*model.Repository, error
 		return u.recordSyncFailure(ctx, repo, fmt.Errorf("scan files: %w", err))
 	}
 
-	// Drop the previous point set first; if embedding/upsert fails
-	// downstream we'd rather show "0 indexed, last_sync_error=…" than
-	// keep stale rows mixed with new ones.
-	if err := u.vec.DeleteByFilter(ctx, CollectionName, map[string]any{
-		"source_type": model.SourceRepo,
-		"repo_id":     id,
-	}); err != nil {
-		return u.recordSyncFailure(ctx, repo, fmt.Errorf("drop prior: %w", err))
-	}
-
 	// Expand each scanned file into 1+ chunks of ≤chunkChars runes each.
 	// Small docs become a single chunk (identical to the pre-chunking
 	// behaviour); large docs (RFCs, long kernel admin guides) become N
@@ -1333,11 +1332,24 @@ func (u *Usecase) Sync(ctx context.Context, id uint64) (*model.Repository, error
 		}
 	}
 
+	// Embed EVERY chunk before dropping the previously published set.
+	//
+	// The old order was delete-prior → embed → upsert, so one transient
+	// embedder failure (provider hiccup, rate limit, oversized-batch
+	// rejection) deleted the whole repo corpus and never wrote the
+	// replacement — the "RAG 又没了" report where search returned
+	// nothing although the vectors had been fine seconds earlier. With
+	// all vectors computed up front, an embed failure aborts before
+	// anything is dropped and the previous set stays searchable. The
+	// residual window is a qdrant failure mid-upsert (local, rare, and
+	// repaired by the next sync).
+	//
 	// Embed in batches of 32 — keeps each request well under the
 	// embedding provider's per-request input cap (Zhipu = 3072 tokens
 	// per single input; we cap each input to chunkChars=2500 runes
 	// before truncateForEmbedding clips further if needed).
 	const batch = 32
+	vectors := make([][]float32, 0, len(chunks))
 	for i := 0; i < len(chunks); i += batch {
 		end := i + batch
 		if end > len(chunks) {
@@ -1347,13 +1359,29 @@ func (u *Usecase) Sync(ctx context.Context, id uint64) (*model.Repository, error
 		for _, c := range chunks[i:end] {
 			texts = append(texts, truncateForEmbedding(c.body))
 		}
-		vectors, err := u.embed.Embed(ctx, texts)
+		batchVectors, err := u.embed.Embed(ctx, texts)
 		if err != nil {
 			return u.recordSyncFailure(ctx, repo, fmt.Errorf("embed batch %d: %w", i, err))
 		}
-		points := make([]qdrantx.Point, 0, len(vectors))
-		for j, v := range vectors {
-			c := chunks[i+j]
+		vectors = append(vectors, batchVectors...)
+	}
+
+	// Vectors in hand — now the published set can be replaced safely.
+	if err := u.vec.DeleteByFilter(ctx, CollectionName, map[string]any{
+		"source_type": model.SourceRepo,
+		"repo_id":     id,
+	}); err != nil {
+		return u.recordSyncFailure(ctx, repo, fmt.Errorf("drop prior: %w", err))
+	}
+
+	for i := 0; i < len(chunks); i += batch {
+		end := i + batch
+		if end > len(chunks) {
+			end = len(chunks)
+		}
+		points := make([]qdrantx.Point, 0, end-i)
+		for j := i; j < end; j++ {
+			c := chunks[j]
 			// Path: derive from URL directory so the SPA folder-tree
 			// view groups docs by their repo subdirectory (concepts/,
 			// reference/external/dns/, etc.). Repo docs never set Path
@@ -1363,7 +1391,7 @@ func (u *Usecase) Sync(ctx context.Context, id uint64) (*model.Repository, error
 			if folder == "." || folder == "/" {
 				folder = ""
 			}
-			pt := repoChunkPoint(repo.ID, c.file.URL, c.chunkIndex, c.chunkTotal, v, model.Doc{
+			pt := repoChunkPoint(repo.ID, c.file.URL, c.chunkIndex, c.chunkTotal, vectors[j], model.Doc{
 				SourceType:   model.SourceRepo,
 				TenantScopes: repoScopes,
 				RepoID:       ptrU64(repo.ID),
@@ -1392,17 +1420,20 @@ func (u *Usecase) Sync(ctx context.Context, id uint64) (*model.Repository, error
 // SyncBuiltinVault refreshes the platform vault in qdrant under
 // source_type="vault". The vault is NOT a knowledge_repos row — it's
 // platform-shipped content — so this path never touches the repos table and
-// the vault never shows up in the 代码仓库 / Repos list. The "云端同步" button
-// the operator clicks calls straight here.
+// the vault never shows up in the 代码仓库 / Repos list. The 内置知识库 sync
+// button (and the boot seed) call straight here.
 //
-// Idempotent + cloud-first (ADR-029): delete-by-filter(source_type=vault)
-// clears the prior set, then we re-embed from a live github clone, falling
-// back to the embedded snapshot when github is unreachable. Re-syncs (boot,
-// button) replace cleanly — no repo row to leak, no duplicate docs.
+// Source of truth is the go:embed snapshot (see builtin_vault.go): the vault
+// ships in the binary, gets materialized to disk, then scanned → chunked →
+// embedded → upserted. There is deliberately no runtime clone — the upstream
+// repo the old cloud path pointed at was a never-filled placeholder, so every
+// "cloud" attempt burned retry timeouts and then fell back to this same
+// snapshot anyway; only the UI message differed.
 //
-// Returns (fileCount, source, err) where source is "cloud" (live github
-// clone succeeded) or "embedded" (offline fallback) — the source lets the UI
-// tell the operator whether the click actually reached the cloud.
+// Idempotent: re-syncs (boot, button) replace the prior set cleanly — no repo
+// row to leak, no duplicate docs. Returns (fileCount, source, err) with
+// source fixed to "embedded"; the field stays in the API shape for the audit
+// log and SPA.
 func (u *Usecase) SyncBuiltinVault(ctx context.Context) (int, string, error) {
 	if u.embed == nil {
 		return 0, "", fmt.Errorf("%w: embedder not configured", errs.ErrNotWiredYet)
@@ -1412,32 +1443,13 @@ func (u *Usecase) SyncBuiltinVault(ctx context.Context) (int, string, error) {
 		return 0, "", fmt.Errorf("knowledge: mkdir parent: %w", err)
 	}
 
-	// ADR-029: prefer the live cloud vault (public github clone), fall back
-	// to the embedded snapshot when github is unreachable/slow (air-gapped
-	// or mainland-China hosts). Either way the downstream scan→chunk→embed
-	// pipeline is identical — we only swap where the raw .md files come from.
-	// A clone failure must never surface as a button error: we log and fall
-	// back so the operator always ends up with at least the 38-file baseline.
-	source := "cloud"
-	if err := u.fetchCloudVault(ctx, dir); err != nil {
-		u.log.Warn("knowledge: cloud vault pull failed — using embedded baseline",
-			slog.String("url", BuiltinVaultGitURL), slog.Any("err", err))
-		source = "embedded"
-		if err := u.materializeBuiltinVault(dir); err != nil {
-			return 0, "", fmt.Errorf("knowledge: materialize built-in vault: %w", err)
-		}
+	const source = "embedded"
+	if err := u.materializeBuiltinVault(dir); err != nil {
+		return 0, "", fmt.Errorf("knowledge: materialize built-in vault: %w", err)
 	}
 	files, err := scanRepoFiles(dir)
 	if err != nil {
 		return 0, "", fmt.Errorf("knowledge: scan vault files: %w", err)
-	}
-	// Drop the prior vault set before re-inserting (same rationale as the
-	// repo path): a mid-sync failure should read "0 indexed" rather than
-	// leave stale rows mixed with new ones.
-	if err := u.vec.DeleteByFilter(ctx, CollectionName, map[string]any{
-		"source_type": model.SourceVault,
-	}); err != nil {
-		return 0, "", fmt.Errorf("knowledge: drop prior vault: %w", err)
 	}
 	now := time.Now().UTC()
 	type chunkRef struct {
@@ -1456,7 +1468,11 @@ func (u *Usecase) SyncBuiltinVault(ctx context.Context) (int, string, error) {
 			chunks = append(chunks, chunkRef{file: &files[i], chunkIndex: j, chunkN: len(parts), body: body})
 		}
 	}
+	// Embed everything before dropping the prior vault set (same rationale as
+	// the repo path): a transient embedder failure must not leave the
+	// knowledge base empty.
 	const batch = 32
+	vectors := make([][]float32, 0, len(chunks))
 	for i := 0; i < len(chunks); i += batch {
 		end := i + batch
 		if end > len(chunks) {
@@ -1466,18 +1482,32 @@ func (u *Usecase) SyncBuiltinVault(ctx context.Context) (int, string, error) {
 		for _, c := range chunks[i:end] {
 			texts = append(texts, truncateForEmbedding(c.body))
 		}
-		vectors, err := u.embed.Embed(ctx, texts)
+		batchVectors, err := u.embed.Embed(ctx, texts)
 		if err != nil {
 			return 0, "", fmt.Errorf("knowledge: embed vault batch %d: %w", i, err)
 		}
-		points := make([]qdrantx.Point, 0, len(vectors))
-		for j, v := range vectors {
-			c := chunks[i+j]
+		vectors = append(vectors, batchVectors...)
+	}
+
+	if err := u.vec.DeleteByFilter(ctx, CollectionName, map[string]any{
+		"source_type": model.SourceVault,
+	}); err != nil {
+		return 0, "", fmt.Errorf("knowledge: drop prior vault: %w", err)
+	}
+
+	for i := 0; i < len(chunks); i += batch {
+		end := i + batch
+		if end > len(chunks) {
+			end = len(chunks)
+		}
+		points := make([]qdrantx.Point, 0, end-i)
+		for j := i; j < end; j++ {
+			c := chunks[j]
 			folder := filepath.Dir(c.file.URL)
 			if folder == "." || folder == "/" {
 				folder = ""
 			}
-			points = append(points, vaultChunkPoint(c.file.URL, c.chunkIndex, c.chunkN, v, model.Doc{
+			points = append(points, vaultChunkPoint(c.file.URL, c.chunkIndex, c.chunkN, vectors[j], model.Doc{
 				SourceType: model.SourceVault,
 				URL:        c.file.URL,
 				Title:      c.file.Title,
@@ -1494,64 +1524,6 @@ func (u *Usecase) SyncBuiltinVault(ctx context.Context) (int, string, error) {
 	u.log.Info("knowledge: built-in vault synced",
 		slog.String("source", source), slog.Int("file_count", len(files)))
 	return len(files), source, nil
-}
-
-// cloudVaultAttempts / cloudVaultPerTry tune the retry loop in fetchCloudVault.
-// Mainland↔github is intermittent: a clone that connects finishes in ~2s, but
-// a given attempt randomly hits "TLS connection non-properly terminated" or a
-// connect timeout. Observed live: within the same minute one clone succeeds in
-// 2s while another fails. So we retry a few times with a short per-attempt
-// timeout — catching a good window cheaply instead of failing the whole sync
-// (and silently falling back to the 38-file embedded baseline) on the first
-// flake. Worst case if github is truly down: attempts × perTry + backoffs,
-// then fall back. Kept well under the boot 5-min ctx and the button request.
-const (
-	cloudVaultAttempts = 3
-	cloudVaultPerTry   = 30 * time.Second
-)
-
-// fetchCloudVault clones the fixed public vault repo (ADR-029) into dir,
-// reusing the repo-sync fast/atomic-replace paths with no auth (public repo).
-// Retries on the flaky-github failures above; returns the last error only
-// after all attempts fail, so SyncBuiltinVault falls back to embedded.
-func (u *Usecase) fetchCloudVault(ctx context.Context, dir string) error {
-	purgeStaleCloneTmps(dir)
-	var lastErr error
-	for attempt := 1; attempt <= cloudVaultAttempts; attempt++ {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		tryCtx, cancel := context.WithTimeout(ctx, cloudVaultPerTry)
-		// Fast path: an existing healthy .git just fetches + resets. After an
-		// embedded fallback the dir has no .git, so this returns false and we
-		// clone fresh below.
-		if u.syncFastPath(tryCtx, dir, nil, BuiltinVaultBranch) {
-			cancel()
-			return nil
-		}
-		out, err := u.syncAtomicReplace(tryCtx, dir, nil, BuiltinVaultGitURL, BuiltinVaultBranch)
-		cancel()
-		if err == nil {
-			if attempt > 1 {
-				u.log.Info("knowledge: cloud vault clone ok after retry", slog.Int("attempt", attempt))
-			}
-			return nil
-		}
-		lastErr = fmt.Errorf("git clone %s (attempt %d/%d): %w (%s)", BuiltinVaultGitURL,
-			attempt, cloudVaultAttempts, err, annotateGitError(out, BuiltinVaultGitURL, false))
-		if attempt < cloudVaultAttempts {
-			u.log.Warn("knowledge: cloud vault clone failed — retrying",
-				slog.Int("attempt", attempt), slog.Any("err", err))
-			// Short backoff; a fresh TCP/TLS connection often succeeds where
-			// the prior one was terminated mid-handshake.
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(2 * time.Second):
-			}
-		}
-	}
-	return lastErr
 }
 
 // HasVaultDocs reports whether any source_type=vault points already exist.
@@ -1736,9 +1708,15 @@ func (u *Usecase) upsertDoc(ctx context.Context, d *model.Doc) error {
 	return nil
 }
 
+// recordSyncFailure logs the error and records it WITHOUT clobbering the
+// repo's published state. A failure typically happens before the point-set
+// swap, so the previously indexed docs are still live — file_count and
+// last_synced_at must keep describing the last successful sync. Writing
+// 0 + CURRENT_TIMESTAMP here made a failed clone read "文件 0 · 刚刚同步过"
+// while the old docs were still searchable.
 func (u *Usecase) recordSyncFailure(ctx context.Context, repo *model.Repository, syncErr error) (*model.Repository, error) {
 	u.log.Warn("knowledge: sync failed", slog.Uint64("repo_id", repo.ID), slog.Any("err", syncErr))
-	_ = u.repo.UpdateRepoSync(ctx, repo.ID, 0, syncErr.Error())
+	_ = u.repo.MarkRepoSyncFailed(ctx, repo.ID, syncErr.Error())
 	return nil, syncErr
 }
 
@@ -2530,71 +2508,4 @@ func buildSSHEnv(identity *model.SSHIdentity) ([]string, func(), error) {
 		keyFile.Name(), khFile.Name(),
 	)
 	return []string{"GIT_SSH_COMMAND=" + cmd}, cleanup, nil
-}
-
-// annotateGitError maps the canonical git failure signatures into
-// operator-actionable copy. The hint tells the user (a) what happened
-// in plain language and (b) the concrete next step. hasAuth reports
-// whether the failed call was already running with credentials —
-// when true, "authentication failed" means the token / key itself
-// is bad, otherwise it means no credential was configured.
-//
-// error copy is host-agnostic where the URL doesn't pin
-// us to github.com; SSH-style URLs get their own branch suggesting
-// the "go add an SSH identity" flow.
-func annotateGitError(gitOutput, repoURL string, hasAuth bool) string {
-	low := strings.ToLower(gitOutput)
-	ssh := isSSHURL(repoURL)
-	host := extractDisplayHost(repoURL)
-
-	switch {
-	// SSH-specific signatures.
-	case ssh && (strings.Contains(low, "permission denied (publickey)") ||
-		strings.Contains(low, "permission denied, please try again") ||
-		strings.Contains(low, "could not read from remote repository")):
-		if hasAuth {
-			return fmt.Sprintf("SSH 认证失败：host=%s 拒绝了已配置的 key。请检查 (1) 公钥已加到该仓库的 Deploy keys / 用户 SSH keys (2) key 未被删除 (3) hosts 字段包含正确的 host 名。原始输出：%s", host, gitOutput)
-		}
-		return fmt.Sprintf("SSH 认证失败：host=%s 没匹配到任何已配置的 SSH 凭证。请到「代码仓库 → SSH 凭证」添加一条 hosts 包含 %s 的 key。原始输出：%s", host, host, gitOutput)
-	case ssh && strings.Contains(low, "host key verification failed"):
-		return fmt.Sprintf("SSH host key 不匹配：%s 的服务器指纹跟已存的 known_hosts 不一致。可能是中间人 / DNS 劫持 / 服务器换密钥。请人工核对再决定是否清空 known_hosts。原始输出：%s", host, gitOutput)
-
-	// HTTPS / generic auth signatures.
-	case strings.Contains(low, "could not read username") ||
-		(strings.Contains(low, "authentication failed") && !hasAuth):
-		return fmt.Sprintf("私库需要凭证，但当前未配置 host=%s 的 token。请到「代码仓库 → 凭证」配置。原始输出：%s", host, gitOutput)
-	case strings.Contains(low, "authentication failed") && hasAuth:
-		return fmt.Sprintf("host=%s 拒绝了已配置的凭证。请检查：(1) token 未过期 (2) scope 充足 (3) 对该仓库有访问权。原始输出：%s", host, gitOutput)
-	case strings.Contains(low, "repository not found"):
-		return fmt.Sprintf("找不到该仓库。检查 URL 拼写（大小写敏感）；若是私库，确认凭证对该 host=%s 有访问权。原始输出：%s", host, gitOutput)
-	case strings.Contains(low, "rate limit") || strings.Contains(low, "api rate limit exceeded"):
-		return fmt.Sprintf("host=%s API 限流。稍等再试，或换一个 token。原始输出：%s", host, gitOutput)
-
-	// Network signatures — host-agnostic copy with the URL host
-	// substituted in.
-	case strings.Contains(low, "early eof") || strings.Contains(low, "ssl_read") ||
-		strings.Contains(low, "unexpected eof") || strings.Contains(low, "rpc failed"):
-		return fmt.Sprintf("网络中断，clone 没拉完。点击同步重试；如反复失败请检查 manager 容器到 %s 的连通性。原始输出：%s", host, gitOutput)
-	case strings.Contains(low, "could not resolve host") || strings.Contains(low, "name or service not known"):
-		return fmt.Sprintf("DNS 解析失败：无法访问 %s。检查 manager 容器的 DNS 或出口策略。原始输出：%s", host, gitOutput)
-	case strings.Contains(low, "connection refused") || strings.Contains(low, "connection timed out"):
-		return fmt.Sprintf("无法连接到 %s。检查防火墙 / 出口代理。原始输出：%s", host, gitOutput)
-	default:
-		return gitOutput
-	}
-}
-
-// extractDisplayHost pulls the host name out of a git URL for display
-// purposes. Returns "" on unparseable input — the caller's fmt template
-// then just shows "host=" which is uglier than perfect but acceptable.
-func extractDisplayHost(repoURL string) string {
-	if isSSHURL(repoURL) {
-		return extractSSHHost(repoURL)
-	}
-	repoURL = strings.TrimPrefix(repoURL, "https://")
-	repoURL = strings.TrimPrefix(repoURL, "http://")
-	if slash := strings.Index(repoURL, "/"); slash >= 0 {
-		return strings.ToLower(repoURL[:slash])
-	}
-	return strings.ToLower(repoURL)
 }

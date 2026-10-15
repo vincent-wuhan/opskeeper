@@ -40,13 +40,18 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/vincent-wuhan/opskeeper/scripts/internal/gatename"
 )
 
 // Gate is one acceptance gate the plan names, and why it has to run somewhere
@@ -148,6 +153,14 @@ func DecisionGates() []Gate {
 				"Decision 348's rule is that a check nobody invokes owns nothing; here the check was " +
 				"invoked only as a side effect of another one, so deleting any one of the four " +
 				"assertions would have left every gate green (decision 352)",
+		},
+		{
+			Target: "dcell-check",
+			Why: "the plugin-ecosystem census is a score the ledger quotes, and the score barely " +
+				"moves when a cell's reason goes stale rather than its verdict -- decision 462 found " +
+				"one that had been claiming the index reads a single root for a whole knife after " +
+				"that stopped being true, and nothing in CI could have seen it, because the census " +
+				"itself was not run by anything (decision 462)",
 		},
 		{
 			Target: "roadmap-delivery-check",
@@ -403,23 +416,113 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	report(os.Stdout, string(ci))
+}
+
+// report prints what this tool has to say.
+//
+// It is a function rather than three Printfs in main because the sentence it
+// prints is the deliverable, and a deliverable that cannot be called is a
+// deliverable that cannot be tested: a test written against the wording went
+// green while the wording was still the old, wrong one, because it exercised
+// the helper behind the sentence and not the sentence. What the reader reads
+// is what the tests read.
+func report(w io.Writer, ci string) {
 	// The claim is "defined and invoked by CI". That is true of a gate whose
 	// job a push can reach, and it is a different claim for one that waits for
 	// a clock: the command is wired either way, but "invoked" has not happened
 	// and cannot be read off this file. Printing one number for both is how
 	// decisions 163/164 and 377 happened, so the two are named separately.
 	// See ScheduleOnlyGates.
-	pushed := len(allGates()) - len(ScheduleOnlyGates(string(ci)))
-	fmt.Printf("cigate: %d of %d acceptance gates (%d named by the plan, %d owned by a decision) "+
+	pushed := len(allGates()) - len(ScheduleOnlyGates(ci))
+	fmt.Fprintf(w, "cigate: %d of %d acceptance gates (%d named by the plan, %d owned by a decision) "+
 		"are defined and reachable from a push, and %s\n",
 		pushed, len(allGates()), len(Gates()), len(DecisionGates()),
-		triggerSummary(TriggerReachabilityOf(string(ci))))
-	if waiting := ScheduleOnlyGates(string(ci)); len(waiting) > 0 {
-		fmt.Printf("cigate: %d gate(s) are wired but no push can reach them -- "+
-			"they wait for a schedule, which GitHub fires only for the default branch, "+
-			"or for a manual dispatch: %s\n",
-			len(waiting), strings.Join(waiting, ", "))
+		triggerSummary(TriggerReachabilityOf(ci)))
+	waiting := ScheduleOnlyGates(ci)
+	if len(waiting) == 0 {
+		return
 	}
+	fmt.Fprintf(w, "cigate: %d gate(s) are wired but no push can reach them: %s\n",
+		len(waiting), strings.Join(waiting, ", "))
+	fmt.Fprintf(w, "cigate:   a schedule reaches them only for the workflow file on the default "+
+		"branch. %s\n", scheduleReaches(ci, waiting))
+	fmt.Fprintf(w, "cigate:   `wired` here means the command and the tests are in this tree. It "+
+		"does not mean this has ever reported anything.\n")
+}
+
+// scheduleReaches answers whether the clock would ever fire for these gates.
+//
+// The previous wording of this line was "they wait for a schedule". That
+// reads as "the job is in place, the clock simply has not come round yet",
+// which is a promise about the future that this repository cannot make:
+// GitHub fires `schedule` only for the workflow file **on the default
+// branch**, and on this repository the default branch is `main`, which is
+// hundreds of commits behind and whose copy of the workflow does not contain
+// these jobs at all. The clock is not late; it is pointed at a file that does
+// not have them.
+//
+// So this asks the question it can actually answer, and says which file it
+// looked at. Where the default branch's copy is unavailable it reports that
+// rather than assuming either answer — a tool that cannot know must not imply
+// that it knows, which is the same rule ScheduleOnlyGates was written under.
+func scheduleReaches(ci string, gates []string) string {
+	head, err := gitOutput("rev-parse", "--abbrev-ref", "origin/HEAD")
+	branch := strings.TrimSpace(head)
+	if err != nil || branch == "" {
+		return fmt.Sprintf("the default branch could not be read (%v), so whether these have ever "+
+			"run is unknown from here; read %s on whichever branch GitHub calls default", err, ciFile)
+	}
+	return scheduleReachesFor(branch, gates)
+}
+
+// scheduleReachesFor is the answer given a known default branch, split out so
+// the "that file could not be read" arm is reachable from a test. Both arms
+// of this function are claims about a file, and a claim about a file nobody
+// read is the failure mode worth testing directly.
+func scheduleReachesFor(branch string, gates []string) string {
+	raw, err := gitOutput("show", branch+":"+ciFile)
+	if err != nil {
+		return fmt.Sprintf("the default branch is %s but its copy of %s could not be read (%v), "+
+			"so whether these have ever run is unknown from here", branch, ciFile, err)
+	}
+	absent := []string{}
+	for _, g := range gates {
+		if !strings.Contains(raw, g) {
+			absent = append(absent, g)
+		}
+	}
+	if len(absent) == 0 {
+		return fmt.Sprintf("the default branch is %s and its %s does name all of them, so the clock "+
+			"will reach them once that copy is the one running", branch, ciFile)
+	}
+	return fmt.Sprintf("the default branch is %s, and its %s names NONE of them (%s). The clock is "+
+		"pointed at a file that does not have these jobs, so on this branch it will never fire for "+
+		"them. They run by hand (workflow_dispatch), or once this branch is merged into %s",
+		branch, ciFile, strings.Join(absent, ", "), branch)
+}
+
+// ciFile is the workflow this tool reasons about. It is named once because
+// the question above is about a specific file, and a reader who cannot see
+// which file was checked cannot trust the answer.
+const ciFile = ".github/workflows/ci.yml"
+
+// gitOutput runs git and returns stdout, or an error including stderr. The
+// stderr is kept because the useful part of "rev-parse: ambiguous argument"
+// is the sentence naming what it could not resolve.
+func gitOutput(args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg == "" {
+			msg = err.Error()
+		}
+		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
+	}
+	return string(out), nil
 }
 
 // check reports every gate that is not wired, so one run tells the whole
@@ -455,7 +558,7 @@ func check(root string) error {
 	// table says it matters and the Makefile disagrees. Reported, not fixed,
 	// because only a human knows which of the two is wrong.
 	for target := range invoked {
-		if _, exempt := SelfExempt[target]; isGate(target, allGates()) || exempt || !looksLikeGate(target) {
+		if _, exempt := gatename.SelfExempt[target]; isGate(target, allGates()) || exempt || !looksLikeGate(target) {
 			continue
 		}
 		problems = append(problems, fmt.Sprintf(
@@ -521,19 +624,10 @@ func check(root string) error {
 	return nil
 }
 
-// NotRun is every check-shaped Makefile target CI does not invoke, each with
-// the reason it is not there.
-//
-// It is a separate table from NotInCI because NotInCI is about the plan's
-// acceptance lines -- promises written in prose, which may or may not have a
-// make target at all -- while this is about targets that exist and go unused.
-// Merging them would lose the distinction that matters here: a target nobody
-// runs is a decision somebody has not made yet, not a decision somebody made
-// and wrote down elsewhere.
-var NotRun = map[string]string{
-	"version-check":         "a release-time assertion, not a per-push one: it compares RELEASE_VERSION.json's web_hash and teamharness_source_tree against `git rev-parse HEAD:<tree>`, so it can only be green on the commit that was actually signed. It is not unwired, it is wired in .github/workflows/release.yml where those comparisons mean something; NotInCI already carries the same reasoning in prose (decisions 166, 348)",
-	"mysql-migration-check": "it needs a live MySQL to migrate and roll back against (OPSKEEPER_TEST_MYSQL_DSN), and the per-push job deliberately runs no database container; the same property is covered for the other engines by the gates that do run. Wiring it into a job with a MySQL service is a real change to the pipeline, not a line in this table (decision 348)",
-}
+// NotRun and SelfExempt are the two exemption tables, and they live in
+// scripts/internal/gatename rather than here: they are properties of the
+// gates, not of this checker, and the gate report has to honour the same
+// ones or it would run a target this command says nobody runs.
 
 // unwiredCheckTargets reports every check-shaped target no workflow runs and
 // no exemption covers.
@@ -553,16 +647,16 @@ func unwiredCheckTargets(defined, invoked map[string]bool) []string {
 			// Already reported above, with the reason the promise was made.
 			continue
 		}
-		reason, exempt := NotRun[target]
+		reason, exempt := gatename.NotRun[target]
 		if !exempt {
 			problems = append(problems, fmt.Sprintf(
 				"the Makefile defines %q, it reads like a check, and nothing runs it; wire it "+
-					"into ci.yml, or record it in NotRun with the reason it does not run there", target))
+					"into ci.yml, or record it in gatename.NotRun with the reason it does not run there", target))
 			continue
 		}
 		if strings.TrimSpace(reason) == "" {
 			problems = append(problems, fmt.Sprintf(
-				"NotRun lists %q with an empty reason; an exemption nobody can check is a "+
+				"gatename.NotRun lists %q with an empty reason; an exemption nobody can check is a "+
 					"shorter comment that reads the same", target))
 		}
 	}
@@ -576,24 +670,7 @@ func unwiredCheckTargets(defined, invoked map[string]bool) []string {
 // in the first token, and reading the second as a target would let this check
 // report a target "defined" that no recipe will ever run. `.PHONY` and other
 // dot-targets are excluded, and a commented line is not a definition.
-func makeTargets(src string) map[string]bool {
-	out := map[string]bool{}
-	for _, line := range strings.Split(src, "\n") {
-		if line == "" || line[0] == ' ' || line[0] == '\t' || line[0] == '#' {
-			continue
-		}
-		i := strings.IndexByte(line, ':')
-		if i < 0 || i+1 < len(line) && line[i+1] == '=' {
-			continue
-		}
-		name := strings.TrimSpace(line[:i])
-		if name == "" || strings.HasPrefix(name, ".") || strings.ContainsAny(name, "=?$") {
-			continue
-		}
-		out[name] = true
-	}
-	return out
-}
+func makeTargets(src string) map[string]bool { return gatename.MakeTargets(src) }
 
 // invokedTargets is every make target ci.yml runs.
 //
@@ -824,22 +901,11 @@ func brokerSkipAgrees(root, makefileSrc string) error {
 	return nil
 }
 
-// SelfExempt is what checks gates without being a gate the plan promises.
-//
-// Recorded rather than skipped by a name rule, because "this check is about
-// the wiring of gates, not itself a promised gate" and "somebody added a
-// -check target and forgot the table" are the same shape from the outside,
-// and the second is how this exemption becomes a hole.
-var SelfExempt = map[string]string{
-	"ci-gate-check": "this checker: it answers whether the promised gates run, so it is not one of them",
-}
-
-// looksLikeGate is the naming shape the reverse-drift rule watches. A target
-// ending in -check or named check reads like an acceptance gate to anyone
-// scanning ci.yml, so one that is not in Gates() is worth a second look.
-func looksLikeGate(target string) bool {
-	return strings.HasSuffix(target, "-check") || target == "check"
-}
+// looksLikeGate is the reverse-drift rule's naming shape. The rule itself and
+// the reason it is loose live in scripts/internal/gatename, because the gate
+// report needs the same answer and two copies would be two opinions about
+// which targets are gates.
+func looksLikeGate(target string) bool { return gatename.LooksLikeGate(target) }
 
 // allGates is both tables, in the order they run: the plan's gates first,
 // then the decision-owned ones. Every rule that has to see the whole set --

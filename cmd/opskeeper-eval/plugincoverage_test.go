@@ -9,6 +9,11 @@ import (
 	"github.com/vincent-wuhan/opskeeper/core/floor/pluginmanifest"
 )
 
+// ownedFixtureGap is the recorded-gap name this file's fixtures install and
+// remove. See the note at the fixture for why it is synthetic rather than the
+// name of a live ledger entry.
+const ownedFixtureGap = "kafka.fixture_owned_gap"
+
 // The tests in this file are about one property: the coverage command has to
 // be able to fail.
 //
@@ -112,19 +117,24 @@ func fixture(t *testing.T) (casesDir, pluginsDir string, out *os.File) {
 	writeCase(t, casesDir, "pg/table-bloat", []string{"pg.index_usage"}, []string{"pg.vacuum_table"})
 	// A recorded diagnosis gap: the backlog, and the flag must not fire.
 	//
-	// The name is taken from the real ledger rather than invented, because
-	// the ledger is a package-level map and a test that added to it would
-	// be testing its own mutation. Naming a real entry also keeps this
-	// honest: if that entry is ever retired, this fixture's expectation has
-	// to be revisited with it.
+	// The entry is added by this fixture and removed again by the cleanup
+	// below. It used to name a real ledger entry — redis.hot_keys, then
+	// kafka.rebalance_history — and the last of those was retired at 决策
+	// 453, which left the table empty. Pinning the fixture to a retired name
+	// would go red on a healthy tree, and a gate that is red on a healthy
+	// tree is a gate that gets switched off.
 	//
-	// It was redis.hot_keys until 决策 204 implemented that tool and
-	// retired the entry. The name is now kafka.rebalance_history, which is
-	// the other live entry — a capability Kafka genuinely does not expose,
-	// needing a collector rather than a broker client. A fixture pinned to
-	// a retired entry would go red on a healthy tree, and a gate that is
-	// red on a healthy tree is a gate that gets switched off.
-	writeCase(t, casesDir, "mq/broker-down", []string{"kafka.rebalance_history"}, []string{"kafka.reset_offsets"})
+	// A synthetic name is the honest alternative to re-pinning it to
+	// whichever entry happens to be live. What is under test is the gate's
+	// behaviour on a RECORDED gap, not any particular gap; the name says so
+	// on purpose, because a fixture name that looks like a real decision
+	// invites somebody to believe the decision exists.
+	pluginmanifest.DiagnosisGaps[ownedFixtureGap] = pluginmanifest.GapReason{
+		Reason:   "added by the coverage gate's own fixture; not a real decision",
+		Searched: []string{"core/edge", "core/floor"},
+	}
+	t.Cleanup(func() { delete(pluginmanifest.DiagnosisGaps, ownedFixtureGap) })
+	writeCase(t, casesDir, "mq/broker-down", []string{ownedFixtureGap}, []string{"kafka.reset_offsets"})
 
 	sink, err := os.Create(filepath.Join(root, "report.txt"))
 	if err != nil {
@@ -177,8 +187,8 @@ func TestTheUnrecordedDiagnoseGateFiresOnARootCauseNobodyPackaged(t *testing.T) 
 	// The recorded gap must not be in there. A flag that fires on the
 	// backlog as well as the regression is red forever, and red forever is
 	// how the previous version of this gate went unread.
-	if strings.Contains(err.Error(), "kafka.rebalance_history") {
-		t.Errorf("the failure names kafka.rebalance_history, which is a recorded decision rather than a regression: %v", err)
+	if strings.Contains(err.Error(), ownedFixtureGap) {
+		t.Errorf("the failure names %s, which is a recorded decision rather than a regression: %v", ownedFixtureGap, err)
 	}
 }
 
@@ -209,7 +219,7 @@ func TestTheUnrecordedDiagnoseGateIsGreenOnARecordedFleet(t *testing.T) {
 		"diagnosis axis:   1/2",
 		"remediation axis: 0/2",
 		"joint (passable): 0/2",
-		"OWNED kafka.rebalance_history",
+		"OWNED " + ownedFixtureGap,
 	} {
 		if !strings.Contains(report, want) {
 			t.Errorf("the report does not contain %q.\n%s", want, report)

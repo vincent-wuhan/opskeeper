@@ -1,17 +1,20 @@
 // AgentChip — @agent 前端 chip 渲染。
 // 用于在聊天输入 / 已渲染消息中，把用户输入的 @sre-agent / @reporter /
 // @incident-investigator / @critic / @loop-controller 等前缀可视化为
-// indigo 配色的紧凑 chip。
+// persona 角色色（AgentAvatar 的 tone）的紧凑 chip——不再是固定 indigo。
 //
 // 设计要点：
 //   - 不参与路由：路由由后端 MentionedAgent 解析（Day 2.7 后端部分）
 //   - 大小两档：sm（10px，行内）和 md（12px，段落首 chip）
 //   - 未知 agent 走 agentId 原值，保证新角色立即可用
+//   - 底色跟 persona tone 走（与 AgentAvatar / AgentBadge 同一套色，D2），
+//     但保留 chip 的 @ 前缀与紧凑排版，不额外插入图标
 //   - 与项目 AgentBadge 的差别：AgentBadge 用于 chat session 元数据（带
-//     边框 + Bot icon + tooltip），AgentChip 用于消息流内的 @-mention
-//     （无边框 + 透明背景）。视觉锁版任务 2.7 草图。
+//     边框 + persona icon + tooltip），AgentChip 用于消息流内的 @-mention
+//     （无边框 + 透明背景）。
 import { useI18n } from '@/i18n/locale';
 import { cn } from '@/lib/cn';
+import { personaVisual, TONE_CLASS } from '../AgentAvatar';
 
 const AGENT_LABEL_ZH: Record<string, string> = {
   'sre-agent': 'SRE 助手',
@@ -40,10 +43,12 @@ export function AgentChip({ agent, size = 'sm', className }: AgentChipProps) {
   const { tr } = useI18n();
   const zh = AGENT_LABEL_ZH[agent] ?? agent;
   const en = AGENT_LABEL_EN[agent] ?? agent;
+  const { tone } = personaVisual(agent);
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-0.5 rounded-md bg-indigo-500/10 text-indigo-300 font-mono',
+        'inline-flex items-center gap-0.5 rounded-md font-mono',
+        TONE_CLASS[tone],
         size === 'sm' ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-1 text-xs',
         className,
       )}

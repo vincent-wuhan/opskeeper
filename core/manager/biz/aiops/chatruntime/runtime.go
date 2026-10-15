@@ -1390,6 +1390,8 @@ func buildTurnErrorApology(err error) string {
 		strings.Contains(low, "maxstep"),
 		strings.Contains(low, "max iterations"):
 		return "我跑了很多轮工具调用还是没收敛 — 大概率是搜索路径走偏了。上面工具调用区已经有阶段性数据，可以直接看；也可以这样收敛：\n• 把问题缩小成「看 X 指标的 Y 现象」——给具体 metric / device 让我聚焦\n• 或者告诉我「已经看到 A / B / C，下一步从 D 这条线索查」\n• 也可以直接 @ 一个 specialist（如 @specialist-compute 看 CPU/内存）让专家接手"
+	case errors.Is(err, errEmptyModelReply):
+		return "本轮模型返回了空回复（没有文字也没有工具调用），所以没有结论给你——不是你的问题，也不是数据没查到。可以直接再发一次同样的问题，通常第二次就会正常返回；如果连续出现，说明这个模型在当前上下文长度下不稳定，试试新开会话。"
 	case strings.Contains(low, "context canceled"), strings.Contains(low, "context deadline"):
 		return "本次请求超时或被取消。一般是上游 LLM / 设备响应慢。请稍后重试，或换简单的问法。"
 	case strings.Contains(low, "budget"):

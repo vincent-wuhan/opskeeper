@@ -7,6 +7,7 @@ import { listFlowTools, type FlowToolMeta } from '@/api/flows';
 import { createSession, listModels, type LLMProvider } from '@/api/chat';
 import { ApiError } from '@/api/client';
 import { Modal } from '@/components/Modal';
+import { EmptyState, LoadingState } from '@/components/ui';
 import { ChatInput, type ModelSelection } from '@/components/ChatInput';
 import { useModelSelection } from '@/store/modelSelection';
 import { useI18n } from '@/i18n/locale';
@@ -365,13 +366,19 @@ function CatalogTab() {
             </div>
           )}
           {loading ? (
-            <div className="flex h-40 items-center justify-center text-sm text-zinc-500">{tr('加载中…', 'Loading…')}</div>
+            <LoadingState />
           ) : filtered.length === 0 ? (
-            <EmptyState hasItems={items.length > 0} />
+            <EmptyState
+              icon={Wrench}
+              title={items.length > 0 ? tr('没有匹配的技能', 'No matching skills') : tr('还没有 skill 注册', 'No skills registered yet')}
+              hint={items.length > 0
+                ? tr('换个关键字或清除分类筛选', 'Try a different keyword or clear filters')
+                : tr('设备注册自己的 capability 后会出现在这里', 'Skills appear here once a device registers its capabilities')}
+            />
           ) : (
-            <div className="overflow-hidden rounded-xl border border-zinc-800/60 bg-zinc-900/30">
+            <div className="overflow-hidden surface-card rounded-rk-lg">
               <table className="w-full text-sm">
-                <thead className="border-b border-zinc-800/60 bg-zinc-950/40 text-[11px] uppercase tracking-wider text-zinc-500">
+                <thead className="border-b border-zinc-800/60 bg-zinc-950/40 text-left text-[11px] uppercase tracking-wider text-zinc-500">
                   <tr className="whitespace-nowrap">
                     <th className="px-4 py-2.5 text-left">{tr('名称', 'Name')}</th>
                     <th className="px-4 py-2.5 text-left">{tr('运行位置', 'Runs on')}</th>
@@ -451,7 +458,19 @@ function CategoryChip({
 function SkillRow({ skill, displayName, onView }: { skill: SkillSummary; displayName?: string; onView(): void }) {
   const { tr } = useI18n();
   return (
-    <tr className="cursor-pointer transition-colors hover:bg-zinc-900/40" onClick={onView}>
+    <tr
+      role="button"
+      tabIndex={0}
+      className="cursor-pointer transition-colors hover:bg-zinc-900/40"
+      onClick={onView}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onView();
+        }
+      }}
+    >
       <td className="whitespace-nowrap px-4 py-1.5 pl-8">
         <span className="text-xs text-zinc-200">{displayName ?? skill.name}</span>
         <div className="font-mono text-[10px] text-zinc-600" title={skill.key}>
@@ -589,7 +608,7 @@ function SkillDetailModal({ skill, onClose }: { skill: SkillSummary; onClose(): 
           ) : (
             <div className="overflow-hidden rounded-md border border-zinc-800">
               <table className="w-full text-xs">
-                <thead className="border-b border-zinc-800 bg-zinc-950/40 text-[10px] uppercase tracking-wider text-zinc-500">
+                <thead className="border-b border-zinc-800/60 bg-zinc-950/40 text-left text-[11px] uppercase tracking-wider text-zinc-500">
                   <tr>
                     <th className="px-3 py-1.5 text-left">{tr('名称', 'Name')}</th>
                     <th className="px-3 py-1.5 text-left">{tr('类型', 'Type')}</th>
@@ -652,15 +671,3 @@ function SkillDetailModal({ skill, onClose }: { skill: SkillSummary; onClose(): 
   );
 }
 
-function EmptyState({ hasItems }: { hasItems: boolean }) {
-  const { tr } = useI18n();
-  return (
-    <div className="flex h-60 flex-col items-center justify-center gap-2 text-zinc-500">
-      <Wrench size={28} className="text-zinc-600" />
-      <div className="text-sm">{hasItems ? tr('没有匹配的技能', 'No matching skills') : tr('还没有 skill 注册', 'No skills registered yet')}</div>
-      <div className="text-[11px] text-zinc-600">
-        {hasItems ? tr('换个关键字或清除分类筛选', 'Try a different keyword or clear filters') : tr('设备注册自己的 capability 后会出现在这里', 'Skills appear here once a device registers its capabilities')}
-      </div>
-    </div>
-  );
-}

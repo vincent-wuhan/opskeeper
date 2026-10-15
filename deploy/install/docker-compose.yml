@@ -118,6 +118,9 @@ services:
       # Default 30 is fine until marketplace grows the bag past it.
       OPSKEEPER_TOOLBAG_DEFERRAL_THRESHOLD: ${OPSKEEPER_TOOLBAG_DEFERRAL_THRESHOLD:-30}
       # Knowledge base / RAG: qdrant vector store + embedding provider.
+      # The backend is pinned to qdrant because this package ships the
+      # qdrant service below; the default is the embedded chromem engine,
+      # which is for single-binary runs and ignores OPSKEEPER_QDRANT_URL.
       # OPSKEEPER_QDRANT_URL is the qdrant HTTP endpoint (in-cluster, no
       # external port). OPSKEEPER_EMBEDDING_PROVIDER picks the embedding
       # model: empty = "openai" path using OPSKEEPER_OPENAI_API_KEY +
@@ -125,6 +128,7 @@ services:
       # OpenAI /embeddings shape). The embedding model defaults to a
       # 1024-dim model; OPSKEEPER_EMBEDDING_DIM keeps the qdrant collection
       # in sync if you switch.
+      OPSKEEPER_VECTOR_BACKEND: ${OPSKEEPER_VECTOR_BACKEND:-qdrant}
       OPSKEEPER_QDRANT_URL: ${OPSKEEPER_QDRANT_URL:-http://qdrant:6333}
       OPSKEEPER_EMBEDDING_PROVIDER: ${OPSKEEPER_EMBEDDING_PROVIDER:-openai}
       OPSKEEPER_EMBEDDING_MODEL: ${OPSKEEPER_EMBEDDING_MODEL:-text-embedding-3-small}

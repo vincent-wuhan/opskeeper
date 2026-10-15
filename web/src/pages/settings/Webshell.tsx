@@ -32,7 +32,7 @@ import {
 } from '@/api/webshell';
 import { listUsers, type User } from '@/api/users';
 import { listEdges, type Edge } from '@/api/edges';
-import { Button, Card, Chip, EmptyState, PageHeader } from '@/components/ui';
+import { Button, Card, Chip, EmptyState, PageHeader, useConfirm } from '@/components/ui';
 import { useMe } from '@/store/me';
 import { cn } from '@/lib/cn';
 import { useI18n } from '@/i18n/locale';
@@ -183,12 +183,19 @@ export default function SettingsWebshell() {
     });
   }, [items, statusFilter, search, userMap, edgeMap]);
 
+  const confirm = useConfirm();
   const handleKill = useCallback(
     async (s: ShellSession) => {
-      if (!confirm(tr(
-        `确认踢出该会话？（${s.ssh_user} → 设备 #${s.device_id}）`,
-        `Kill this session? (${s.ssh_user} → device #${s.device_id})`,
-      ))) return;
+      const ok = await confirm({
+        title: tr('踢出会话', 'Kill session'),
+        message: tr(
+          `确认踢出该会话？（${s.ssh_user} → 设备 #${s.device_id}）`,
+          `Kill this session? (${s.ssh_user} → device #${s.device_id})`,
+        ),
+        confirmLabel: tr('踢出', 'Kill'),
+        danger: true,
+      });
+      if (!ok) return;
       setKillBusy(s.id);
       try {
         await killShellSession(s.id);
@@ -374,7 +381,7 @@ function SessionTable({
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-zinc-800/60 text-left text-[11px] uppercase tracking-wide text-zinc-500">
+          <tr className="border-b border-zinc-800/60 bg-zinc-950/40 text-left text-[11px] uppercase tracking-wider text-zinc-500">
             <th className="px-4 py-2.5 font-medium">{tr('状态', 'Status')}</th>
             <th className="px-4 py-2.5 font-medium">{tr('用户', 'User')}</th>
             <th className="px-4 py-2.5 font-medium">{tr('设备', 'Device')}</th>

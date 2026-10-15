@@ -29,13 +29,13 @@ type PatternHit struct {
 
 // QdrantPatternRepo 是 incident_pattern collection 的 Qdrant 持久化层。
 type QdrantPatternRepo struct {
-	client *qdrantx.Client
+	client qdrantx.Store
 	coll   *QdrantCollection
 }
 
 // NewQdrantPatternRepo 构造时 EnsureCollection + payload index（幂等）。
 // dim 由 Embedder.Dim() 传入；Qdrant collection 自动按 dim 建。
-func NewQdrantPatternRepo(ctx context.Context, c *qdrantx.Client, dim int) (*QdrantPatternRepo, error) {
+func NewQdrantPatternRepo(ctx context.Context, c qdrantx.Store, dim int) (*QdrantPatternRepo, error) {
 	if c == nil {
 		return nil, errors.New("chatdiagnose: NewQdrantPatternRepo requires qdrant client")
 	}

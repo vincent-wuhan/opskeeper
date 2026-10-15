@@ -56,6 +56,7 @@ func (c *FactsCollector) Collect(ctx context.Context, period, prev bizreport.Per
 	}
 	facts.Incidents = incidents
 	facts.Actions = c.collectActions(ctx, period)
+	facts.PendingApprovals = c.collectPendingApprovals(ctx)
 	facts.AlertCounts = c.collectAlertCounts(ctx, period, scope)
 	facts.Fleet = c.collectFleet(ctx)
 	facts.Changes = c.collectChanges(ctx, period)
@@ -365,6 +366,53 @@ func (c *FactsCollector) collectActions(ctx context.Context, p bizreport.Period)
 		Count(&safe).Error
 	sum.SafeTotal = int(safe)
 	return sum
+}
+
+// --- 待审批队列(approvals 表) ---
+
+// collectPendingApprovals 统计当前审批收件箱队列。与其它 collector 不同,
+// 它不按周期过滤:日报「待审批项」一节问的是此刻在等待什么,而不是窗口内
+// 发生了什么。查询失败(或表缺失)降级为零队列,与其它所有 collector 的
+// 处理姿态一致。
+//
+// 状态字面量 "pending" 必须与 model/approval.StatusPending 一致。store 按
+// 表名查询、不 import 审批模型,与 collectActions 对 chat_mutating_proposals
+// 的做法完全相同。
+func (c *FactsCollector) collectPendingApprovals(ctx context.Context) bizreport.PendingApprovals {
+	var out bizreport.PendingApprovals
+	var rows []struct {
+		SignersJSON *string
+	}
+	if err := c.db.WithContext(ctx).Table("approvals").
+		Select("signers_json").
+		Where("status = ?", "pending").
+		Find(&rows).Error; err != nil {
+		return out
+	}
+	out.Total = len(rows)
+	for _, r := range rows {
+		if signerCount(r.SignersJSON) == 0 {
+			out.Unsigned++
+		} else {
+			out.Partial++
+		}
+	}
+	return out
+}
+
+// signerCount 是解码后签署人数组的 len() —— 与 biz/approval.Sign 统计的数
+// 字相同(它存的是去重后的 Signer 列表)。它只是一个计数,不是对签署语义的
+// 重新解析:不读取、不重新解释任何签署者字段。列缺失/不可读计为零,与
+// approval 的 decodeSigners 所取的同一安全方向一致。
+func signerCount(raw *string) int {
+	if raw == nil || *raw == "" {
+		return 0
+	}
+	var arr []json.RawMessage
+	if err := json.Unmarshal([]byte(*raw), &arr); err != nil {
+		return 0
+	}
+	return len(arr)
 }
 
 func (c *FactsCollector) collectAlertCounts(ctx context.Context, p bizreport.Period, scope bizreport.Scope) map[string]int {

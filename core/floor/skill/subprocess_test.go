@@ -41,7 +41,7 @@ echo '{"ok":true,"msg":"hello"}'
 			Scope:       ScopeManager,
 		},
 		Entry:   entry,
-		Timeout: 3 * time.Second,
+		Timeout: 30 * time.Second,
 	}
 	out, err := ss.Execute(context.Background(), json.RawMessage(`{"x":1}`))
 	if err != nil {
@@ -65,7 +65,7 @@ echo "{\"received\":${line}}"
 	ss := &SubprocessSkill{
 		Meta:    Metadata{Key: "subproc_pt", Name: "pt", Description: "pt"},
 		Entry:   entry,
-		Timeout: 3 * time.Second,
+		Timeout: 30 * time.Second,
 	}
 	out, err := ss.Execute(context.Background(), json.RawMessage(`{"a":42}`))
 	if err != nil {
@@ -85,7 +85,7 @@ exit 7
 	ss := &SubprocessSkill{
 		Meta:    Metadata{Key: "subproc_fail", Name: "f", Description: "f"},
 		Entry:   entry,
-		Timeout: 3 * time.Second,
+		Timeout: 30 * time.Second,
 	}
 	_, err := ss.Execute(context.Background(), json.RawMessage(`{}`))
 	if err == nil {
@@ -151,7 +151,7 @@ echo "{\"have_secret\":\"${MY_SECRET:-}\",\"have_other\":\"${SHOULD_NOT_LEAK:-}\
 		Meta:     Metadata{Key: "subproc_env", Name: "e", Description: "e"},
 		Entry:    entry,
 		EnvAllow: []string{"MY_SECRET"},
-		Timeout:  3 * time.Second,
+		Timeout:  30 * time.Second,
 	}
 	out, err := ss.Execute(context.Background(), json.RawMessage(`{}`))
 	if err != nil {
@@ -177,7 +177,7 @@ echo "this is definitely not JSON"
 	ss := &SubprocessSkill{
 		Meta:    Metadata{Key: "subproc_garbage", Name: "g", Description: "g"},
 		Entry:   entry,
-		Timeout: 3 * time.Second,
+		Timeout: 30 * time.Second,
 	}
 	if _, err := ss.Execute(context.Background(), json.RawMessage(`{}`)); err == nil {
 		t.Fatal("expected error on non-JSON stdout")

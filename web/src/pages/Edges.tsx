@@ -5,6 +5,7 @@ import { Plus, RotateCw, Trash2, MoreVertical, Copy, Check, ExternalLink, Termin
 import { StatusPill } from '@/components/StatusPill';
 import { Modal } from '@/components/Modal';
 import { cn } from '@/lib/cn';
+import { useConfirm } from '@/components/ui';
 import { openMetricDrilldown } from '@/lib/drilldown';
 import { relativeTime } from '@/lib/format';
 import { usePoll } from '@/lib/usePoll';
@@ -123,6 +124,7 @@ export default function EdgesPage() {
   // the existing toast pipeline.
   const [pkgUpgradingId, setPkgUpgradingId] = useState<number | null>(null);
   const [toast, setToast] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+  const confirm = useConfirm();
   // Batch selection: set of device ids ticked via the per-row checkboxes.
   // The toolbar above the table appears whenever this is non-empty.
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -176,7 +178,13 @@ export default function EdgesPage() {
   }
 
   async function onRotate(id: number, name: string, accessKey: string) {
-    if (!confirm(tr(`确定要轮换 ${name} 的密钥？旧密钥将立即失效。`, `Rotate ${name}'s secret? The old key takes effect immediately becomes invalid.`))) return;
+    const ok = await confirm({
+      title: tr('轮换密钥', 'Rotate secret'),
+      message: tr(`确定要轮换 ${name} 的密钥？旧密钥将立即失效。`, `Rotate ${name}'s secret? The old key takes effect immediately becomes invalid.`),
+      confirmLabel: tr('轮换', 'Rotate'),
+      danger: true,
+    });
+    if (!ok) return;
     try {
       const r: RotateSecretResponse = await rotateSecret(id);
       setSecretReveal({
@@ -185,38 +193,44 @@ export default function EdgesPage() {
         secretKey: r.secret_key,
       });
     } catch (err) {
-      alert((err as Error).message || tr('轮换失败', 'Rotate failed'));
+      setToast({ kind: 'err', text: (err as Error).message || tr('轮换失败', 'Rotate failed') });
     }
   }
 
   async function onDelete(id: number, name: string) {
-    if (!confirm(tr(`确定要删除 ${name} 的 Edge？设备记录会保留。`, `Delete ${name}'s edge? The device record will remain.`))) return;
+    const ok = await confirm({
+      title: tr('删除 Edge', 'Delete edge'),
+      message: tr(`确定要删除 ${name} 的 Edge？设备记录会保留。`, `Delete ${name}'s edge? The device record will remain.`),
+      confirmLabel: tr('删除', 'Delete'),
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteEdge(id);
       void refresh();
     } catch (err) {
-      alert((err as Error).message || tr('删除失败', 'Delete failed'));
+      setToast({ kind: 'err', text: (err as Error).message || tr('删除失败', 'Delete failed') });
     }
   }
 
   async function onDeleteDevice(device: DeviceRow) {
     const name = device.name || device.hostname || `#${device.id}`;
     if (device.online) {
-      alert(tr(
-        '在线设备不可删除，请先让它离线。',
-        'Online devices cannot be deleted. Bring it offline first.',
-      ));
+      setToast({ kind: 'err', text: tr('在线设备不可删除，请先让它离线。', 'Online devices cannot be deleted. Bring it offline first.') });
       return;
     }
-    if (!confirm(tr(
-      `删除离线设备 ${name}？会同时清理关联 Edge 和密钥。`,
-      `Delete offline device ${name}? Linked Edges and credentials will also be cleaned.`,
-    ))) return;
+    const ok = await confirm({
+      title: tr('删除设备', 'Delete device'),
+      message: tr(`删除离线设备 ${name}？会同时清理关联 Edge 和密钥。`, `Delete offline device ${name}? Linked Edges and credentials will also be cleaned.`),
+      confirmLabel: tr('删除', 'Delete'),
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteDevice(device.id);
       void refresh();
     } catch (err) {
-      alert((err as Error).message || tr('删除设备失败', 'Delete device failed'));
+      setToast({ kind: 'err', text: (err as Error).message || tr('删除设备失败', 'Delete device failed') });
     }
   }
 
@@ -225,10 +239,12 @@ export default function EdgesPage() {
   // a toast. The actual swap happens on systemctl restart inside the
   // edge; we trust the auto-rollback gate on the far side.
   async function onPackageUpgrade(e: Edge) {
-    if (!confirm(tr(
-      `升级 ${e.name} 整包？Edge 会短暂重启；失败会自动回滚到当前版本。`,
-      `Upgrade ${e.name} package? Edge will briefly restart; failed upgrades auto-rollback to current version.`,
-    ))) return;
+    const ok = await confirm({
+      title: tr('整包升级', 'Package upgrade'),
+      message: tr(`升级 ${e.name} 整包？Edge 会短暂重启；失败会自动回滚到当前版本。`, `Upgrade ${e.name} package? Edge will briefly restart; failed upgrades auto-rollback to current version.`),
+      confirmLabel: tr('升级', 'Upgrade'),
+    });
+    if (!ok) return;
     setPkgUpgradingId(e.id);
     setToast(null);
     try {
@@ -312,10 +328,12 @@ export default function EdgesPage() {
   async function onBatchPackageUpgrade() {
     const ids = selectedHostEdgeIds;
     if (ids.length === 0) return;
-    if (!confirm(tr(
-      `升级选中的 ${ids.length} 个 Edge 整包？各 Edge 会短暂重启；失败会自动回滚。`,
-      `Upgrade package on ${ids.length} selected edge(s)? Each edge briefly restarts; failures auto-rollback.`,
-    ))) return;
+    const ok = await confirm({
+      title: tr('整包升级', 'Package upgrade'),
+      message: tr(`升级选中的 ${ids.length} 个 Edge 整包？各 Edge 会短暂重启；失败会自动回滚。`, `Upgrade package on ${ids.length} selected edge(s)? Each edge briefly restarts; failures auto-rollback.`),
+      confirmLabel: tr('升级', 'Upgrade'),
+    });
+    if (!ok) return;
     setBatchBusy(true);
     setToast(null);
     try {
@@ -333,10 +351,13 @@ export default function EdgesPage() {
   async function onBatchDelete() {
     const ids = selectedHostEdgeIds;
     if (ids.length === 0) return;
-    if (!confirm(tr(
-      `确定要删除选中的 ${ids.length} 个 Edge？设备记录会保留。`,
-      `Delete ${ids.length} selected edge(s)? Device records will remain.`,
-    ))) return;
+    const ok = await confirm({
+      title: tr('批量删除', 'Batch delete'),
+      message: tr(`确定要删除选中的 ${ids.length} 个 Edge？设备记录会保留。`, `Delete ${ids.length} selected edge(s)? Device records will remain.`),
+      confirmLabel: tr('删除', 'Delete'),
+      danger: true,
+    });
+    if (!ok) return;
     setBatchBusy(true);
     setToast(null);
     try {
@@ -430,9 +451,9 @@ export default function EdgesPage() {
             </div>
           )}
 
-          <div className="overflow-hidden rounded-xl border border-zinc-800/60 bg-zinc-900/40">
+          <div className="overflow-hidden surface-card rounded-rk-lg">
             <table className="w-full text-sm">
-              <thead className="border-b border-zinc-800/60 bg-zinc-950/40 text-[11px] uppercase tracking-wider text-zinc-500">
+              <thead className="border-b border-zinc-800/60 bg-zinc-950/40 text-left text-[11px] uppercase tracking-wider text-zinc-500">
                 <tr>
                   <th className="w-10 px-4 py-2.5 text-left">
                     <input

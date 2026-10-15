@@ -98,3 +98,16 @@ func TestParseAgentMd_FileMissing(t *testing.T) {
 		t.Fatal("expected error for missing file")
 	}
 }
+
+func TestParseAgentMd_WithAvatar(t *testing.T) {
+	ag, _, err := ParseAgentMd(fixtureAgent("with_avatar", "incident-investigator.md"))
+	if err != nil {
+		t.Fatalf("ParseAgentMd: %v", err)
+	}
+	if ag.Avatar != "🛰️" {
+		t.Errorf("Avatar = %q, want 🛰️", ag.Avatar)
+	}
+	if _, ok := ag.UnknownFields["avatar"]; ok {
+		t.Errorf("avatar leaked into UnknownFields: %v", ag.UnknownFields)
+	}
+}

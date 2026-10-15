@@ -4,6 +4,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type RefObject,
 } from 'react';
 import { X } from 'lucide-react';
 import { cn } from '@/lib/cn';
@@ -18,13 +19,15 @@ type Props = {
   size?: 'sm' | 'md' | 'lg' | 'xl';
   /** 允许用户拖动面板左右边缘调整宽度（长文阅读类弹窗用）。 */
   resizable?: boolean;
+  /** 打开时把键盘焦点移到此元素(如确认弹窗的「取消」)。省略时行为与现状一致。 */
+  initialFocusRef?: RefObject<HTMLElement | null>;
 };
 
 // 拖拽调宽边界：太窄排版崩坏，太宽盖满遮罩失去弹窗语义。
 const RESIZE_MIN_PX = 440;
 const RESIZE_MAX_VW = 0.95;
 
-export function Modal({ open, onClose, title, children, footer, size = 'md', resizable }: Props) {
+export function Modal({ open, onClose, title, children, footer, size = 'md', resizable, initialFocusRef }: Props) {
   const { tr } = useI18n();
   const panelRef = useRef<HTMLDivElement | null>(null);
   // null = 跟随 size 预设的 max-w；拖过一次之后宽度由用户接管。
@@ -32,6 +35,8 @@ export function Modal({ open, onClose, title, children, footer, size = 'md', res
 
   useEffect(() => {
     if (!open) return;
+    // 默认键盘焦点落到该元素(确认弹窗指向「取消」),满足「焦点不在肯定动作上」。
+    initialFocusRef?.current?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
@@ -41,7 +46,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md', res
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = '';
     };
-  }, [open, onClose]);
+  }, [open, onClose, initialFocusRef]);
 
   if (!open) return null;
 
@@ -88,7 +93,7 @@ export function Modal({ open, onClose, title, children, footer, size = 'md', res
         ref={panelRef}
         style={userWidth != null ? { width: userWidth, maxWidth: 'none' } : undefined}
         className={cn(
-          'anim-scale relative flex max-h-[90vh] w-full flex-col rounded-2xl border border-zinc-800 bg-zinc-900 shadow-2xl',
+          'anim-scale relative flex max-h-[90vh] w-full flex-col rounded-2xl surface-card shadow-pop',
           size === 'sm' && 'max-w-sm',
           size === 'md' && 'max-w-md',
           size === 'lg' && 'max-w-2xl',

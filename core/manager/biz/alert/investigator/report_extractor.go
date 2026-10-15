@@ -16,6 +16,17 @@ import (
 	alertmodel "github.com/vincent-wuhan/opskeeper/core/manager/model/alert"
 )
 
+// rootCauseMaxRunes bounds the operator-facing one-line conclusion so a
+// runaway model reply cannot overflow the column. It matches the
+// root_cause column width (model.InvestigationReport.RootCause, size
+// 1024) rather than being an independent guess: the previous cap of 200
+// truncated at write time, so the API, exports and downstream self-heal
+// rules all received a chopped root cause even though the column — and
+// the incident detail view — had room for more. Anything that wants a
+// shorter line for an inline summary should truncate on read, not make
+// the loss permanent for everyone else.
+const rootCauseMaxRunes = 1024
+
 // LLMSummarizer is the narrow seam used by the report-extractor step.
 //
 // It is PiG's own completer rather than a host-defined summarizer port: the
@@ -40,8 +51,15 @@ type extractedReport struct {
 // answer to produce structured ReadyFields. On any failure (LLM error,
 // JSON parse error, empty answer) it falls back to the PR-2 "first
 // paragraph" heuristic so the report still ships findings_md +
-// root_cause to operators. The fallback is silent to keep the alert
-// pipeline single-threaded happy-path simple.
+// root_cause to operators.
+//
+// The fallback is loud. It used to log at Info, which meant a timeout
+// produced a report that looked finished in the UI while its evidence
+// chain, pinpoint target and suggested actions were silently the zero
+// values — downstream self-heal rules consume exactly those fields.
+// Every degraded path now logs at Warn AND records why in
+// ConfidenceFactorsJSON, so the loss is visible to operators reading the
+// report and to anything consuming it as data.
 func (uc *Usecase) extractStructured(ctx context.Context, incident alertmodel.Incident, finalAnswer string, toolCallCount int, locale string) ReadyFields {
 	// related_alerts is independent of Pass-2 — it's a pure DB query
 	// over alert_incidents, so we run it unconditionally and reuse the
@@ -49,7 +67,7 @@ func (uc *Usecase) extractStructured(ctx context.Context, incident alertmodel.In
 	relatedJSON := uc.buildRelatedAlertsJSON(ctx, incident)
 
 	fallback := ReadyFields{
-		RootCause:             firstParagraphOneLine(finalAnswer, 200),
+		RootCause:             firstParagraphOneLine(finalAnswer, rootCauseMaxRunes),
 		AffectedWindow:        "",
 		PinpointedTargetJSON:  "{}",
 		RelatedAlertsJSON:     relatedJSON,
@@ -62,6 +80,9 @@ func (uc *Usecase) extractStructured(ctx context.Context, incident alertmodel.In
 	}
 
 	if uc.summarizer == nil {
+		uc.logger().Warn("report extractor has no summarizer; shipping un-structured report",
+			"reason", "no_summarizer")
+		fallback.ConfidenceFactorsJSON = degradedFactors("no_summarizer", "")
 		return fallback
 	}
 
@@ -85,23 +106,27 @@ func (uc *Usecase) extractStructured(ctx context.Context, incident alertmodel.In
 		Tune: func(o *pigai.StreamOptions) { o.Temperature = 0 },
 	})
 	if err != nil {
-		uc.logger().Info("report extractor LLM failed; falling back",
-			"err", err.Error())
+		uc.logger().Warn("report extractor LLM failed; falling back",
+			"err", err.Error(),
+			"timeout", uc.cfg.SummarizerTimeout.String())
+		fallback.ConfidenceFactorsJSON = degradedFactors("llm_error", err.Error())
 		return fallback
 	}
 
 	rawAnswer := strings.TrimSpace(pigmodel.ReplyText(reply))
 	jsonBlob := extractJSONBlob(rawAnswer)
 	if jsonBlob == "" {
-		uc.logger().Info("report extractor returned no JSON; falling back",
+		uc.logger().Warn("report extractor returned no JSON; falling back",
 			"answer_head", truncate(rawAnswer, 200))
+		fallback.ConfidenceFactorsJSON = degradedFactors("no_json_in_reply", "")
 		return fallback
 	}
 
 	var ex extractedReport
 	if err := json.Unmarshal([]byte(jsonBlob), &ex); err != nil {
-		uc.logger().Info("report extractor JSON parse failed; falling back",
+		uc.logger().Warn("report extractor JSON parse failed; falling back",
 			"err", err.Error(), "blob_head", truncate(jsonBlob, 200))
+		fallback.ConfidenceFactorsJSON = degradedFactors("json_parse_error", err.Error())
 		return fallback
 	}
 
@@ -114,7 +139,7 @@ func (uc *Usecase) extractStructured(ctx context.Context, incident alertmodel.In
 		ToolCallCount: toolCallCount,
 	}
 	if ex.RootCause != "" {
-		out.RootCause = clampRunes(ex.RootCause, 200)
+		out.RootCause = clampRunes(ex.RootCause, rootCauseMaxRunes)
 	} else {
 		out.RootCause = fallback.RootCause
 	}
@@ -405,6 +430,26 @@ func inferEvidenceDomain(tool string) string {
 	default:
 		return ""
 	}
+}
+
+// degradedFactors records, on the report itself, that structured
+// extraction did not happen. It lands in confidence_factors_json and
+// travels with the report wherever it is read, so a consumer can tell
+// "the model found no evidence" (extraction succeeded, empty evidence)
+// apart from "we never got an answer from the extractor" — a
+// distinction the zero values alone cannot express.
+func degradedFactors(reason, detail string) string {
+	out := map[string]string{"extraction": "fallback", "extraction_reason": reason}
+	if detail != "" {
+		out["extraction_error"] = detail
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		// map[string]string cannot fail to marshal; keep the literal
+		// rather than panicking inside an error path.
+		return `{"extraction":"fallback","extraction_reason":"` + reason + `"}`
+	}
+	return string(b)
 }
 
 func clampRunes(s string, max int) string {

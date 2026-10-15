@@ -48,6 +48,7 @@ type Config struct {
 	Skills         SkillsConfig
 	Redis          RedisConfig
 	Leader         LeaderConfig
+	Vector         VectorConfig
 }
 
 // SkillsConfig wires the manager-side subprocess skill loader. The
@@ -334,8 +335,28 @@ type RedisConfig struct {
 	// DB is the logical database index (0..15 by default).
 	// env: OPSKEEPER_REDIS_DB; default 0.
 	DB int
+	// Embedded runs Redis in-process instead of dialing an external one.
+	// Set by OPSKEEPER_EMBEDDED=true; the wiring site starts a miniredis
+	// and points Addr at it. With it on there is nothing to coordinate
+	// with across replicas, so leader election and cross-replica fan-out
+	// are pointless — see the OPSKEEPER_EMBEDDED note in Load.
+	Embedded bool
 	// Pool sizes the underlying go-redis connection pool.
 	Pool RedisPoolConfig
+}
+
+// VectorConfig selects the vector-store backend. Both implementations
+// serve the same port (qdrantx.Store); they differ in whether they need
+// an external service.
+type VectorConfig struct {
+	// Backend is "chromem" (embedded, no external service) or "qdrant"
+	// (HTTP client against a qdrant deployment).
+	// env: OPSKEEPER_VECTOR_BACKEND; default "chromem".
+	Backend string
+	// ChromemDir is where the embedded backend persists collections.
+	// ":memory:" keeps everything in RAM and loses it on restart.
+	// env: OPSKEEPER_CHROMEM_DIR; default "./data/chromem".
+	ChromemDir string
 }
 
 // RedisPoolConfig groups the pool knobs plumbed into redis.Options.
@@ -652,9 +673,17 @@ func Load() (*Config, error) {
 
 	c.Edge = *loadEdge()
 
+	// Embedded mode: one process, no external services. Redis runs
+	// in-process and the vector store defaults to the embedded engine, so
+	// a fresh checkout needs no containers. Each of these is only a
+	// *default* — an explicit OPSKEEPER_FRONTIER_DISABLED /
+	// OPSKEEPER_LEADER_ENABLED still wins, so an operator can keep leader
+	// election on while still using the embedded vector store.
+	embedded := getEnvBool("OPSKEEPER_EMBEDDED", false)
+
 	c.FrontierClient.Addr = getEnv("OPSKEEPER_FRONTIER_ADDR", "frontier:40011")
 	c.FrontierClient.ServiceName = getEnv("OPSKEEPER_FRONTIER_SERVICE_NAME", "opskeeper-manager")
-	c.FrontierClient.Disabled = getEnvBool("OPSKEEPER_FRONTIER_DISABLED", false)
+	c.FrontierClient.Disabled = getEnvBool("OPSKEEPER_FRONTIER_DISABLED", embedded)
 
 	c.Prom.Enabled = getEnvBool("OPSKEEPER_PROM_ENABLED", false)
 	c.Prom.URL = getEnv("OPSKEEPER_PROM_URL", "http://prometheus:9090")
@@ -714,14 +743,22 @@ func Load() (*Config, error) {
 	c.Redis.Addr = getEnv("OPSKEEPER_REDIS_ADDR", "127.0.0.1:6379")
 	c.Redis.Password = getEnv("OPSKEEPER_REDIS_PASSWORD", "")
 	c.Redis.DB = getEnvInt("OPSKEEPER_REDIS_DB", 0)
+	c.Redis.Embedded = embedded
 	c.Redis.Pool.MaxActive = getEnvInt("OPSKEEPER_REDIS_POOL_MAX_ACTIVE", 50)
 	c.Redis.Pool.MaxIdle = getEnvInt("OPSKEEPER_REDIS_POOL_MAX_IDLE", 10)
 	c.Redis.Pool.DialTimeout = getEnvDuration("OPSKEEPER_REDIS_POOL_DIAL_TIMEOUT", 5*time.Second)
 
+	// Vector store backend. Default "chromem" keeps a fresh checkout
+	// runnable with no vector service; set OPSKEEPER_VECTOR_BACKEND=qdrant
+	// to use an external qdrant deployment instead.
+	c.Vector.Backend = getEnv("OPSKEEPER_VECTOR_BACKEND", "chromem")
+	c.Vector.ChromemDir = getEnv("OPSKEEPER_CHROMEM_DIR", "./data/chromem")
+
 	// Leader election (platform-base-ha). Default Enabled is true so
 	// multi-replica HA deployments get leader election out of the box;
-	// unit tests and the embedded compose flip this off.
-	c.Leader.Enabled = getEnvBool("OPSKEEPER_LEADER_ENABLED", true)
+	// unit tests and the embedded compose flip this off. Embedded mode
+	// has no second replica to coordinate with, so it defaults off.
+	c.Leader.Enabled = getEnvBool("OPSKEEPER_LEADER_ENABLED", !embedded)
 	c.Leader.TTL = getEnvDuration("OPSKEEPER_LEADER_TTL", 15*time.Second)
 	c.Leader.RenewInterval = getEnvDuration("OPSKEEPER_LEADER_RENEW_INTERVAL", 5*time.Second)
 	c.Leader.StartTimeout = getEnvDuration("OPSKEEPER_LEADER_START_TIMEOUT", 30*time.Second)

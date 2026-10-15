@@ -82,11 +82,17 @@ func connectAndRegister(
 	return func() { _ = a.Close(context.Background()) }, nil
 }
 
-// Sources is the single list of adapter families this build can register.
+// firstPartySources is the literal first-party family set.
+//
+// It is the list Sources() derives from. Sources() no longer returns this
+// slice directly: it activates each family as a microkernel plugin
+// (KindAdapter) and reads the set back out of the registry, so the path
+// from "family" to "Source" is the same path a third-party adapter family
+// takes. This literal is what each family contributes.
 //
 // Order is the order the families are reported and, for the connected path,
 // the order they are wired at boot.
-func Sources() []Source {
+func firstPartySources() []Source {
 	return []Source{
 		{
 			Name: FamilyPostgres,

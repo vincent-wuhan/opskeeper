@@ -2,7 +2,7 @@ apiVersion: agentteams.agentteam/v1alpha1
 kind: AgentTeamPlugin
 metadata:
   name: opskeeper-teamharness
-  version: 1.0.72
+  version: 1.0.75
   description: |
     Opskeeper TeamHarness plugin — provides six deployed ops actors
     (alerter/investigator/reviewer/repairer/verifier/reporter)
@@ -164,6 +164,18 @@ metadata:
     the accompanying backend change is the LLM gateway streaming
     delta.tool_calls fix, which lives in the Go tree and does not alter this
     plugin's runtime behaviour. No runtime change in this release.
+    v1.0.73 re-aligns the plugin version with the release boundary. The
+    accompanying backend change is the node agent plugin tool result fix,
+    which lives in the Go tree and does not alter this plugin's runtime
+    behaviour. No runtime change in this release.
+    v1.0.74 re-aligns the plugin version with the release boundary. The
+    accompanying backend change is the node-side process ranking, which lives
+    in the Go tree and does not alter this plugin's runtime behaviour. No
+    runtime change in this release.
+    v1.0.75 re-aligns the plugin version with the release boundary. The
+    accompanying backend change is the bounded node-side file inventory,
+    which lives in the Go tree and does not alter this plugin's runtime
+    behaviour. No runtime change in this release.
     v1.0.68 preserves the human Matrix approval boundary and forwards approved
     final-demo incidents to a deterministic Manager recovery API, avoiding
     quota-sensitive LLM retries after the operator has already approved. It

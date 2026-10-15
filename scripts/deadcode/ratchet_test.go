@@ -320,10 +320,24 @@ import (
 // "one more message" from "the tool result returned to the model". Both live
 // in non-test files because external e2e packages must import them, and both
 // are therefore test-only by this walk's definition.
+// 866 → 883 / 599 / 284 as of the microkernel plugin architecture: the
+// extension points are registration APIs whose in-tree callers do not exist
+// by design. RegisterProviderFactory, RegisterChannel, RegisterBackend,
+// RegisterProvider, RegisterDialect, RegisterWebSearchProvider,
+// RegisterDialect, kernel.Deactivate and the two hosts' RegisterActivator
+// exist so a plugin package can contribute a capability at its own startup —
+// a third party registers from outside this tree, so no first-party call
+// site can or should name them. Each is exercised by its registry's tests
+// (duplicate refusal, nil refusal, register-then-resolve), which is where
+// the +16 test-only symbols come from; the +1 dead symbol is
+// kernel.ErrNotLive, the sentinel a caller that expected a package to be
+// live checks against. The next deletion pass should look at whether the
+// first datasource/adapter third-party package has landed and can absorb the
+// Register* surface into real call sites.
 const (
-	unreachableBudget    = 866
-	deadSymbolBudget     = 598
-	testOnlySymbolBudget = 268
+	unreachableBudget    = 883
+	deadSymbolBudget     = 599
+	testOnlySymbolBudget = 284
 )
 
 // TestTheUnreachableSymbolCountNeverGrows is the gate decision 199 declined to

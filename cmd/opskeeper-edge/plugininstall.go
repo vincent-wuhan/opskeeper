@@ -835,7 +835,7 @@ func (s *pluginStore) installedDirs() ([]installedPackage, error) {
 // and a review can fail for a reason that is not the package's fault —
 // an unreadable trust store, a policy that changed under it.
 func (s *pluginStore) activeInfos() []ports.PluginInfo {
-	settings := filepath.Join(s.workDir, agentConfigDirName(), agentSettingsFile)
+	settings := agentSettingsPath(s.workDir)
 	body, err := os.ReadFile(settings)
 	if err != nil {
 		// No list has been published yet, so the node has told the agent

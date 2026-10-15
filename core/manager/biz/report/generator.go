@@ -456,6 +456,11 @@ func factsJSON(f *ReportFacts) string {
 // extractJSON strips a leading ```json fence / trailing fence and any
 // prose around a single top-level object, so a chatty model still
 // yields parseable content. Mirrors the lenient parse in query_translate.
+// On top of the structural trim it repairs the two syntax defects MiniMax-M3
+// has actually produced in production reports — a stray invalid-UTF-8 byte
+// mid-document and a trailing comma before a closing bracket — either of
+// which used to take a daily report from HTTP 202 straight to status=failed
+// ("content unmarshal: invalid character ...").
 func extractJSON(raw string) string {
 	s := strings.TrimSpace(raw)
 	if i := strings.Index(s, "```"); i >= 0 {
@@ -475,7 +480,49 @@ func extractJSON(raw string) string {
 	if j := strings.LastIndexByte(s, '}'); j >= 0 && j+1 < len(s) {
 		s = s[:j+1]
 	}
+	s = strings.ToValidUTF8(s, "")
+	s = stripTrailingCommas(s)
 	return s
+}
+
+// stripTrailingCommas removes commas that directly precede a closing } or ]
+// outside of string literals. A plain regex would also rewrite "a, }" inside
+// a string value, so the scan tracks quote/escape state.
+func stripTrailingCommas(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	inStr, esc := false, false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if inStr {
+			b.WriteByte(c)
+			switch {
+			case esc:
+				esc = false
+			case c == '\\':
+				esc = true
+			case c == '"':
+				inStr = false
+			}
+			continue
+		}
+		if c == '"' {
+			inStr = true
+			b.WriteByte(c)
+			continue
+		}
+		if c == ',' {
+			j := i + 1
+			for j < len(s) && (s[j] == ' ' || s[j] == '\t' || s[j] == '\n' || s[j] == '\r') {
+				j++
+			}
+			if j < len(s) && (s[j] == '}' || s[j] == ']') {
+				continue
+			}
+		}
+		b.WriteByte(c)
+	}
+	return b.String()
 }
 
 func truncate(s string, n int) string {

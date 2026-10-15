@@ -67,26 +67,20 @@ func NewRouter(enabled bool, timeout time.Duration, defaults []string, senders .
 // NewFromConfig constructs the configured channel adapters. Disabled
 // channels, and webhook-style channels without URLs, are skipped.
 //
+// The construction goes through the channel registry (see registry.go):
+// specsFromConfig turns the process configuration into specs, and
+// NewRouterFromSpecs builds each one through whatever factory is registered
+// for its type. A channel type a package registers is built from the same
+// spec as a built-in, which is what makes "add a channel" a registration
+// rather than an edit to this function.
+//
 // The "log" channel type was removed in 2026-05; manager stdout is
 // ephemeral (container restart, log rotation) and the alert_events
 // table already records every notification attempt with status —
 // that's the real audit trail. Operators looking for delivery history
 // should use 设置 → 告警事件 instead.
 func NewFromConfig(cfg config.NotificationConfig, log *slog.Logger) *Router {
-	var senders []Sender
-	if cfg.Webhook.Enabled && cfg.Webhook.URL != "" {
-		senders = append(senders, NewGenericWebhookSender(cfg.Webhook.Name, cfg.Webhook.URL, cfg.Webhook.Secret, nil))
-	}
-	if cfg.Slack.Enabled && cfg.Slack.URL != "" {
-		senders = append(senders, NewSlackSender(cfg.Slack.Name, cfg.Slack.URL, nil))
-	}
-	if cfg.Feishu.Enabled && cfg.Feishu.URL != "" {
-		senders = append(senders, NewFeishuSender(cfg.Feishu.Name, cfg.Feishu.URL, cfg.Feishu.Secret, nil))
-	}
-	if cfg.DingTalk.Enabled && cfg.DingTalk.URL != "" {
-		senders = append(senders, NewDingTalkSender(cfg.DingTalk.Name, cfg.DingTalk.URL, cfg.DingTalk.Secret, nil))
-	}
-	return NewRouter(cfg.Enabled, cfg.Timeout, cfg.DefaultChannels, senders...)
+	return NewRouterFromSpecs(cfg.Enabled, cfg.Timeout, cfg.DefaultChannels, specsFromConfig(cfg), log)
 }
 
 // Send delivers msg to the explicit channels, or to the router defaults when

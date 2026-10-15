@@ -32,7 +32,7 @@ import {
 import { getToken } from '@/store/auth';
 import { usePermissions } from '@/store/me';
 import { tr as trInline, useI18n } from '@/i18n/locale';
-import { Card, EmptyState, PageHeader } from '@/components/ui';
+import { Card, EmptyState, PageHeader, useConfirm } from '@/components/ui';
 import { Shield } from 'lucide-react';
 
 type ConnectInputs = {
@@ -400,11 +400,18 @@ function DeviceShellBody() {
     [deviceId, openConnection],
   );
 
-  const handleManualClose = useCallback(() => {
-    if (!confirm(tr('确定要关闭终端会话？', 'Close this terminal session?'))) return;
+  const confirm = useConfirm();
+  const handleManualClose = useCallback(async () => {
+    const ok = await confirm({
+      title: tr('关闭终端会话', 'Close terminal session'),
+      message: tr('确定要关闭终端会话？', 'Close this terminal session?'),
+      confirmLabel: tr('关闭', 'Close'),
+      danger: true,
+    });
+    if (!ok) return;
     teardown();
     navigate('/devices');
-  }, [navigate, teardown]);
+  }, [navigate, teardown, confirm]);
 
   const handleReconnect = useCallback(() => {
     teardown();

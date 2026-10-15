@@ -18,7 +18,7 @@ export default function SettingsPreferences() {
   return (
     <div className="space-y-4">
       {/* Language */}
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <section className="surface-card rounded-rk-lg p-5">
         <div className="mb-3 flex items-center gap-2">
           <Globe size={14} className="text-zinc-400" />
           <h2 className="text-sm font-medium text-zinc-100">{tr('语言', 'Language')}</h2>
@@ -53,7 +53,7 @@ export default function SettingsPreferences() {
       </section>
 
       {/* Theme: system / light / dark */}
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <section className="surface-card rounded-rk-lg p-5">
         <div className="mb-3 flex items-center gap-2">
           <Sun size={14} className="text-zinc-400" />
           <h2 className="text-sm font-medium text-zinc-100">{tr('主题', 'Theme')}</h2>
@@ -95,7 +95,7 @@ export default function SettingsPreferences() {
       </section>
 
       {/* Accent color */}
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <section className="surface-card rounded-rk-lg p-5">
         <div className="mb-3 flex items-center gap-2">
           <Palette size={14} className="text-zinc-400" />
           <h2 className="text-sm font-medium text-zinc-100">{tr('主题色', 'Accent color')}</h2>
@@ -156,7 +156,7 @@ export default function SettingsPreferences() {
       </section>
 
       {/* Other preferences placeholder */}
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <section className="surface-card rounded-rk-lg p-5">
         <div className="mb-3 flex items-center gap-2">
           <Gauge size={14} className="text-zinc-400" />
           <h2 className="text-sm font-medium text-zinc-100">{tr('其它偏好', 'Other preferences')}</h2>

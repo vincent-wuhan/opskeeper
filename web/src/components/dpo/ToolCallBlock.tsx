@@ -37,7 +37,7 @@ export function ToolCallBlock({
   className,
 }: ToolCallBlockProps) {
   return (
-    <div className={cn('px-3 py-2 flex items-start gap-2', className)}>
+    <div className={cn('rounded-rk-md px-3 py-2 flex items-start gap-2', className)}>
       <PhaseStatusDot status={status} className="mt-1.5" />
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">

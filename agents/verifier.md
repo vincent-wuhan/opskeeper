@@ -1,5 +1,6 @@
 ---
 name: verifier
+avatar: ✅
 description: 恢复验证 worker，以 recovery.verify 为事实源，并在争议时查询历史 SOP
 when_to_use: |
   coordinator 在 repairer 完成修复后 spawn 本 worker：

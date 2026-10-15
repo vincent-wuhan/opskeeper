@@ -6,6 +6,7 @@ import {
   Folder,
   GitBranch,
   Globe,
+  LayoutGrid,
   Loader2,
   Package,
   PackagePlus,
@@ -17,17 +18,22 @@ import {
 import { useAuth } from '@/store/auth';
 import { ApiError } from '@/api/client';
 import {
+  catalogInstallSource,
   classifyError,
+  getMarketplaceCatalog,
   installPack,
+  listRegistries,
   uploadPack,
   listInstalledPacks,
   uninstallPack,
+  type CatalogEntry,
   type CapabilityDeclaration,
   type InstallResponse,
   type InstallSource,
   type InstalledPack,
   type LoadWarning,
   type MarketplaceErrorKind,
+  type RegistryEntry,
   type SourceType,
 } from '@/api/marketplace';
 import { Modal } from '@/components/Modal';
@@ -167,6 +173,8 @@ export default function SettingsMarketplace() {
         onToggleExpand={toggleExpand}
       />
 
+      <CatalogSection packs={packs} isAdmin={isAdmin} onInstalled={refresh} />
+
       <InstallCard
         installing={installing}
         onInstall={handleInstall}
@@ -200,6 +208,217 @@ export default function SettingsMarketplace() {
         </div>
       )}
     </div>
+  );
+}
+
+// ---------- 可安装目录 (skill catalog) --------------------------------------
+
+function CatalogSection({
+  packs,
+  isAdmin,
+  onInstalled,
+}: {
+  packs: InstalledPack[];
+  isAdmin: boolean;
+  onInstalled: () => void | Promise<void>;
+}) {
+  const { tr } = useI18n();
+  const [items, setItems] = useState<CatalogEntry[] | null>(null);
+  const [registries, setRegistries] = useState<RegistryEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const [cat, regs] = await Promise.all([
+        getMarketplaceCatalog(),
+        listRegistries().catch(() => [] as RegistryEntry[]),
+      ]);
+      setItems(cat.items);
+      setRegistries(regs);
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : (e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const installedIds = useMemo(() => new Set(packs.map((p) => p.pack_id)), [packs]);
+
+  return (
+    <Card className="p-5">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <LayoutGrid size={14} className="text-zinc-400" />
+          <h2 className="text-sm font-medium text-zinc-100">{tr('可安装目录', 'Installable catalog')}</h2>
+        </div>
+        <Button onClick={() => void load()} disabled={loading} variant="ghost">
+          {loading ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+          {tr('刷新', 'Refresh')}
+        </Button>
+      </div>
+
+      {err ? (
+        <div className="flex items-center justify-between gap-2 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+          <span>{tr('目录加载失败：', 'Failed to load catalog: ')}{err}</span>
+          <Button onClick={() => void load()} variant="ghost">{tr('重试', 'Retry')}</Button>
+        </div>
+      ) : loading && !items ? (
+        <div className="flex h-20 items-center justify-center text-sm text-zinc-500">
+          <Loader2 size={14} className="mr-2 animate-spin" /> {tr('加载中…', 'Loading…')}
+        </div>
+      ) : !items || items.length === 0 ? (
+        <EmptyState
+          title={tr('目录里还没有可安装的包', 'Nothing offered in the catalog yet')}
+          className="flex h-24 flex-col items-center justify-center gap-2 text-center"
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {items.map((e) => (
+            <CatalogCard
+              key={e.name}
+              entry={e}
+              installed={installedIds.has(e.name)}
+              installSource={catalogInstallSource(e, registries)}
+              isAdmin={isAdmin}
+              onInstalled={onInstalled}
+            />
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function CatalogCard({
+  entry,
+  installed,
+  installSource,
+  isAdmin,
+  onInstalled,
+}: {
+  entry: CatalogEntry;
+  installed: boolean;
+  installSource: InstallSource | null;
+  isAdmin: boolean;
+  onInstalled: () => void | Promise<void>;
+}) {
+  const { tr } = useI18n();
+  const [phase, setPhase] = useState<'idle' | 'confirm' | 'installing' | 'failed'>('idle');
+  const [failText, setFailText] = useState<string | null>(null);
+  const isRegistry = entry.origin === 'registry';
+  // registry 行但无法唯一归因(0 或多于 1 个可用 registry)→ 不可安装。
+  const unresolvable = isRegistry && installSource === null;
+
+  const runInstall = useCallback(async () => {
+    if (!installSource) return;
+    setPhase('installing');
+    setFailText(null);
+    try {
+      await installPack(installSource);
+      setPhase('idle');
+      // 重新拉取 installed,对账键 pack_id===entry.name 命中 → 卡片转「已安装」。
+      await onInstalled();
+    } catch (e) {
+      setFailText(errorToast(e, 'install'));
+      setPhase('failed'); // 失败不刷新,停在卡片上,用户留在本页
+    }
+  }, [installSource, onInstalled]);
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-zinc-800/60 bg-zinc-950/40 p-3">
+      <div className="flex items-center gap-2">
+        <Package size={13} className="text-zinc-500" />
+        <span className="font-mono text-xs text-zinc-100">{entry.name}</span>
+        <Chip className="font-mono">v{entry.version}</Chip>
+        {entry.origin ? <span className="text-[11px] text-zinc-500">{entry.origin}</span> : null}
+      </div>
+      <div className="flex flex-wrap gap-1.5 text-[11px] text-zinc-500">
+        <Chip dense>{entry.safety_level}</Chip>
+        <Chip dense>{entry.capability}</Chip>
+        <Chip dense>{tr(`${entry.tool_count} 工具`, `${entry.tool_count} tool(s)`)}</Chip>
+        <Chip dense>{entry.targets.join(' / ')}</Chip>
+      </div>
+      <div className="mt-auto flex items-center justify-end gap-2">
+        {installed ? (
+          <Chip tone="success" dense>{tr('已安装', 'Installed')}</Chip>
+        ) : !isRegistry ? (
+          <span className="text-[11px] text-zinc-600">{tr('本地已有', 'Local — already on disk')}</span>
+        ) : unresolvable ? (
+          <span className="text-[11px] text-zinc-600">{tr('无法确定来源 registry', 'Cannot attribute to a registry')}</span>
+        ) : !isAdmin ? (
+          <span className="text-[11px] text-zinc-600">{tr('仅 admin 可执行安装', 'Admin only')}</span>
+        ) : phase === 'installing' ? (
+          <Button variant="subtle" disabled>
+            <Loader2 size={11} className="animate-spin" />
+            {tr('安装中…', 'Installing…')}
+          </Button>
+        ) : phase === 'failed' ? (
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-red-300">{failText}</span>
+            {/* 重试同样走应用内确认,保持「零 window.confirm」不变量 */}
+            <Button variant="subtle" onClick={() => setPhase('confirm')}>{tr('重试', 'Retry')}</Button>
+          </div>
+        ) : (
+          <Button variant="subtle" onClick={() => setPhase('confirm')}>{tr('安装', 'Install')}</Button>
+        )}
+      </div>
+
+      <InstallConfirmModal
+        open={phase === 'confirm'}
+        entry={entry}
+        registry={installSource?.registry ?? ''}
+        onCancel={() => setPhase('idle')}
+        onConfirm={() => void runInstall()}
+      />
+    </div>
+  );
+}
+
+function InstallConfirmModal({
+  open,
+  entry,
+  registry,
+  onCancel,
+  onConfirm,
+}: {
+  open: boolean;
+  entry: CatalogEntry;
+  registry: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const { tr } = useI18n();
+  return (
+    <Modal
+      open={open}
+      onClose={onCancel}
+      size="sm"
+      title={tr(`安装 ${entry.name}?`, `Install ${entry.name}?`)}
+      footer={
+        <>
+          <Button onClick={onCancel} variant="ghost">{tr('取消', 'Cancel')}</Button>
+          <Button onClick={onConfirm} variant="subtle">
+            <PlugZap size={12} /> {tr('确认安装', 'Install')}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-2 text-sm text-zinc-300">
+        <div className="font-mono text-xs text-zinc-100">
+          {entry.name} <span className="text-zinc-500">v{entry.version}</span>
+        </div>
+        <p className="text-[11px] text-zinc-500">
+          {tr(`来源 registry：${registry}`, `Registry: ${registry}`)}
+        </p>
+      </div>
+    </Modal>
   );
 }
 

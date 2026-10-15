@@ -2,7 +2,9 @@ package ledgercheck
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -34,7 +36,45 @@ var managerSizeRE = regexp.MustCompile(`(\d[\d,]*) 个 Go 文件 / ([\d,]+) 行`
 var managerContextRE = regexp.MustCompile(`(?i)manager`)
 
 func TestTheManagerSizeInTheProgressSectionIsTheTreesOwn(t *testing.T) {
-	progress := quotedRE.ReplaceAllString(progressSection(t), "")
+	assertManagerSizesAreTreesOwn(t, quotedRE.ReplaceAllString(progressSection(t), ""))
+}
+
+// The same number, stated in a second document.
+//
+// docs/opskeeper2-edge-autonomy-plan.md answers "how much of the control plane
+// is left to split" in its own words, and it is the document an operator
+// reads before deciding whether that split is worth doing. It drifted to
+// 984 / 252,529 while the tree was at 993 / 255,078, and nothing noticed —
+// because the fifteenth gate only looked at the ledger, and the ledger was
+// correct.
+//
+// A number stated in two places is two numbers, and only one of them was
+// checked. That is not this gate's job to police in general (a document may
+// legitimately quote a past reading, which is why it only claims a sentence
+// whose surrounding window says "manager"); it is this gate's job to make
+// sure the *current* claim in either document is the tree's.
+//
+// This file is not stripped of backticks: it is a short document with no
+// code fences quoting a manager size, and a quoted example here would be a
+// number a reader might copy. If that changes, the failure will be visible in
+// this test rather than silent.
+func TestTheManagerSizeInTheEdgeAutonomyPlanIsTheTreesOwn(t *testing.T) {
+	const rel = "docs/opskeeper2-edge-autonomy-plan.md"
+	raw, err := os.ReadFile(filepath.Join(repoRoot, rel))
+	if err != nil {
+		t.Fatalf("reading %s: %v", rel, err)
+	}
+	assertManagerSizesAreTreesOwn(t, string(raw))
+}
+
+// assertManagerSizesAreTreesOwn is the shared body.
+//
+// It runs the two commands the ledger row names, rather than reimplementing
+// them: a second way of counting the same tree is a second thing that can
+// disagree, which is the reason this gate exists.
+func assertManagerSizesAreTreesOwn(t *testing.T, text string) {
+	t.Helper()
+	progress := text
 
 	// find core/manager -name '*.go' | wc -l
 	files, err := runAtRepoRoot(t, "sh", "-c", `find core/manager -name '*.go' | wc -l`)
@@ -80,7 +120,7 @@ func TestTheManagerSizeInTheProgressSectionIsTheTreesOwn(t *testing.T) {
 		gotLines := strings.ReplaceAll(match[2], ",", "")
 		if gotFiles != wantFiles || gotLines != wantLines {
 			problems = append(problems, fmt.Sprintf(
-				"the progress section states %s Go files / %s lines for the manager, but the tree has %s / %s; "+
+				"this document states %s Go files / %s lines for the manager, but the tree has %s / %s; "+
 					"re-run the two commands the row itself names and update it — the denominator grows on its own "+
 					"and has been re-taken three times for that reason",
 				match[1], match[2], wantFiles, wantLines))

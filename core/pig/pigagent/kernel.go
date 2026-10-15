@@ -236,7 +236,38 @@ func (k *Kernel) Run(ctx context.Context, req ports.AgentRequest) (*TurnResult, 
 		return failTurn(mapper, sink, runErr, errors.Is(runErr, context.DeadlineExceeded))
 	}
 
-	return gate.result(messages), nil
+	res := gate.result(messages)
+	if perr := providerFailure(res.Reply); perr != nil {
+		return failTurn(mapper, sink, perr, false)
+	}
+	return res, nil
+}
+
+// providerFailure recovers the provider's own error text from a turn that
+// PiG reported as finished.
+//
+// streamAssistantResponse handles a mid-stream provider failure by
+// synthesising an assistant message with StopReason error and the transport
+// error in ErrorMessage, emitting it, and returning a nil Go error — so
+// checkRunEnd sees a clean run and Run hands back err == nil. The turn then
+// reaches the host as a normal end_turn whose only content is the error text.
+// That is how a MiniMax quota exhaustion (HTTP 429) reached a console as a
+// finished answer with no answer in it, and why the host cannot tell it from
+// a model that simply stopped: both arrive as an empty end_turn.
+//
+// Only a message the loop actually settled on is inspected — the last
+// assistant message is the turn's reply, and an earlier error the provider
+// retried through is history, not the outcome. A message with a stop reason
+// but no error text carries nothing to report, so it is left alone.
+func providerFailure(reply *agent.AssistantMessage) error {
+	if reply == nil || reply.ErrorMessage == "" {
+		return nil
+	}
+	switch reply.StopReason {
+	case ai.StopReasonError, ai.StopReasonAborted:
+		return errors.New(reply.ErrorMessage)
+	}
+	return nil
 }
 
 // failTurn emits the terminal error frame and builds the matching result.

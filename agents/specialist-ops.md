@@ -1,5 +1,6 @@
 ---
 name: specialist-ops
+avatar: 🧰
 description: 运维 / 服务运营专家——服务状态 / 启停重启 / 部署 / 配置 / 容量与计划任务
 when_to_use: |
   当任务是"具体一台机器上的某个服务 / 进程 / 计划任务怎么样了 / 怎么处理"时由 coordinator 派给我：

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/MichaelKinsy/PiG/extensions/sdk"
 	"github.com/vincent-wuhan/opskeeper/core/wire"
 )
 
@@ -178,11 +179,21 @@ func TestACallIsCarriedToTheHostAndItsResultReturned(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	// The result is decoded, not passed through as bytes, so it renders
-	// the same way in a transcript, a tool card and a packed run.
-	body, ok := out.(map[string]any)
+	// The payload is handed back in the shape the agent runtime reads a
+	// tool result in -- content plus details -- not in the shape the tool
+	// happens to produce. Answering with the tool's own object is decoded
+	// into a result with no content at all, and the model is told
+	// "(no tool output)".
+	res, ok := out.(sdk.ToolResult)
 	if !ok {
-		t.Fatalf("result is %T, want a decoded object", out)
+		t.Fatalf("result is %T, want sdk.ToolResult", out)
+	}
+	if !strings.Contains(res.Content, `"message":"Out of memory: Killed"`) {
+		t.Errorf("content = %q, want the host's payload as the result text", res.Content)
+	}
+	body, ok := res.Details.(map[string]any)
+	if !ok {
+		t.Fatalf("details is %T, want a decoded object", res.Details)
 	}
 	entries, ok := body["entries"].([]any)
 	if !ok || len(entries) != 1 {
@@ -282,8 +293,12 @@ func TestAToolThatReturnsNothingIsAnEmptyResultNotAFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("an empty result became a failure: %v", err)
 	}
-	if body, ok := out.(map[string]any); !ok || len(body) != 0 {
-		t.Errorf("result = %#v, want an empty object", out)
+	res, ok := out.(sdk.ToolResult)
+	if !ok {
+		t.Fatalf("result is %T, want sdk.ToolResult", out)
+	}
+	if strings.TrimSpace(res.Content) != "{}" {
+		t.Errorf("content = %q, want an empty object", res.Content)
 	}
 }
 

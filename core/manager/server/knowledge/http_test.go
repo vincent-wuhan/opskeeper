@@ -189,16 +189,34 @@ func (idEmbed) Dim() int { return 8 }
 func (idEmbed) Embed(_ context.Context, texts []string) ([][]float32, error) {
 	out := make([][]float32, len(texts))
 	for i := range out {
-		out[i] = make([]float32, 8) // ranking is irrelevant for these e2e checks
+		// A unit vector, not zeros. The embedded backend normalizes before
+		// scoring, and a zero vector normalizes to NaN — which then sorts
+		// arbitrarily and fails every threshold. The fake store ignored
+		// vectors entirely, so nothing caught it until a real engine did.
+		v := make([]float32, 8)
+		v[i%8] = 1
+		out[i] = v
 	}
 	return out, nil
 }
 
 // ---- harness ----
 
+// pointCounter is the one observation the e2e tests make of the store: how
+// many points it holds. Both the memVec fake and the embedded backend can
+// answer it, so the same assertions run against either.
+type pointCounter interface{ count() int }
+
 func newE2E(t *testing.T) (http.Handler, *memVec) {
 	t.Helper()
 	store := newMemVec()
+	return newE2EWith(t, store), store
+}
+
+// newE2EWith builds the knowledge stack over whatever vector store it is
+// handed, for the tests that exercise a real backend rather than the fake.
+func newE2EWith(t *testing.T, store qdrantx.Store) http.Handler {
+	t.Helper()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	uc, err := biz.New(context.Background(), nil, store, idEmbed{}, t.TempDir(), log)
 	if err != nil {
@@ -206,7 +224,7 @@ func newE2E(t *testing.T) (http.Handler, *memVec) {
 	}
 	r := chi.NewRouter()
 	NewHandler(uc).Register(r)
-	return r, store
+	return r
 }
 
 // req fires one request and returns the recorder. body==nil sends no body;

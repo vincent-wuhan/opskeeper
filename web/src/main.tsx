@@ -5,6 +5,7 @@ import App from './App';
 import './styles/index.css';
 import { applyAccentOnBoot } from './store/theme';
 import { applyThemeOnBoot } from './store/mode';
+import { ensureAgentsOnBoot } from './store/agents';
 import { getLocale } from './i18n/locale';
 
 // Apply persisted theme + accent + lang before first paint. Each is
@@ -12,6 +13,8 @@ import { getLocale } from './i18n/locale';
 applyThemeOnBoot();
 applyAccentOnBoot();
 document.documentElement.lang = getLocale();
+// Fire-and-forget persona prefetch so Agent avatars are warm on first paint.
+ensureAgentsOnBoot();
 
 const rootEl = document.getElementById('root');
 if (!rootEl) throw new Error('Missing #root element');

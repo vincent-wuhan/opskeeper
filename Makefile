@@ -204,7 +204,7 @@ test-e2e-real-llm: ## 用本机真实推理引擎跑一次交付链路（需 Doc
 # a broker-dependent test and not listing it here is red; listing a test that
 # does not need the broker is also red, because that is how a real regression
 # gets skipped to make a pipeline green.
-E2E_BROKER_TESTS := TestNodeAgentDelivery|TestANodeKeepsItsTelemetryThroughAnOutage|TestTheNodeAgentCallsAToolAndGetsAnAnswerBack
+E2E_BROKER_TESTS := TestNodeAgentDelivery|TestANodeKeepsItsTelemetryThroughAnOutage|TestTheNodeAgentCallsAToolAndGetsAnAnswerBack|TestAPluginToolCrossesTheGateAndRunsOnTheNodeHost
 
 # The rest of the end-to-end suite, on every push.
 #
@@ -592,6 +592,46 @@ arch-lint-run: ## 不安装、直接用 go run 跑 go-arch-lint（首次需要�
 module-check: ## 校验 OpsKeeper 2.0 模块边界（唯一 PiG 导入点 / core 无基础设施依赖）
 	go run ./scripts/modulecheck .
 
+# 进度表「插件生态」那一格此前记 95%，剩余栏写的是「更多插件迁移」——没有清单、
+# 没有验收线、没有可判定的完成标志，于是工具数从 91 推到 92、诊断轴从 17/20 推到
+# 18/20 的两刀都没让它动过。一格量不到自身进展，等于教所有人忽略它。
+#
+# 这个目标把那格改写成一份清单：每条都是计划为插件生态点名的交付物，各带一条对着
+# 当前工作树求值的判据，得分是闭合比例。加一个包、加一条路由、加一道守卫，它会动；
+# 别的不会动。
+#
+# 它量的是仓库状态，不是运行时行为。行为那一半仍然属于 eval-gates（诊断轴）与
+# pig-tool-scoping-check（对着真二进制核工具集）。本格是一次点名册，不是证明。
+.PHONY: dcell-check
+dcell-check: ## 进度表 D「插件生态」那一格的清单式读数（14 条判据 + 1 条未做）
+	go run ./scripts/dcell .
+
+# 完成度审计：把剩下的开口逐条分类，并给外部项写清"什么证据能关掉它、证据在谁手里"。
+#
+# 诊断轴到 20/20 之后，剩下的开口性质变了——多数不再是"缺能力"，而是"缺本仓产不出的证据"：
+# 真密钥、真 Docker、真 broker。而这些此前是散在正文里的句子，和能力缺口长得一模一样。
+#
+# 分类只有三种：repo（本仓现在就能判）、external（证据在本仓之外，必须写清证据与持有人）、
+# judgment（是取舍不是测量，**永不被机器判为完成**）。计分只算 repo 项：把 external 记 0 分会
+# 说平台"完成了九成"，记满分会说审计通过了，两者都不真。
+# 阶段 0 验收链：把"节点能持一次真实对话"这句话接到一条命令上。
+#
+# 退出码是这条命令的契约，而两条常规路径都会把它毁掉：`go run` 把子进程的 3 压成 1，make 把
+# 任何非零变成 2。于是"缺输入"和"检查失败"又变成同一种红，那正是它要区分的两件事。
+# run.sh 用 bash 的 exit 原样传出，所以**CI 要拿得到契约就调 bash scripts/acceptance/run.sh**；
+# 走这个 make 目标时，缺输入会显示成 make 的 Error 3（本机实测退出码 2）。
+#
+#   0  离线检查全过，需要外部输入的也都齐了
+#   3  至少一项缺输入（本仓没坏，这台机器/这次验收凑不齐），逐条点名缺什么
+#   1  至少一项离线检查红了（本仓的缺陷）
+.PHONY: acceptance-stage0
+acceptance-stage0: ## 阶段 0 验收链（退出码 0/3/1 有意义，见上）
+	@bash scripts/acceptance/run.sh
+
+.PHONY: audit-scope
+audit-scope: ## 完成度审计：repo 项闭合率 + 外部项归属（3 条 external / 1 条 judgment）
+	go run ./scripts/audit .
+
 # The release chain already puts the right binary in the right directory --
 # build-edge-bundle.sh derives its source dir from the arch argument it is
 # handed -- and nothing anywhere checks the artefact inside it. Four
@@ -675,6 +715,21 @@ domain-check: ## 校验 control plane 的域边界（决策 231 起；域数/声
 # promised gate is missing from either -- it does not re-run the gates, since
 # CI runs them three lines above and the answer is on the same page.
 .PHONY: ci-gate-check
+# gates-report：把 33 道门真跑一遍，一张表、一行一道。
+#
+# 它是**本地**工具，不进 CI：CI 已经一道一道地跑这些门，而并发地把它们
+# 收在一道命令里，正是 CI 的做法；这条命令的价值恰恰在于顺序执行且全部
+# 跑完，让「33 把里有几把红、红的是树还是这台机器」有一个人人能复现的答案。
+#
+# 它什么都不存。不写文件、不记分、不留一个明天会过期的摘要——决策 462 花一刀
+# 删掉的正是那种「写进文档就没人重算的数」。
+#
+# 红门的判定权不在这条命令手里：它打印结果和那道门自己的理由，把「树的问题」
+# 与「这台机器的状态」留给人判断。把一个缺失的 MySQL 说成「仓库坏了」，
+# 是这条命令能犯的最坏的错，所以它不犯。
+.PHONY: gates-report
+gates-report:
+	go run ./scripts/gatereport -timeout 30m .
 ci-gate-check: ## 校验计划 §六 的验收门槛都已定义并真的被 CI 调用（决策 163）
 	go run ./scripts/cigate .
 	go test ./scripts/cigate/ -count=1

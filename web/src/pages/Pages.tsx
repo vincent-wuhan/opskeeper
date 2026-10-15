@@ -4,7 +4,7 @@
 // Sharing is an explicit, TTL-bounded mint that returns a public login-free link
 // (mirrors reports). Sandbox (iframe + server CSP) means an LLM page can never
 // touch the SPA session.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AppWindow, Bot, Check, ExternalLink, Eye, FileBarChart, Loader2, Search, Share2, Trash2, Workflow } from 'lucide-react';
 
@@ -12,11 +12,10 @@ import { deletePage, fetchPageHTML, listPages, sharePage, type HostedPage } from
 import { cn } from '@/lib/cn';
 import { useI18n } from '@/i18n/locale';
 import { useAuth } from '@/store/auth';
-import { PageHeader, Button, EmptyState } from '@/components/ui';
+import { PageHeader, Button, EmptyState, useConfirm } from '@/components/ui';
 import { Modal } from '@/components/Modal';
 import { ReportCards } from '@/components/ReportCards';
-
-const THUMB_W = 1100;
+import { HostedPageView } from '@/components/HostedPageView';
 
 // SourceBadge renders the 生成来源 (origin) for a hosted page: chat-generated vs
 // workflow-generated. Unknown / legacy pages render nothing (the card stays clean).
@@ -38,22 +37,9 @@ function SourceBadge({ source, tr }: { source?: string; tr: (zh: string, en: str
   return null;
 }
 
-// PageThumb renders a page as a scaled-down thumbnail: it fetches the HTML (the
-// route is authed) and draws it into a sandboxed srcdoc iframe scaled to the
-// card width, pointer-events-none so it's a static picture.
+// PageThumb 取 HTML(鉴权路由,bearer 拉取)后交给共享 HostedPageView 渲染。
 function PageThumb({ id }: { id: string }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(0.3);
   const [html, setHtml] = useState<string | null>(null);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {
-      if (el.clientWidth > 0) setScale(el.clientWidth / THUMB_W);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
   useEffect(() => {
     let alive = true;
     fetchPageHTML(id)
@@ -63,21 +49,8 @@ function PageThumb({ id }: { id: string }) {
       alive = false;
     };
   }, [id]);
-  return (
-    <div ref={ref} className="relative h-40 w-full overflow-hidden bg-white">
-      {html != null && (
-        <iframe
-          title="thumbnail"
-          srcDoc={html}
-          sandbox=""
-          tabIndex={-1}
-          scrolling="no"
-          className="pointer-events-none absolute left-0 top-0 origin-top-left border-0"
-          style={{ width: THUMB_W, height: 900, transform: `scale(${scale})` }}
-        />
-      )}
-    </div>
-  );
+  if (html == null) return <div className="relative h-40 w-full overflow-hidden bg-white" />;
+  return <HostedPageView html={html} />;
 }
 
 export default function PagesPage() {
@@ -150,8 +123,15 @@ export default function PagesPage() {
     };
   }, [preview]);
 
+  const confirm = useConfirm();
   const onDelete = async (p: HostedPage) => {
-    if (!window.confirm(tr(`删除页面「${p.title || p.id}」？分享链接将立即失效。`, `Delete page "${p.title || p.id}"? Its share links die immediately.`))) return;
+    const ok = await confirm({
+      title: tr('删除页面', 'Delete page'),
+      message: tr(`删除页面「${p.title || p.id}」？分享链接将立即失效。`, `Delete page "${p.title || p.id}"? Its share links die immediately.`),
+      confirmLabel: tr('删除', 'Delete'),
+      danger: true,
+    });
+    if (!ok) return;
     setBusyId(p.id);
     try {
       await deletePage(p.id);
@@ -182,7 +162,12 @@ export default function PagesPage() {
       try {
         await navigator.clipboard.writeText(link);
       } catch {
-        window.prompt(tr('复制此公开分享链接：', 'Copy this public share link:'), link);
+        await confirm({
+          title: tr('公开分享链接', 'Public share link'),
+          message: <span className="break-all font-mono text-xs text-zinc-400">{link}</span>,
+          alertOnly: true,
+          confirmLabel: tr('知道了', 'OK'),
+        });
       }
       setCopiedId(p.id);
       window.setTimeout(() => setCopiedId((c) => (c === p.id ? null : c)), 2200);
@@ -279,18 +264,29 @@ export default function PagesPage() {
           <div className="py-16 text-center text-xs text-zinc-500">{tr('加载中…', 'Loading…')}</div>
         ) : items.length === 0 ? (
           <EmptyState
+            icon={AppWindow}
             title={tr('还没有生成的页面', 'No generated pages yet')}
             hint={tr('让工作流或助理用 serve_page 生成一个网页报告，它会出现在这里。', 'Have a workflow or the assistant generate a web report via serve_page — it shows up here.')}
             className="flex flex-col items-center gap-2 py-20 text-center"
           />
         ) : shown.length === 0 ? (
-          <div className="py-16 text-center text-xs text-zinc-500">{tr('无匹配的页面', 'No matching pages')}</div>
+          <EmptyState
+            icon={Search}
+            title={tr('没有匹配的页面', 'No pages match your search')}
+            hint={tr(`没有页面匹配「${search}」`, `Nothing matched “${search}”`)}
+            className="flex flex-col items-center gap-2 py-20 text-center"
+            action={
+              <Button variant="ghost" onClick={() => setSearch('')}>
+                {tr('清除搜索', 'Clear search')}
+              </Button>
+            }
+          />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {shown.map((p) => (
               <div
                 key={p.id}
-                className="group flex flex-col overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/40 transition-colors hover:border-zinc-700"
+                className="group flex flex-col overflow-hidden surface-card rounded-rk-lg transition-colors hover:border-zinc-700"
               >
                 <button
                   type="button"
@@ -377,12 +373,7 @@ export default function PagesPage() {
                 <Loader2 size={16} className="mr-2 animate-spin" /> {tr('加载中…', 'Loading…')}
               </div>
             ) : (
-              <iframe
-                title={preview.title || 'page'}
-                srcDoc={previewHtml}
-                sandbox=""
-                className="h-[60vh] w-full rounded-md border border-zinc-800 bg-white"
-              />
+              <HostedPageView html={previewHtml} title={preview.title || 'page'} height="60vh" />
             )}
           </div>
         </Modal>

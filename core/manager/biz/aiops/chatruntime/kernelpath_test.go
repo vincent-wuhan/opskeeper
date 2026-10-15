@@ -187,6 +187,61 @@ func TestWithAKernelTheTurnRunsOnItAndNoChatModelIsRequired(t *testing.T) {
 	}
 }
 
+// TestAnEmptyKernelTurnIsReportedAsAnApology covers the silent-death case
+// observed against a real MiniMax-M3 deployment: the follow-up call after a
+// tool result came back with no text and no tool call, the kernel read it as
+// a normal end_turn, and the console got a finished tool card with no reply
+// and no error — a turn indistinguishable from a hang.
+func TestAnEmptyKernelTurnIsReportedAsAnApology(t *testing.T) {
+	sess := &model.Session{ID: "s1", UserID: 7}
+	store := newMemSessions(sess)
+	kernel := &scriptedKernel{result: &pigagent.TurnResult{Stopped: pigagent.TurnEndTurn}}
+	rt, err := NewRuntime(Config{Sessions: store, Kernel: kernel})
+	if err != nil {
+		t.Fatalf("NewRuntime: %v", err)
+	}
+
+	var (
+		mu     sync.Mutex
+		events []Event
+	)
+	emit := func(ev Event) {
+		mu.Lock()
+		defer mu.Unlock()
+		events = append(events, ev)
+	}
+
+	reply, err := rt.Handle(context.Background(), &Request{
+		SessionID: "s1", UserID: 7, UserText: "run the command", Emit: emit,
+	})
+	if err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	if reply == nil || reply.Message == nil || reply.Message.Content == nil || *reply.Message.Content == "" {
+		t.Fatalf("reply = %+v, want a stated failure rather than silence", reply)
+	}
+	if got := *reply.Message.Content; !strings.Contains(got, "空回复") {
+		t.Fatalf("apology = %q, want the empty-completion wording", got)
+	}
+
+	// The terminal frame must still be a done: the console releases the input
+	// box on it, and a turn that emits an apology without it hangs the UI.
+	mu.Lock()
+	defer mu.Unlock()
+	if len(events) == 0 || events[len(events)-1].Type != EventDone {
+		t.Fatalf("events = %+v, want a terminal done frame", events)
+	}
+
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	for _, m := range store.messages {
+		if m.Role == model.RoleAssistant && m.Content != nil && *m.Content == *reply.Message.Content {
+			return
+		}
+	}
+	t.Fatal("the apology was not persisted")
+}
+
 // TestAKernelCapIsReportedAsAnApology mirrors the graph path: a turn that hit
 // its cap is not reported as the partial answer it happened to produce. An
 // operator cannot tell a half-finished exploration from a complete one, so

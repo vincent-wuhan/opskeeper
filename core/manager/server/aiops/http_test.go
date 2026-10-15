@@ -13,6 +13,7 @@ import (
 
 	biz "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops"
 	"github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/agent"
+	"github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/chatruntime"
 	model "github.com/vincent-wuhan/opskeeper/core/manager/model/aiops"
 	"github.com/vincent-wuhan/opskeeper/core/base/pkg/errs"
 	"github.com/vincent-wuhan/opskeeper/core/base/pkg/tenantctx"
@@ -287,3 +288,11 @@ func TestUnauthenticated(t *testing.T) {
 // string reaching the handler is forwarded to the service layer (which
 // returns ErrNotFound on miss). The previous test relied on numeric
 // "0" being a sentinel invalid id, which no longer makes sense.
+
+func TestToAgentDTOCarriesAvatar(t *testing.T) {
+	src := &chatruntime.Agent{Name: "incident-investigator", Avatar: "🛰️"}
+	dto := toAgentDTO(src)
+	if dto.Avatar != "🛰️" {
+		t.Fatalf("agentDTO.Avatar = %q, want 🛰️", dto.Avatar)
+	}
+}

@@ -22,6 +22,10 @@ func (f *fakeReader) InspectConsumerLag(ctx context.Context, args map[string]any
 	return f.rows, "scripted", f.err
 }
 
+func (f *fakeReader) RebalanceHistory(ctx context.Context, args map[string]any) ([]map[string]any, string, error) {
+	return f.rows, "scripted", f.err
+}
+
 func (f *fakeReader) BrokerStatus(ctx context.Context, args map[string]any) ([]map[string]any, string, error) {
 	return f.rows, "scripted", f.err
 }
@@ -42,6 +46,7 @@ func TestRegisterTools_ExposesOnlyWhatKafkaCanDo(t *testing.T) {
 	want := []string{
 		"kafka.topic_list", "kafka.consumer_lag",
 		"kafka.partition_skew", "kafka.broker_skew",
+		"kafka.rebalance_history",
 		"kafka.repartition",
 	}
 	for _, name := range want {
@@ -49,14 +54,22 @@ func TestRegisterTools_ExposesOnlyWhatKafkaCanDo(t *testing.T) {
 			t.Errorf("tool %s is not registered", name)
 		}
 	}
-	// Three names a golden case asks for and Kafka cannot do. Registering
+	// Two names a golden case asks for and Kafka cannot do. Registering
 	// them as stubs is what put the capability gate back to reporting
 	// coverage this build does not have, so they are absent rather than
 	// present-and-lying. See docs/opskeeper2-architecture.md decision 53.
+	//
+	// kafka.rebalance_history was on this list until it moved off it. It is
+	// now registered because the name stopped being a naming decision and
+	// became a capability: a collector samples DescribeGroups on a
+	// throttle and the tool reports what changed between samples. It is the
+	// one entry that ever left this list, and the test above now asserts it
+	// in the registered set rather than in this one — so a future deletion
+	// has to be written as a deliberate edit to one of the two lists, not
+	// done by accident.
 	for _, name := range []string{
-		"kafka.restart_broker",    // no protocol restarts a process
-		"kafka.scale_consumer",    // a group's parallelism is how many clients join it
-		"kafka.rebalance_history", // Kafka has no rebalance history; DescribeGroups is current state
+		"kafka.restart_broker", // no protocol restarts a process
+		"kafka.scale_consumer", // a group's parallelism is how many clients join it
 	} {
 		if registered[name] {
 			t.Errorf("%s is registered; no Kafka admin API can do what that name says", name)

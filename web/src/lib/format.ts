@@ -42,6 +42,24 @@ export function clockTime(input: string | number | Date): string {
   return t.toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
+// stampTime — compact "when did this happen" for timeline rows: clock time
+// for today, otherwise date + clock. An incident feed can span days, and a
+// bare "01:10" next to a week-old event says nothing about which day it was.
+export function stampTime(input: string | number | Date | null | undefined): string {
+  if (!input) return '—';
+  const t = typeof input === 'string' || typeof input === 'number' ? new Date(input) : input;
+  if (Number.isNaN(t.getTime())) return '—';
+  const now = new Date();
+  const sameDay =
+    t.getFullYear() === now.getFullYear() &&
+    t.getMonth() === now.getMonth() &&
+    t.getDate() === now.getDate();
+  const time = t.toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' });
+  if (sameDay) return time;
+  const date = t.toLocaleDateString(intlLocale(), { month: 'numeric', day: 'numeric' });
+  return `${date} ${time}`;
+}
+
 // fullDateTime — for "last sync at X" style displays. Browser would
 // format YYYY/M/D for zh-CN OS (looks weird in an English app);
 // passing the app locale lets us render "5/18/2026, 10:30:45 AM" for

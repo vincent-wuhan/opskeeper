@@ -138,8 +138,12 @@ type Config struct {
 	FrontierDisabled    bool
 	LLMConfigured       bool
 	EmbeddingConfigured bool
-	QdrantURL           string
-	QdrantCollection    string
+	// VectorBackend names the vector store in use ("chromem" for the
+	// embedded engine, "qdrant" for an external deployment). Anything but
+	// "qdrant" means there is no external service to probe.
+	VectorBackend    string
+	QdrantURL        string
+	QdrantCollection string
 }
 
 type Service struct {
@@ -277,6 +281,11 @@ func (s *Service) checkTempo(ctx context.Context) Check {
 
 func (s *Service) checkQdrant(ctx context.Context) Check {
 	return s.probe(ctx, "qdrant", "data", "Qdrant", func(ctx context.Context) (Status, string, map[string]any) {
+		if s.cfg.VectorBackend != "" && s.cfg.VectorBackend != "qdrant" {
+			// The embedded engine runs in this process; there is nothing
+			// reachable to probe and nothing that can be down.
+			return StatusOK, "embedded vector store (" + s.cfg.VectorBackend + ") — no external service", map[string]any{"backend": s.cfg.VectorBackend}
+		}
 		if strings.TrimSpace(s.cfg.QdrantURL) == "" {
 			return StatusDegraded, "Qdrant URL is not configured", nil
 		}

@@ -1,6 +1,7 @@
 import { lazy, type ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
 import { Layout } from '@/components/Layout';
+import { ConfirmProvider } from '@/components/ui';
 import { useAuth } from '@/store/auth';
 
 const LoginPage = lazy(() => import('@/pages/Login'));
@@ -22,13 +23,21 @@ const ReportDetailPage = lazy(() => import('@/pages/ReportDetail'));
 const TasksPage = lazy(() => import('@/pages/Tasks'));
 const PagesPage = lazy(() => import('@/pages/Pages'));
 const PageViewPage = lazy(() => import('@/pages/PageView'));
-const SkillsPage = lazy(() => import('@/pages/Skills'));
 const ApprovalsPage = lazy(() => import('@/pages/Approvals'));
 const SkillRunPage = lazy(() => import('@/pages/SkillRun'));
 const AgentsPage = lazy(() => import('@/pages/Agents'));
 const NodeAgentsPage = lazy(() => import('@/pages/NodeAgents'));
-const PluginMarketplacePage = lazy(() => import('@/pages/PluginMarketplace'));
-const CrystallizedPage = lazy(() => import('@/pages/Crystallized'));
+// Discover — one shell over the three extension surfaces, plus the three
+// legacy-route redirects (/skills, /plugins, /crystallized). Every one is a
+// NAMED export of Discover.tsx, so each gets its own lazy() with a `.then`
+// adapter (same shape as ChatDrawerPage above). A static
+// `import { SkillsRedirect } from '@/pages/Discover'` would instead pull the
+// whole Discover module — and the three pages it statically imports — into the
+// entry chunk, defeating the code split.
+const DiscoverPage = lazy(() => import('@/pages/Discover').then((m) => ({ default: m.Discover })));
+const SkillsRedirect = lazy(() => import('@/pages/Discover').then((m) => ({ default: m.SkillsRedirect })));
+const PluginsRedirect = lazy(() => import('@/pages/Discover').then((m) => ({ default: m.PluginsRedirect })));
+const CrystalsRedirect = lazy(() => import('@/pages/Discover').then((m) => ({ default: m.CrystalsRedirect })));
 const McpPage = lazy(() => import('@/pages/Mcp'));
 const FlowsPage = lazy(() => import('@/pages/Flows'));
 const FlowEditorPage = lazy(() => import('@/pages/FlowEditor'));
@@ -87,7 +96,8 @@ export default function App() {
   const forceLoginForm = searchParams.get('account') === 'switch';
 
   return (
-    <Routes>
+    <ConfirmProvider>
+      <Routes>
       <Route
         path="/login"
         element={
@@ -103,8 +113,12 @@ export default function App() {
           </RequireAuth>
         }
       >
+        {/* `/` still redirects to /dashboard on purpose: the console is the
+            existing primary entry IA. The Teamily-style workbench lives at
+            /home and is reachable from the sidebar's 首页 entry. */}
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/home" element={<HomePage />} />
         <Route path="/chat/:sessionId" element={<ChatThreadPage />} />
         {/* /edges is the legacy route, kept as an alias to /devices for
             backward-compatible bookmarks; the canonical name post-split
@@ -132,13 +146,14 @@ export default function App() {
         <Route path="/tasks/:id" element={<TasksPage />} />
         <Route path="/pages" element={<PagesPage />} />
         <Route path="/pages/:id" element={<PagesPage />} />
-        <Route path="/skills" element={<SkillsPage />} />
+        <Route path="/discover" element={<DiscoverPage />} />
+        <Route path="/skills" element={<SkillsRedirect />} />
         <Route path="/approvals" element={<ApprovalsPage />} />
         <Route path="/skills/:key" element={<SkillRunPage />} />
         <Route path="/agents" element={<AgentsPage />} />
         <Route path="/node-agents" element={<NodeAgentsPage />} />
-        <Route path="/plugins" element={<PluginMarketplacePage />} />
-        <Route path="/crystallized" element={<CrystallizedPage />} />
+        <Route path="/plugins" element={<PluginsRedirect />} />
+        <Route path="/crystallized" element={<CrystalsRedirect />} />
         <Route path="/mcp" element={<McpPage />} />
         <Route path="/workflows" element={<FlowsPage />} />
         <Route path="/workflows/:id" element={<FlowEditorPage />} />
@@ -183,9 +198,11 @@ export default function App() {
           <Route path="upgrade" element={<SettingsUpgrade />} />
           {/* /settings/marketplace retired (2026-05-19). Install surface
               is currently hidden from visible nav (no AIOps skill
-              ecosystem yet); reachable via /skills?tab=install URL only.
-              Redirect kept for any operator-bookmarked old URL. */}
-          <Route path="marketplace" element={<Navigate to="/skills?tab=install" replace />} />
+              ecosystem yet); reachable via /discover?tab=install URL only,
+              which lands on Discover's skills panel and — for an admin —
+              its install sub-surface. Redirect kept for any
+              operator-bookmarked old URL. */}
+          <Route path="marketplace" element={<Navigate to="/discover?tab=install" replace />} />
           <Route path="agent" element={<SettingsAgent />} />
           <Route path="preferences" element={<SettingsPreferences />} />
           <Route path="about" element={<SettingsAbout />} />
@@ -221,6 +238,7 @@ export default function App() {
         }
       />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
-    </Routes>
+      </Routes>
+    </ConfirmProvider>
   );
 }

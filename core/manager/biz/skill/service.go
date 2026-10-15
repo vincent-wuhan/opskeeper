@@ -318,7 +318,16 @@ func authorize(class skillcore.Class, role string) error {
 		}
 	case skillcore.ClassDangerous:
 		// PR-G4 will gate this behind RSA-signed SOP; until then, deny.
-		return fmt.Errorf("%w: dangerous skills require SOP signature (not implemented)", errs.ErrForbidden)
+		//
+		// The message says what the refusal *is*, not what it is not. This
+		// is a policy decision with a named condition that would change it,
+		// and an operator reading "not implemented" would file it as a bug
+		// instead of reading it as the answer to "why can nobody run this".
+		// The phrase is asserted absent by a test, because a string like
+		// this rots silently — there is no compiler for the difference
+		// between "missing" and "refused on purpose".
+		return fmt.Errorf("%w: dangerous skills are refused by policy: every role is denied "+
+			"until an RSA-signed SOP gates them (PR-G4)", errs.ErrForbidden)
 	}
 	return errors.New("skill: unknown class")
 }

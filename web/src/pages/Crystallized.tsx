@@ -30,6 +30,29 @@ import { Button, Card, Chip, EmptyState, PageHeader } from '@/components/ui';
 import { useI18n } from '@/i18n/locale';
 import { usePermissions } from '@/store/me';
 
+// 落盘草稿的客户端提示。仅本机、按 pattern name 记 dir+时间。
+// 它与磁盘上真实草稿可能不一致(运维清理 / 换机后过期)——诚实标注为
+// 「本机提示」,真实草稿以发布控制台为准。只增不减:pattern 从账本消失
+// 时提示保留,因为它代表磁盘上可能仍存在的草稿。
+const draftKey = (name: string) => `opskeeper.crystal.draft.${name}`;
+function readDraft(name: string): { dir: string; at: string } | null {
+  try {
+    const raw = localStorage.getItem(draftKey(name));
+    if (!raw) return null;
+    const o = JSON.parse(raw) as { dir?: string; at?: string };
+    return o && typeof o.dir === 'string' ? { dir: o.dir, at: o.at ?? '' } : null;
+  } catch {
+    return null;
+  }
+}
+function writeDraft(name: string, dir: string) {
+  try {
+    localStorage.setItem(draftKey(name), JSON.stringify({ dir, at: new Date().toISOString() }));
+  } catch {
+    /* 存储不可用时不阻塞落盘本身 */
+  }
+}
+
 export default function CrystallizedPage() {
   const { tr } = useI18n();
   const { isAdmin } = usePermissions();
@@ -169,12 +192,15 @@ function PatternCard({
   const { tr } = useI18n();
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ dir: string; at: string } | null>(() => readDraft(pattern.name));
 
   const onPromote = useCallback(async () => {
     setBusy(true);
     setNote(null);
     try {
       const r = await promoteCrystallized(pattern.name);
+      writeDraft(pattern.name, r.dir);
+      setDraft(readDraft(pattern.name));
       setNote(tr(`草稿已写入 ${r.dir}，可在发布控制台送审`, `Draft written to ${r.dir}; take it to the release console`));
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : (e as Error).message;
@@ -252,7 +278,29 @@ function PatternCard({
         </div>
       ) : null}
 
-      {note ? <div className="text-[11px] text-zinc-400">{note}</div> : null}
+      {note ? (
+        <div className="text-[11px] text-zinc-400">
+          {note}{' '}
+          <Link to="/admin/plugins" className="text-emerald-300 underline">
+            {tr('发布控制台', 'Release console')}
+          </Link>
+        </div>
+      ) : null}
+      {draft ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-2.5 py-1.5 text-[11px]">
+          <Chip tone="success" dense>
+            {tr('已落盘草稿', 'Draft written')}
+          </Chip>
+          <span className="break-all font-mono text-zinc-400">{draft.dir}</span>
+          {draft.at ? <span className="text-zinc-500">{new Date(draft.at).toLocaleString()}</span> : null}
+          <span className="text-zinc-500">
+            {tr('（本机提示，真实草稿以发布控制台为准）', '(local hint; the draft of record lives in the release console)')}
+          </span>
+          <Link to="/admin/plugins" className="text-emerald-300 underline">
+            {tr('去发布控制台', 'Open release console')}
+          </Link>
+        </div>
+      ) : null}
       {!isAdmin ? (
         <div className="text-[11px] text-zinc-600">
           {tr('只有管理员可以落盘送审。', 'Admin only.')}
@@ -285,9 +333,20 @@ function DetailDrawer({ name, onClose }: { name: string; onClose: () => void }) 
     };
   }, [name]);
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/50" onClick={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={tr('自愈规则详情', 'Runbook detail')}
         className="flex h-full w-full max-w-2xl flex-col border-l border-zinc-800 bg-zinc-950"
         onClick={(e) => e.stopPropagation()}
       >

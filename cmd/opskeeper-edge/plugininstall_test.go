@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -300,9 +301,47 @@ func TestMain(m *testing.M) {
 const testEdgeVersion = "0.8.0"
 
 // testPigVersion is what the fixtures report as the PiG build they launch.
-// Like testEdgeVersion it sits above every minimum the helpers write, so a
-// fixture is not refused on an axis the test is not about.
-const testPigVersion = "0.3.0"
+//
+// It used to be a literal, and the literal is the bug this comment exists to
+// describe. It read 0.3.0 while every shipped package declares
+// min_pig_version 0.4.0, so a node fixture built from this tree refused its
+// own boot packages "for a reason the test is not about" — which is exactly
+// what the TestMain comment below was written to prevent, arriving anyway
+// through the other door.
+//
+// So the number is read out of the root go.mod, which is the only place that
+// decides which PiG this tree is built against. A PiG bump now moves the
+// fixtures with it. A go.mod that cannot be read is a hard stop, because the
+// alternative is falling back to a number that is wrong in exactly the quiet
+// way that caused this.
+var testPigVersion = pinnedPigVersion()
+
+// pinnedPigVersion is the PiG version the root go.mod requires.
+func pinnedPigVersion() string {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "go.mod"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "plugininstall_test: read the root go.mod: %v\n"+
+			"the fixture node's PiG version comes from it; without it every version "+
+			"below is a guess\n", err)
+		os.Exit(1)
+	}
+	for _, line := range strings.Split(string(raw), "\n") {
+		// At least two fields, not exactly two: the requirement is
+		// written with a trailing "// indirect" in a module that does
+		// not import PiG directly, and a parser that insists on two
+		// fields reports "no PiG here" for a tree that plainly has one.
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) >= 2 && fields[0] == "github.com/MichaelKinsy/PiG" &&
+			strings.HasPrefix(fields[1], "v") {
+			return strings.TrimPrefix(fields[1], "v")
+		}
+	}
+	fmt.Fprintln(os.Stderr,
+		"plugininstall_test: the root go.mod requires no github.com/MichaelKinsy/PiG; "+
+			"the tree and its fixtures have stopped agreeing about which PiG this is")
+	os.Exit(1)
+	return ""
+}
 
 // withEdgeVersion makes a store behave like a node that knows what
 // version it runs.
@@ -1521,5 +1560,46 @@ func TestTheRuntimeReviewUsesTheNodesOwnVersion(t *testing.T) {
 	}
 	if pol.NodeVersion != "0.7.0" {
 		t.Errorf("reviewPolicy NodeVersion = %q, want the configured override", pol.NodeVersion)
+	}
+}
+
+// The invariant the derived fixture exists to protect, asserted directly.
+//
+// Reading the pin is not enough on its own: a shipped package may declare a
+// floor above the pin, and then the fixture is still below it and still
+// refuses its own boot packages for a reason the admission tests are not
+// about. This test fails at the point where the two numbers disagree rather
+// than three tests later, in a message that names both of them.
+func TestTheFixtureNodeIsNotBelowAnyShippedPackageFloor(t *testing.T) {
+	base := filepath.Join("..", "..", "plugins", "pig-ops")
+	entries, err := os.ReadDir(base)
+	if err != nil {
+		t.Fatalf("read %s: %v", base, err)
+	}
+	seen := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		p, err := pluginmanifest.Load(filepath.Join(base, e.Name()))
+		if err != nil {
+			t.Fatalf("load %s: %v", e.Name(), err)
+		}
+		seen++
+		ok, _, why := pluginmanifest.CheckVersions(
+			p.Manifest.Spec.Install.MinEdgeVersion,
+			p.Manifest.Spec.Install.MinPigVersion,
+			testEdgeVersion, testPigVersion)
+		if !ok {
+			t.Errorf("package %s would be refused by a node running the PiG this tree "+
+				"pins (edge %s / pig %s): %s\n"+
+				"The fixture reports what go.mod requires, so this is a real disagreement "+
+				"between the floor a package declares and the agent this build launches — "+
+				"not a stale fixture.",
+				e.Name(), testEdgeVersion, testPigVersion, why)
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no shipped package was checked, so this test proved nothing")
 	}
 }

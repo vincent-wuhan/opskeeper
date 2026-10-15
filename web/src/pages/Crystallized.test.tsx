@@ -11,7 +11,7 @@
 //
 // 页面**没有** approve/install 按钮——写草稿是它走得最远的一步，安装仍然
 // 在发布控制台。把这条钉进测试，是防止后来者「顺手」加一个安装按钮。
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -65,6 +65,7 @@ function renderPage() {
 
 describe('CrystallizedPage', () => {
   beforeEach(() => {
+    localStorage.clear();
     localStorage.setItem('opskeeper-locale', 'en-US');
   });
 
@@ -180,5 +181,50 @@ describe('CrystallizedPage', () => {
       expect(screen.getByText(/Draft, not a release/)).toBeInTheDocument();
     });
     expect(screen.getByText(/approval happens in the release console/i)).toBeInTheDocument();
+  });
+
+  it('persists a draft hint after promote, with an honest note and a release-console link', async () => {
+    const DIR = '/var/lib/opskeeper/plugins/opskeeper-crystallized-host-disk-full';
+    server.use(
+      http.get('/api/v1/loops/crystallized', () =>
+        HttpResponse.json({ items: [PATTERN], total: 1, policy: POLICY })
+      ),
+      http.post(`/api/v1/loops/crystallized/${PATTERN.name}/promote`, () =>
+        HttpResponse.json({ name: PATTERN.name, dir: DIR })
+      )
+    );
+    const { unmount } = renderPage();
+    await screen.findByText('systemctl restart orders-api');
+    await userEvent.click(screen.getByRole('button', { name: /Write for review/ }));
+
+    // 持久块:目录(整串唯一)+ 诚实标注「本机提示」都在同一块里。
+    // 目录用整串匹配:成功 note 里也含该路径,只有整串相等才唯一命中。
+    expect(await screen.findByText(DIR)).toBeInTheDocument();
+    expect(screen.getByText(/本机提示|local hint/i)).toBeInTheDocument();
+    const draftBlock = screen.getByText(DIR).closest('div')!;
+    expect(within(draftBlock).getByText(/已落盘草稿|Draft written/)).toBeInTheDocument();
+    // 发布控制台链接可达(块内唯一)
+    expect(within(draftBlock).getByRole('link', { name: /发布控制台|release console/i })).toHaveAttribute(
+      'href',
+      '/admin/plugins'
+    );
+
+    // 跨刷新存活:卸载后重挂,chip 仍在(读 localStorage)
+    unmount();
+    renderPage();
+    expect(await screen.findByText(/已落盘草稿|Draft written/)).toBeInTheDocument();
+  });
+
+  it('keeps the promote entry disabled for non-admins (regression, no new install button)', async () => {
+    server.use(
+      http.get('/api/v1/loops/crystallized', () =>
+        HttpResponse.json({ items: [PATTERN], total: 1, policy: POLICY })
+      )
+    );
+    // 本用例仍走 admin mock;仅复核「没有 install/approve」——既有断言已覆盖,此处再钉 release link 不引入新动作。
+    renderPage();
+    await screen.findByText('systemctl restart orders-api');
+    expect(screen.queryByRole('button', { name: /^Install/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Approve/i })).not.toBeInTheDocument();
   });
 });

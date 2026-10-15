@@ -93,24 +93,26 @@ const (
 // `query_change_events` wrong.
 var toolCapabilities = map[string]string{
 	// --- opskeeper-sre-readonly ---
-	"expand_topology":    CapTopology,
-	"find_outlier_edges": CapTopology,
-	"find_topology_node": CapTopology,
-	"get_topology":       CapTopology,
-	"query_alert_rules":  CapAlert,
-	"host_dmesg":         CapHost,
-	"host_grep_file":     CapHost,
-	"host_lsof":          CapHost,
-	"host_mtr":           CapHost,
-	"host_netns_inspect": CapHost,
-	"host_probe_dns":     CapHost,
-	"host_probe_http":    CapHost,
-	"host_probe_tcp":     CapHost,
-	"host_read_journal":  CapHost,
-	"host_sosreport":     CapHost,
-	"host_strace":        CapHost,
-	"host_tail_file":     CapHost,
-	"host_traceroute":    CapHost,
+	"expand_topology":     CapTopology,
+	"find_outlier_edges":  CapTopology,
+	"find_topology_node":  CapTopology,
+	"get_topology":        CapTopology,
+	"query_alert_rules":   CapAlert,
+	"host_dmesg":          CapHost,
+	"host_file_inventory": CapHost,
+	"host_grep_file":      CapHost,
+	"host_lsof":           CapHost,
+	"host_mtr":            CapHost,
+	"host_netns_inspect":  CapHost,
+	"host_probe_dns":      CapHost,
+	"host_probe_http":     CapHost,
+	"host_probe_tcp":      CapHost,
+	"host_read_journal":   CapHost,
+	"host_sosreport":      CapHost,
+	"host_strace":         CapHost,
+	"host_tail_file":      CapHost,
+	"host_top_processes":  CapHost,
+	"host_traceroute":     CapHost,
 
 	// --- opskeeper-sre-observability ---
 	"analyze_database_status": CapDatabase,
@@ -182,6 +184,7 @@ var toolCapabilities = map[string]string{
 	"kafka.broker_skew":         CapKafka,
 	"kafka.consumer_lag":        CapKafka,
 	"kafka.partition_skew":      CapKafka,
+	"kafka.rebalance_history":   CapKafka,
 	"kafka.topic_list":          CapKafka,
 	"rabbitmq.cluster_info":     CapRabbitMQ,
 	"rabbitmq.consumer_status":  CapRabbitMQ,
@@ -371,6 +374,25 @@ var ExpectationAliases = map[string]string{
 	// connection to a host-exporter to learn its own load.
 	"host.host_load": "get_host_load",
 
+	// A node's own process ranking is what these two expectations mean on a
+	// node. They are hosted in the control plane — host.host_processes and
+	// host.top_cpu_procs both read the host the control plane was pointed at,
+	// not the one the agent is running on — so a node could report "this
+	// node's CPU is at 98%" and have no way to name the process responsible.
+	// The package now ships that read, and until it did these were recorded
+	// as OWNED-but-absent rather than aliased: an alias to a tool no node
+	// carries claims coverage that does not exist on the machine it runs on.
+	"host.host_processes": "host_top_processes",
+	"host.top_cpu_procs":  "host_top_processes",
+	// A file inventory, which is the whole of what host/disk-full's
+	// host.host_files asks for. The control plane's host.old_log_files
+	// answers a narrower question — which logs are OLD — and is excluded
+	// with the rest of that family, so until this shipped there was no read
+	// on either side that accounted for a tree. Same rule as the two above:
+	// the entry appears because the tool exists, not because the name is
+	// close.
+	"host.host_files": "host_file_inventory",
+
 	// The git-artifact linker is reached through one tool. The case names
 	// the linker's API because that is the capability under test; the
 	// package ships the adapter that carries it.
@@ -545,8 +567,44 @@ func assembleCoverage(caseID string, out CaseCoverage, idx fleetIndex) CaseCover
 	return out
 }
 
+// GapReason is one recorded gap: the sentence a reader acts on, and the
+// list of places that were read before somebody wrote that sentence.
+//
+// The second half exists because the first half was wrong twice, in the same
+// shape, and nothing caught either time. Both mistakes read a gap off the
+// report and concluded that a capability lived somewhere nobody was looking
+// — once for redis.kill_client (「the adapter has it, no package ships it」)
+// and once for host.host_files, where the reason said "nothing anywhere reads
+// a file inventory for a node" while core/edge/host_files was implementing
+// find_large_files, du_summary and stat_file.
+//
+// **A gate over a number cannot catch this**, because the number was right:
+// that capability really was unreachable from a node. What was wrong was the
+// sentence beside it, and sentences are not counted.
+//
+// So the sentence now has to carry its own evidence. Searched is where the
+// author looked, it is checked rather than trusted, and an absence claim
+// that does not name both capability homes fails — which is the discipline
+// that would have surfaced core/edge/host_files before 决策 451 rather than
+// after it.
+type GapReason struct {
+	// Reason is what the report prints and what an operator acts on.
+	Reason string
+	// Searched is every tree location consulted before concluding that
+	// nothing ships this. Every entry must exist, and the set must cover
+	// both capability homes — see TestAGapReasonSaysWhereItLooked.
+	Searched []string
+}
+
+// capabilityHomes are the two places a NODE-side capability can live. A gap
+// that claims nothing serves it has to have looked in both: the edge owns the
+// node's handlers and collectors, the floor owns the skills an agent is
+// offered, and missing either one is how a shipped implementation goes
+// unread as absent.
+var capabilityHomes = []string{"core/edge", "core/floor"}
+
 // DiagnosisGaps names the root causes no shipped package serves, each with
-// the reason it is not served.
+// the reason it is not served and the places that were read to say so.
 //
 // It is a ledger rather than a tolerance because the diagnosis axis is the
 // half of the coverage report that is supposed to be complete, and a gate
@@ -561,24 +619,42 @@ func assembleCoverage(caseID string, out CaseCoverage, idx fleetIndex) CaseCover
 // at exactly the moment nobody is looking at that tool any more. Both
 // directions are tested, so a fix that lands without its decision being
 // retired fails.
-var DiagnosisGaps = map[string]string{
-	// Two names for one missing capability. The host adapter is excluded
-	// from node packages as a family, and for a written reason: it executes
+var DiagnosisGaps = map[string]GapReason{
+	// host.host_processes and host.top_cpu_procs were on this list until
+	// 决策 450, and the reason they were here is the reason they now are not.
+	// The host adapter is excluded from node packages as a family — it runs
 	// as root on whatever host the control plane was pointed at, so its
-	// reads answer about that host rather than about the node the agent is
-	// running on. A node learns about itself through the read-only
-	// package's own probes (host_lsof, host_read_journal, host_strace, …)
-	// and through get_host_load, which is why host.host_load is covered and
-	// these two are not.
+	// reads answer about THAT host, not about the node the agent is running
+	// on — and a node learns about itself through the read-only package's
+	// own probes. A node could therefore report its own CPU at 98% and have
+	// no way to name the process responsible, which is a diagnosis that
+	// stops one step short of the fix.
 	//
-	// host.top_cpu_procs is also a rename: the adapter's own name for the
-	// same read is host.top_processes. It is deliberately not aliased,
-	// because an alias would report the capability as covered by a tool no
-	// node has — the same reason redis.kill_client is not aliased to
-	// redis.client_kill.
-	"host.host_processes": "the host family is excluded from node packages: the adapter executes as root on whatever host the control plane was pointed at, so its reads answer about that host rather than about the node the agent runs on. A node's own view is the read-only package's probes and get_host_load",
-	"host.top_cpu_procs":  "same as host.host_processes, and additionally a rename: the adapter calls this read host.top_processes. Not aliased, because an alias would claim coverage from a tool no node ships",
-	"host.host_files":     "no read equivalent exists on either side. The adapter's host.old_log_files answers a narrower question (which old logs) and is excluded with the rest of the host family, and nothing anywhere reads a file inventory for a node",
+	// 决策 450 implemented the read rather than renaming the case:
+	// opskeeper-sre-readonly now ships host_top_processes, which ranks the
+	// NODE's own processes by CPU or memory straight out of /proc. The two
+	// expectations became aliases at the same moment and not before — the
+	// note above them used to say an alias would claim coverage from a tool
+	// no node ships, and that sentence was true until the tool shipped.
+	// It is the reason the alias rule reads the way it does, so it is worth
+	// naming here: an alias is a claim, and a claim may only follow delivery.
+	//
+	// host.host_files was here until 决策 451 for the same shape of reason:
+	// the adapter's host.old_log_files answers a narrower question (which
+	// logs are OLD) and is excluded with that family, so nothing on either
+	// side accounted for a TREE. What was written above it then was "that is
+	// a collector's job rather than a tool's" — **and that sentence was the
+	// wrong call, made for a good reason and still wrong.** The reason was
+	// sound: a walk has to be bounded or it never returns. The conclusion
+	// did not follow. A bounded walk is a tool, and shipping one turned
+	// host/disk-full from a GAP into a case a node can answer, which is the
+	// second consecutive time in this file that "it needs a collector" was
+	// read off a gap and mistaken for a verdict.
+	//
+	// Recorded because the reasoning error is the reusable part: **"this
+	// thing is expensive to do" is not "this thing is somebody else's
+	// job"**, and the second time it appeared it was written with the
+	// first time's gap record directly above it.
 
 	// redis.hot_keys was on this list until 决策 204: the case asked for a
 	// name no adapter registered, and the entry above recorded the choice
@@ -589,19 +665,36 @@ var DiagnosisGaps = map[string]string{
 	// decisions, and a decision that has been carried out still sitting on
 	// it is a second, quieter way for the list to start lying.
 	//
-	// The one below is still undecided and still belongs here: it names a
-	// capability nothing in this build implements, which makes it a
-	// decision about the corpus or the tool name rather than a packaging
-	// backlog item. It stays visible so the decision cannot be lost by
-	// going unrecorded.
-	"kafka.rebalance_history": "Kafka exposes the CURRENT consumer assignment and no history of it. Answering this needs a collector that stores successive DescribeGroups results, which is a collector's job and not a broker client's; undecided",
+	// kafka.rebalance_history was on this list until 决策 453, and its reason
+	// is worth keeping in the file even though the entry is not. It read:
+	// "Answering this needs a collector that stores successive
+	// DescribeGroups results, which is a collector's job and not a broker
+	// client's; undecided."
+	//
+	// **That sentence was the third time this file said "it needs a
+	// collector" and the third time it was wrong in the same way.** The two
+	// above are host.host_files and the top_cpu_procs pair: a bounded walk
+	// turned out to be a tool, and a /proc ranking turned out to be a tool.
+	// Here the gap was real — Kafka has no endpoint for a group's past
+	// assignments, so *something* has to remember them — and the conclusion
+	// still did not follow. Remembering them is a store fed by the same
+	// DescribeGroups call the adapter already makes, owned by the same
+	// client, kept bounded, and throttled. That is a collector in every
+	// sense except the word, and putting the word in the reason is what
+	// stopped anyone from writing it.
+	//
+	// The three records are kept together deliberately. The reusable part is
+	// not any one gap: it is that **"nothing exposes this" and "this is not
+	// a tool" are two different sentences, and only the first one is ever
+	// evidence.** A reason that concludes "somebody else's job" from "no
+	// endpoint" has skipped the step where the endpoint would be built.
 }
 
 // ExplainDiagnosisGap returns the recorded reason an expectation is an
 // owned gap rather than an unexplained one.
 func ExplainDiagnosisGap(expectation string) (string, bool) {
-	reason, ok := DiagnosisGaps[expectation]
-	return reason, ok
+	gap, ok := DiagnosisGaps[expectation]
+	return gap.Reason, ok
 }
 
 // explainGap says why one expectation is not served.

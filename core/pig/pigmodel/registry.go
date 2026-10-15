@@ -237,41 +237,19 @@ func (r *Registry) provider(ctx context.Context, id domain.ProviderID, cfg Provi
 		}
 		return live.APIKey, nil
 	}
-	base := normalizeBaseURL(cfg.BaseURL)
 	providerID := string(id)
 
-	var p ai.Provider
-	switch id {
-	case domain.ProviderAnthropic:
-		p = ai.NewAnthropicProvider(ai.AnthropicConfig{
-			APIKey:     cfg.APIKey,
-			Model:      cfg.DefaultModel,
-			ProviderID: providerID,
-			BaseURL:    base,
-		})
-	case domain.ProviderGemini:
-		p = ai.NewGoogleProvider(ai.GoogleConfig{
-			APIKey:     cfg.APIKey,
-			Model:      cfg.DefaultModel,
-			ProviderID: providerID,
-			BaseURL:    geminiBaseURL(base),
-		})
-	case domain.ProviderOpenAI, domain.ProviderCustom, domain.ProviderZhipu,
-		domain.ProviderDeepSeek, domain.ProviderKimi:
-		// These five share the OpenAI wire shape. Compat carries the
-		// per-endpoint quirks Pi already knows about: whether to send
-		// max_tokens or max_completion_tokens, which endpoints accept
-		// reasoning_effort, and which need a non-standard auth path.
-		p = ai.NewOpenAIProvider(ai.OpenAIConfig{
-			BaseURL:    base,
-			Model:      cfg.DefaultModel,
-			ProviderID: providerID,
-			Compat:     ai.DetectCompat(providerID, base),
-			GetAPIKey:  getKey,
-		})
-	default:
+	// The provider is built by whatever factory is registered for this id,
+	// not by a switch here. The switch used to make the set of providers a
+	// property of this file; now it is a property of the registry, and a
+	// provider a package registers through RegisterProviderFactory resolves
+	// through the same path a built-in does. Each factory normalizes the
+	// base URL itself, so the raw config is handed through unchanged.
+	factory, ok := lookupProviderFactory(id)
+	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrUnknownProvider, id)
 	}
+	p := factory(cfg, providerID, getKey)
 
 	if p == nil {
 		return nil, fmt.Errorf("%w: %s", ErrNotConfigured, id)

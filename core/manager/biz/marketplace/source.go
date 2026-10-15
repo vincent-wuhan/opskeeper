@@ -28,11 +28,20 @@ const (
 	SourceTypeGit SourceType = "git"
 
 	// SourceTypeRegistry resolves (Registry, PackID, Version) through a
-	// configured registry proxy. v1 only knows
-	// "opskeeper-official" — the proxy implementation lands in a
-	// follow-up PR; today the manager rejects this type unless the
-	// caller hands it the resolved tarball URL via the Registry+URL
-	// route (i.e. effectively a tarball install with a labelled source).
+	// registry index this control plane is configured to read, and installs
+	// what that index names.
+	//
+	// Three things about it are deliberate and each has a refusal behind it:
+	//
+	//   - the url and the digest come from the index, never from the
+	//     request. A client that could hand over a url here could install
+	//     any tarball while the install ledger recorded it as having come
+	//     from an allowlisted registry.
+	//   - the version is required. "The latest" is what a human wants and
+	//     what a node must not do: a floating version leaves the node
+	//     holding bytes nobody compared a digest against at review time.
+	//   - the registry label must be one this control plane was configured
+	//     with (RegistryIndexes), on top of the source allowlist.
 	SourceTypeRegistry SourceType = "registry"
 )
 

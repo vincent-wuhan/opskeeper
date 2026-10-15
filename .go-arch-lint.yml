@@ -141,6 +141,7 @@ components:
       - core/edge/cmdpolicy/**
       - core/edge/collector/**
       - core/edge/host_files/**
+      - core/edge/pluginhost/**
       - core/edge/plugins/**
       - core/edge/restart_service/**
       - core/edge/skill/**
@@ -1022,7 +1023,10 @@ deps:
     #                    同时看见的答案。策略表住在 telemetrywal 是因为
     #                    它本来就是节点遥测的词汇表，而落盘原语保持通用：
     #                    以后还会有第三、第四个用户，它们不该继承遥测词汇。
-    mayDependOn: [oxedge_runtime, oxfloor, oxedge_spool, oxtelemetry_wal]
+    # pluginhost（节点插件宿主）用 core/domain 的词汇构造本节点的准入
+    # 天花板——target、安全级、scope 都是 domain 的类型；kernel 与
+    # pluginmanifest 本就在 oxfloor 里。
+    mayDependOn: [oxedge_runtime, oxfloor, oxcore_domain, oxedge_spool, oxtelemetry_wal]
   oxharness_projection:
     mayDependOn: [oxharness_judge]
   oxharness_vocabulary:
@@ -1030,7 +1034,17 @@ deps:
   oxpig_ext:
     mayDependOn: [oxcore_wire]
   scripts:
-    mayDependOn: [shared_agentteams]
+    # oxfloor 和 oxplugin_sdk 是 scripts/registryindex 的两条授权，决策 466。
+    #
+    # 产出 registry 索引的那个脚本必须用和消费端**同一份**清单解析器
+    # （sdk.Decode）与**同一份**优先级/摘要实现（pluginmanifest.TreeDigest、
+    # LoadCatalogSources）。它自己写一份解析器，就等于给"索引里写的清单"和
+    # "节点最终读的清单"之间造了一条新通路 —— 而那条通路正是本条判据要防的。
+    #
+    # oxcore_domain 只是 sdk.Decode 的返回类型，经由 type 推断落到 import 上；
+    # 没有它脚本无法声明自己读出来的清单。scripts 整体仍然不得依赖任何管理面
+    # 或节点面组件，这条授权不放宽到那里。
+    mayDependOn: [shared_agentteams, oxfloor, oxplugin_sdk, oxcore_domain]
   shared_agentteams:
     mayDependOn: [oxfloor]
   shared_dataguard:
@@ -1043,7 +1057,11 @@ deps:
   shared_knowledge:
     mayDependOn: [shared_knowledge, shared_pkg]
   shared_middleware:
-    mayDependOn: [oxcore_ports, shared_knowledge, shared_middleware, shared_pkg]
+    # middleware/pluginhost 是控制面插件宿主：准入一个包要读治理清单
+    # （oxfloor/pluginmanifest）、把贡献注册进微内核（oxfloor/kernel），
+    # 而清单里的 target / 安全级 / scope 都是 oxcore_domain 的类型；
+    # toolset 的第一方适配器家族同样以内置清单声明。
+    mayDependOn: [oxcore_ports, oxcore_domain, oxfloor, shared_knowledge, shared_middleware, shared_pkg]
   shared_migrate:
     mayDependOn: [shared_migrate]
   # The genai span decorator reads the reply's own usage off PiG's type, so
@@ -1085,7 +1103,11 @@ commonComponents: []
 #
 #   /web/node_modules/
 #     第三方 vendored 代码，不是本仓库的架构。
+#
+#   /site/node_modules/
+#     同上：文档站依赖里自带的一个 Go 实现（flatted），不属于本仓架构。
 excludeFiles:
   - "_test\\.go$"
   - "/plugins/pig-ops/[^/]+/extensions/"
   - "/web/node_modules/"
+  - "/site/node_modules/"

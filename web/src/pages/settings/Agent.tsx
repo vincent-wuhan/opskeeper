@@ -60,7 +60,7 @@ export default function SettingsAgent() {
 
   return (
     <div className="space-y-4">
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+      <section className="surface-card rounded-rk-lg p-5">
         <div className="mb-3 flex items-center gap-2">
           <ShieldCheck size={14} className="text-zinc-400" />
           <h2 className="text-sm font-medium text-zinc-100">{tr('写操作权限', 'Write actions')}</h2>

@@ -159,22 +159,10 @@ export default function ClosedLoopTimelinePage() {
       {/* rubric 4 指标 */}
       {rubric && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-          <RubricCard
-            label="rca_accuracy"
-            value={rubric.rca_accuracy.toFixed(2)}
-          />
-          <RubricCard
-            label="time_to_remediate"
-            value={rubric.time_to_remediate}
-          />
-          <RubricCard
-            label="approval_rate"
-            value={rubric.approval_rate.toFixed(2)}
-          />
-          <RubricCard
-            label="recovery_pass_rate"
-            value={rubric.recovery_pass_rate.toFixed(2)}
-          />
+          <RubricCard metric="rca_accuracy" value={rubric.rca_accuracy.toFixed(2)} />
+          <RubricCard metric="time_to_remediate" value={rubric.time_to_remediate} />
+          <RubricCard metric="approval_rate" value={rubric.approval_rate.toFixed(2)} />
+          <RubricCard metric="recovery_pass_rate" value={rubric.recovery_pass_rate.toFixed(2)} />
         </div>
       )}
 
@@ -196,6 +184,7 @@ export default function ClosedLoopTimelinePage() {
 }
 
 function ChainFooter({ chain }: { chain: ChainMeta }) {
+  const { tr } = useI18n();
   const coverageTone =
     chain.coverage_pct >= 0.99
       ? 'border-emerald-700/40 bg-emerald-500/10 text-emerald-300'
@@ -211,7 +200,7 @@ function ChainFooter({ chain }: { chain: ChainMeta }) {
         )}
       >
         <GitBranch className="h-3 w-3" />
-        coverage {chain.phases_observed}/{chain.phases_expected}{' '}
+        {tr('覆盖', 'coverage')} {chain.phases_observed}/{chain.phases_expected}{' '}
         ({(chain.coverage_pct * 100).toFixed(0)}%)
       </span>
       {chain.recovery_signal && (
@@ -223,13 +212,13 @@ function ChainFooter({ chain }: { chain: ChainMeta }) {
       {chain.closed && (
         <span className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-mono rounded border border-sky-700/40 bg-sky-500/10 text-sky-300">
           <CheckCircle2 className="h-3 w-3" />
-          closed via {chain.final_phase}
+          {tr(`已闭环 · ${chain.final_phase}`, `closed via ${chain.final_phase}`)}
         </span>
       )}
       {!chain.recovery_signal && chain.phases_observed > 0 && (
         <span className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-mono rounded border border-zinc-700 bg-zinc-800/40 text-zinc-300">
           <AlertTriangle className="h-3 w-3" />
-          recovery not yet observed
+          {tr('尚未观测到恢复', 'recovery not yet observed')}
         </span>
       )}
       {chain.trace_ids && chain.trace_ids.length > 0 && (
@@ -243,15 +232,46 @@ function ChainFooter({ chain }: { chain: ChainMeta }) {
   );
 }
 
-function RubricCard({ label, value }: { label: string; value: string }) {
+// The four rubric keys come straight off the API, so the tiles used to be
+// captioned `rca_accuracy` / `time_to_remediate` in an otherwise Chinese
+// page. Map them to words and keep the machine key as the tooltip.
+const RUBRIC_LABEL: Record<string, { zh: string; en: string; hintZh: string; hintEn: string }> = {
+  rca_accuracy: {
+    zh: '根因准确率',
+    en: 'RCA accuracy',
+    hintZh: '诊断结论与最终确认的根因一致的占比',
+    hintEn: 'Share of incidents whose diagnosis matched the confirmed root cause',
+  },
+  time_to_remediate: {
+    zh: '平均修复耗时',
+    en: 'Time to remediate',
+    hintZh: '从告警触发到恢复完成的中位时长',
+    hintEn: 'Median time from alert firing to recovery complete',
+  },
+  approval_rate: {
+    zh: '审批通过率',
+    en: 'Approval rate',
+    hintZh: '提交审批后被批准的占比',
+    hintEn: 'Share of submitted approvals that were approved',
+  },
+  recovery_pass_rate: {
+    zh: '恢复通过率',
+    en: 'Recovery pass rate',
+    hintZh: '恢复动作通过校验的占比',
+    hintEn: 'Share of recovery actions that passed verification',
+  },
+};
+
+function RubricCard({ metric, value }: { metric: string; value: string }) {
+  const { tr } = useI18n();
+  const meta = RUBRIC_LABEL[metric];
   return (
-    <div
-      className={cn(
-        'bg-zinc-900/40 border border-zinc-800/60 rounded-md px-3 py-2.5',
-      )}
-    >
-      <div className="text-[10px] uppercase tracking-wider text-zinc-500">
-        {label}
+    <div className="rounded-md border border-border-soft bg-card px-3 py-2.5">
+      <div
+        className="text-[11px] uppercase tracking-wider text-zinc-500"
+        title={meta ? `${tr(meta.hintZh, meta.hintEn)} · ${metric}` : metric}
+      >
+        {meta ? tr(meta.zh, meta.en) : metric}
       </div>
       <div className="mt-0.5 text-base font-semibold text-zinc-100 font-mono tabular-nums">
         {value}

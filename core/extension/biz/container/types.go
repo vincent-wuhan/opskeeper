@@ -285,6 +285,10 @@ type Agent struct {
 	// turn. — anti-drift mechanism.
 	CriticalReminder string `yaml:"critical_reminder" json:"critical_reminder"`
 
+	// Avatar 是 persona 的形象值：emoji 文本（如 "🛰️"）或图片 URL。
+	// 后端只透传，不做形态判定；前端按 http(s) 前缀分流渲染。
+	Avatar string `yaml:"avatar" json:"avatar"`
+
 	// InitialPrompt is prepended to the first user message at spawn.
 	InitialPrompt string `yaml:"initial_prompt" json:"initial_prompt"`
 

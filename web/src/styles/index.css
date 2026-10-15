@@ -28,6 +28,17 @@
   --warn: 245 158 11;      /* amber-500 */
   --ok: 16 185 129;        /* emerald-500 */
   --danger: 239 68 68;     /* red-500 */
+  /* Elevation. Dark: high-contrast black drop so cards lift off the
+     near-black canvas without a visible grey rim. */
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-pop: 0 8px 24px rgb(0 0 0 / 0.5);
+  /* Accent scale (D1). Light-band steps, identical in both themes:
+     they are surfaces (chips / user bubble), so they must stay pale
+     regardless of mode; --accent-700 is the AA text color on them. */
+  --accent-50: 243 240 254;
+  --accent-100: 230 224 253;
+  --accent-600: 109 87 217;
+  --accent-700: 91 73 184;
 }
 
 /* Light theme. Tuned for "GitHub-light / Linear-light" feel:
@@ -51,6 +62,33 @@
   --warn: 180 83 9;           /* amber-700 */
   --ok: 4 120 87;             /* emerald-700 */
   --danger: 185 28 28;        /* red-700 */
+  /* Light: soft slate layering — barely-there so dense tables stay calm. */
+  --shadow-card: 0 1px 3px rgb(16 24 40 / 0.06), 0 1px 2px rgb(16 24 40 / 0.04);
+  --shadow-pop: 0 8px 24px rgb(16 24 40 / 0.12);
+  /* Accent scale (D1). Light-band steps, identical in both themes:
+     they are surfaces (chips / user bubble), so they must stay pale
+     regardless of mode; --accent-700 is the AA text color on them. */
+  --accent-50: 243 240 254;
+  --accent-100: 230 224 253;
+  --accent-600: 109 87 217;
+  --accent-700: 91 73 184;
+}
+
+/* -------------------------------------------------------------------
+   Radius ladder (D1 / tasks.md 1.1).
+   Theme-invariant by design: the same 7 steps apply to dark and light,
+   so they are declared once on `:root` — both `:root.dark` and
+   `:root.light` inherit them (this satisfies "暗/浅双主题均定义"
+   without duplicating identical values twice).
+   ------------------------------------------------------------------- */
+:root {
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-2xl: 32px;
+  --radius-3xl: 40px;
 }
 
 html, body, #root {
@@ -262,6 +300,22 @@ html.light .text-amber-400           { color: rgb(180 83 9); }                 /
 html.light .border-amber-500\/30,
 html.light .border-amber-500\/40     { border-color: rgb(252 211 77); }        /* amber-300 */
 
+/* Tones used by the 11-persona AgentBadge TONE_EDGE map that had no
+   light-mode remap: the border at 500/40 and the ring at 500/20 are
+   mid-saturation shades that stay too dark on a white card, so they
+   drop one step lighter to the -300 shade — same rule as the chip
+   remaps above. */
+html.light .border-violet-500\/40     { border-color: rgb(196 181 253); }       /* violet-300 */
+html.light .border-rose-500\/40       { border-color: rgb(253 164 175); }       /* rose-300 */
+html.light .border-cyan-500\/40       { border-color: rgb(103 232 249); }       /* cyan-300 */
+
+html.light .ring-violet-500\/20      { --tw-ring-color: rgb(196 181 253); }    /* violet-300 */
+html.light .ring-rose-500\/20        { --tw-ring-color: rgb(253 164 175); }    /* rose-300 */
+html.light .ring-amber-500\/20       { --tw-ring-color: rgb(252 211 77); }     /* amber-300 */
+html.light .ring-emerald-500\/20     { --tw-ring-color: rgb(110 231 183); }    /* emerald-300 */
+html.light .ring-sky-500\/20         { --tw-ring-color: rgb(125 211 252); }    /* sky-300 */
+html.light .ring-cyan-500\/20        { --tw-ring-color: rgb(103 232 249); }    /* cyan-300 */
+
 html.light .bg-red-500\/10           { background-color: rgb(254 226 226); }   /* red-100 */
 html.light .text-red-200,
 html.light .text-red-300             { color: rgb(185 28 28); }                /* red-700 */
@@ -331,6 +385,11 @@ html.light .bg-violet-900\/40            { background-color: rgb(237 233 254); }
 html.light .bg-indigo-900,
 html.light .bg-indigo-950                { background-color: rgb(224 231 255); }  /* indigo-100 */
 
+/* (b2) persona tone tints — AgentAvatar 6 底盘 (D2)。bg-violet/rose-500/10
+   此前没有浅色映射,在浅底卡片上会渲染成深紫/深玫红方块。 */
+html.light .bg-violet-500\/10          { background-color: rgb(237 233 254); }  /* violet-100 */
+html.light .bg-rose-500\/10            { background-color: rgb(255 228 230); }  /* rose-100 */
+
 /* (c) remaining pale semantic text -> -700 (AA contrast on white) */
 html.light .text-red-400                 { color: rgb(185 28 28); }   /* red-700 */
 html.light .text-emerald-400             { color: rgb(4 120 87); }    /* emerald-700 */
@@ -377,6 +436,42 @@ html.light .app-header {
      underneath doesn't bleed into the header chrome and make text hard
      to read. */
   background-color: rgb(var(--card) / 0.92);
+}
+
+/* -------------------------------------------------------------------
+   Semantic surface classes (D1 / tasks.md 1.8).
+   Token-driven, so both themes flip automatically (same mechanism as
+   .app-header above). Deliberately NOT stacking bg-zinc-* utilities:
+   the html.light card-shadow fallback (index.css:293-299) only fires on
+   elements carrying bg-zinc-900, so these never render a second
+   shadow in light mode.
+
+   Wrapped in `@layer components` on purpose. These are (0,1,0) rules, so
+   a caller that passes an override utility to <Card> (e.g.
+   `border-red-700/40 bg-red-900/20`) is (0,1,0) as well — source order
+   would decide, and `cn()` is a plain concat with no tailwind-merge, so
+   className order cannot save it. Unlayered CSS outranks *every* layer,
+   which would have made these beat all utilities. In `components` they
+   sit below `utilities`, so callers win and hover utilities (0,2,0) still
+   win on top.
+   ------------------------------------------------------------------- */
+@layer components {
+  .surface-card {
+    background-color: rgb(var(--card));
+    border: 1px solid rgb(var(--border-soft));
+    box-shadow: var(--shadow-card);
+  }
+
+  .bubble-agent {
+    background-color: rgb(var(--card));
+    border: 1px solid rgb(var(--border-soft));
+  }
+
+  .bubble-user {
+    background-color: rgb(var(--accent-50));
+    color: rgb(var(--accent-700));
+    border: 1px solid rgb(var(--accent-100));
+  }
 }
 
 /* Page-level micro-animations. Respect reduced-motion. */
@@ -450,6 +545,11 @@ select:focus-visible {
 }
 .md-body p { margin: 0 0 0.6em 0; }
 .md-body p:last-child { margin-bottom: 0; }
+/* .md-p-card — 带交付物卡的段落被 MessageBubble 的 p 覆盖换成 <div>(报表预览是
+   块级内容,不能待在 <p> 里)。间距与上面两条逐字对齐,否则段落间距会悄悄消失。
+   margin 与主题无关,所以只在基础块里给一份,不需要 html.light 平行规则。 */
+.md-body .md-p-card { margin: 0 0 0.6em 0; }
+.md-body .md-p-card:last-child { margin-bottom: 0; }
 .md-body h1, .md-body h2, .md-body h3 {
   font-weight: 600;
   margin: 0.8em 0 0.4em;
@@ -569,9 +669,13 @@ html.light .md-body th {
  * a solid gray ring. Outline stays bright + thin so the viewport edge
  * is unambiguous. */
 .react-flow__minimap-mask {
-  fill: rgba(0, 0, 0, 0.55);
-  stroke: rgb(161, 161, 170); /* zinc-400 */
-  stroke-width: 1;
+  /* React Flow v12 paints its own light-grey mask (rgba(240,240,240,0.6))
+     through a higher-precedence rule, so a plain declaration here loses and
+     the minimap renders as a pale slab in dark mode. !important is the only
+     hook available for this element. */
+  fill: rgba(0, 0, 0, 0.45) !important;
+  stroke: rgba(255, 255, 255, 0.14) !important;
+  stroke-width: 1 !important;
 }
 /* Light-theme overrides — flip Controls + MiniMap to the matching
  * palette. Without these the dark rules above stay applied and the
@@ -597,9 +701,9 @@ html.light .react-flow__minimap {
   border: 1px solid rgb(203, 213, 225); /* slate-300 */
 }
 html.light .react-flow__minimap-mask {
-  fill: rgba(15, 23, 42, 0.18); /* slate-900 at low alpha — dim the non-viewport */
-  stroke: rgb(71, 85, 105); /* slate-600 outline */
-  stroke-width: 1;
+  fill: rgba(15, 23, 42, 0.1) !important; /* slate-900 at low alpha — dim the non-viewport */
+  stroke: rgba(15, 23, 42, 0.18) !important;
+  stroke-width: 1 !important;
 }
 
 /* --- Report PDF export (HLD-014). window.print() isolates the report

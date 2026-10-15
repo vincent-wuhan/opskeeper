@@ -124,7 +124,7 @@ func TestDeleteDoc_UploadDoc(t *testing.T) {
 	fv := &fakeVec{head: uploadHead(url)}
 	u := &Usecase{vec: fv, embed: fakeEmbed{}}
 
-	if err := u.DeleteDoc(context.Background(), fv.head.ID); err != nil {
+	if err := u.DeleteDoc(context.Background(), fv.head.ID, "42"); err != nil {
 		t.Fatalf("delete uploaded doc: unexpected error: %v", err)
 	}
 	if len(fv.deletedBy) != 1 || fv.deletedBy[0]["url"] != url {

@@ -22,8 +22,8 @@ import (
 // require the embedder (OPSKEEPER_EMBEDDING_API_KEY) + a live qdrant; we only
 // remove the network dependency for getting the raw docs onto disk.
 //
-// Re-vendor with scripts/sync-builtin-vault.sh after the upstream
-// builtin://vault repo changes.
+// Re-vendor with scripts/sync-builtin-vault.sh (pass a local vault checkout)
+// after the upstream vault content changes.
 //
 //go:embed all:builtin_vault
 var builtinVaultFS embed.FS
@@ -35,16 +35,6 @@ const builtinVaultRoot = "builtin_vault"
 // not a real git remote — it marks legacy repo rows so PurgeBuiltinVaultRepo
 // can migrate them off the Repos table.
 const BuiltinVaultURL = "builtin://vault"
-
-// BuiltinVaultGitURL is the fixed cloud source for the platform vault
-// (ADR-029). SyncBuiltinVault tries a runtime clone of this public repo
-// first; the embedded snapshot above is the offline fallback. The URL is
-// deliberately NOT operator-configurable — the vault always comes from this
-// one repo, and a clone here never becomes a Repos-list row.
-const (
-	BuiltinVaultGitURL = "https://github.com/builtin://vault.git"
-	BuiltinVaultBranch = "main"
-)
 
 // IsBuiltinVaultURL reports whether url is the embedded-vault sentinel.
 func IsBuiltinVaultURL(url string) bool {

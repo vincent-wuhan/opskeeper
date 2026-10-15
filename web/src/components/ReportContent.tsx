@@ -99,7 +99,7 @@ function StatCard({
   const t = TONE[tone];
   const animated = useCountUp(value);
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+    <div className="surface-card rounded-rk-lg p-4">
       <div className="text-xs text-zinc-500">{label}</div>
       <div className="mt-1.5 flex items-baseline gap-1">
         <span className={cn('text-3xl font-semibold tabular-nums', t.num)}>{fmtNum(animated)}</span>

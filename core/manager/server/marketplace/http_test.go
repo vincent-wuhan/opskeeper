@@ -13,10 +13,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	bizmp "github.com/vincent-wuhan/opskeeper/core/manager/biz/marketplace"
-	model "github.com/vincent-wuhan/opskeeper/core/manager/model/marketplace"
 	"github.com/vincent-wuhan/opskeeper/core/base/pkg/errs"
 	"github.com/vincent-wuhan/opskeeper/core/base/pkg/tenantctx"
+	"github.com/vincent-wuhan/opskeeper/core/floor/pluginmanifest"
+	bizmp "github.com/vincent-wuhan/opskeeper/core/manager/biz/marketplace"
+	model "github.com/vincent-wuhan/opskeeper/core/manager/model/marketplace"
 )
 
 type stubSvc struct {
@@ -24,6 +25,7 @@ type stubSvc struct {
 	list       func(ctx context.Context, c bizmp.Caller) ([]*model.InstalledPack, error)
 	uninstall  func(ctx context.Context, c bizmp.Caller, packID string) error
 	registries func(ctx context.Context, c bizmp.Caller) bizmp.AllowedRegistries
+	catalog    func(ctx context.Context, c bizmp.Caller) ([]pluginmanifest.Entry, error)
 }
 
 func (s stubSvc) Install(ctx context.Context, c bizmp.Caller, src bizmp.Source) (*bizmp.InstallResult, error) {
@@ -37,6 +39,12 @@ func (s stubSvc) Uninstall(ctx context.Context, c bizmp.Caller, packID string) e
 }
 func (s stubSvc) Registries(ctx context.Context, c bizmp.Caller) bizmp.AllowedRegistries {
 	return s.registries(ctx, c)
+}
+func (s stubSvc) Catalog(ctx context.Context, c bizmp.Caller) ([]pluginmanifest.Entry, error) {
+	if s.catalog == nil {
+		return nil, nil
+	}
+	return s.catalog(ctx, c)
 }
 func (s stubSvc) SetBindings(ctx context.Context, c bizmp.Caller, packID string, bindings map[string]string) error {
 	return nil
@@ -214,3 +222,52 @@ func TestRegistries_OpenToAuthUser(t *testing.T) {
 		t.Fatalf("resp = %+v", resp)
 	}
 }
+
+// getJSON issues an authenticated GET and decodes the response.
+func getJSON(t *testing.T, router http.Handler, target string, into any) int {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, target, nil).WithContext(userCtx())
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK && into != nil {
+		if err := json.Unmarshal(rec.Body.Bytes(), into); err != nil {
+			t.Fatalf("decode %s: %v body=%s", target, err, rec.Body.String())
+		}
+	}
+	return rec.Code
+}
+
+// The catalog route is the first thing an operator opens when asking "what
+// can this platform install", so the test states the two properties a
+// reader of the response depends on: it is empty rather than broken when
+// nothing is offered, and the index carries the package's own declaration
+// rather than a summary of it.
+func TestTheCatalogRouteServesTheIndexAndNotAnError(t *testing.T) {
+	var got catalogResp
+	if code := getJSON(t, newRouter(NewHandler(stubSvc{}, nil, "")), "/v1/marketplace/catalog", &got); code != http.StatusOK {
+		t.Fatalf("empty catalog answered %d, want 200 — nothing offered is not a failure", code)
+	}
+	if got.Total != 0 {
+		t.Errorf("total = %d for an empty catalog", got.Total)
+	}
+
+	svc := stubSvc{catalog: func(context.Context, bizmp.Caller) ([]pluginmanifest.Entry, error) {
+		return []pluginmanifest.Entry{{
+			Name: "acme", Version: "1.2.3", SafetyLevel: "L1", Capability: "read",
+			ToolCount: 7, Strategy: "pin", MinEdgeVersion: "0.8.0", MinPigVersion: "0.4.0",
+		}}, nil
+	}}
+	got = catalogResp{}
+	if code := getJSON(t, newRouter(NewHandler(svc, nil, "")), "/v1/marketplace/catalog", &got); code != http.StatusOK {
+		t.Fatalf("status = %d", code)
+	}
+	if got.Total != 1 || got.Items[0].ToolCount != 7 || got.Items[0].MinPigVersion != "0.4.0" {
+		t.Errorf("index row = %#v, want the declaration carried through", got.Items)
+	}
+}
+
+// The compatibility route is asked BEFORE a release, so what it reports has
+// to be the node's own arithmetic rather than a second implementation of it.
+// The stub returns verdicts for a fleet one patch too old, and the response
+// must separate the installable count from the total — a reader who cannot
+// tell those apart cannot tell a partial fleet from a broken one.

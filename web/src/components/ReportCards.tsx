@@ -259,7 +259,7 @@ export function ReportCards({
                   navigate(`/reports/${r.id}`);
                 }
               }}
-              className="group flex cursor-pointer flex-col overflow-hidden rounded-xl border border-zinc-800/60 bg-zinc-900/40 transition-colors hover:border-zinc-700 hover:bg-zinc-900/70"
+              className="group flex cursor-pointer flex-col overflow-hidden surface-card rounded-rk-lg transition-colors hover:border-zinc-700 hover:bg-zinc-900/70"
             >
               <div className="relative h-44 w-full overflow-hidden border-b border-zinc-800">
                 <ReportThumb report={r} />

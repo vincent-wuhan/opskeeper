@@ -608,7 +608,7 @@ function MultiLinePanel({
   const visibleSeries = panel.series.filter((s) => !hidden.has(s.key));
 
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+    <section className="surface-card rounded-rk-lg p-4">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="flex items-start gap-2">
           <span className="mt-0.5 rounded-md border border-zinc-800 bg-zinc-950/60 p-1.5 text-zinc-300">
@@ -745,7 +745,7 @@ function JsonCard({
   empty: string;
 }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+    <div className="surface-card rounded-rk-lg p-4">
       <div className="mb-2 text-sm font-medium text-zinc-200">{title}</div>
       {data && Object.keys(data).length > 0 ? (
         <pre className="overflow-x-auto rounded-lg bg-zinc-950/60 p-3 text-xs leading-5 text-zinc-300">
@@ -1099,7 +1099,7 @@ function PluginCard({
   };
 
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40">
+    <section className="surface-card rounded-rk-lg">
       <div className="flex items-center justify-between gap-3 px-4 py-3">
         <div className="flex min-w-0 items-center gap-3">
           <span

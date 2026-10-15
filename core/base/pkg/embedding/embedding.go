@@ -74,23 +74,13 @@ func New(cfg Config) (Embedder, error) {
 	if provider == "" {
 		provider = "openai"
 	}
-	switch provider {
-	case "openai":
-		e, err := newOpenAI(cfg)
-		if err != nil {
-			// typed-nil → interface(nil) so callers' `embedder != nil` works.
-			return nil, err
-		}
-		return e, nil
-	case "local", "fastembed", "onnx":
-		e, err := newLocal(cfg)
-		if err != nil {
-			return nil, err
-		}
-		return e, nil
-	default:
-		return nil, fmt.Errorf("embedding: unknown provider %q", provider)
+	// Dispatch through the provider registry rather than a switch, so a
+	// provider a package registers is buildable without an edit here.
+	f, ok := lookupProvider(provider)
+	if !ok {
+		return nil, fmt.Errorf("embedding: unknown provider %q (registered: %v)", provider, RegisteredProviders())
 	}
+	return f(cfg)
 }
 
 // ---- openai-compatible HTTP impl ----

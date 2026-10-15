@@ -97,8 +97,24 @@ func TestAPublishedTreeIsAddressedAtTheStoreAndNotAtThisRootsDisk(t *testing.T) 
 	signer := testSigner(t)
 	seed := func(name, digest string) { store.digests[name] = digest }
 
+	// ONE staged tree, asked about twice. It was one tree: a deployment signs
+	// a tree once and publishes those bytes, and the second Distribute is the
+	// same question asked again after the store caught up.
+	//
+	// Staging it twice was not equivalent, and it failed about one run in
+	// fifty with the digest conflict below -- which reads as the store
+	// disagreeing with this root, the one conflict this package treats as
+	// unrecoverable. Nothing had disagreed with anything. A signature
+	// envelope carries SignedAt truncated to the second
+	// (pluginmanifest.Signing.Sign), so two trees signed on either side of a
+	// second boundary are different bytes, the archive packed from the second
+	// one hashes differently, and the store -- seeded from the first -- looks
+	// like it is serving something else. The production behaviour was right
+	// throughout; the fixture was asserting two different trees were one.
+	staged := stagingRoot(t, signer, "opskeeper-sre-readonly", "1.0.0")
+
 	// First pass: not there yet.
-	_, err := d.Distribute(t.Context(), b, stagingRoot(t, signer, "opskeeper-sre-readonly", "1.0.0"))
+	_, err := d.Distribute(t.Context(), b, staged)
 	if !errors.Is(err, ErrNotPublished) {
 		t.Fatalf("a store with nothing in it gave %v, want ErrNotPublished", err)
 	}
@@ -108,7 +124,7 @@ func TestAPublishedTreeIsAddressedAtTheStoreAndNotAtThisRootsDisk(t *testing.T) 
 	seeded := digestOfArchive(t, dir, archiveName(b))
 	seed(archiveName(b), seeded)
 
-	src, err := d.Distribute(t.Context(), b, stagingRoot(t, signer, "opskeeper-sre-readonly", "1.0.0"))
+	src, err := d.Distribute(t.Context(), b, staged)
 	if err != nil {
 		t.Fatalf("Distribute after the store caught up: %v", err)
 	}

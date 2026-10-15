@@ -11,6 +11,7 @@ package mq
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -29,6 +30,28 @@ func runQueueList(ctx context.Context, a *Adapter, args map[string]any) ([]map[s
 		return rabbit.queueRows(ctx, p, limit, 0)
 	}
 	return kf.topicRows(ctx, limit)
+}
+
+// runRebalanceHistory reports how a consumer group's membership changed.
+//
+// Kafka is the only backend with an answer here, and the refusal for the
+// other one names itself rather than answering a question about a broker
+// that cannot answer it. RabbitMQ's queue membership changes are visible in
+// the queue rows themselves, and there is no per-group assignment to keep a
+// history of.
+func runRebalanceHistory(ctx context.Context, a *Adapter, args map[string]any) ([]map[string]any, string, error) {
+	_, kf, err := a.handle()
+	if err != nil {
+		return nil, "", err
+	}
+	if kf == nil {
+		return nil, "", errors.New("mq: rebalance history is a Kafka capability; this connection is RabbitMQ, whose queue membership is reported by inspect_queue")
+	}
+	limit, err := intArg(args, "limit", 50, 500)
+	if err != nil {
+		return nil, "", err
+	}
+	return kf.rebalanceHistory(ctx, params(args), limit)
 }
 
 // runInspectLag reports what is behind, and how far.

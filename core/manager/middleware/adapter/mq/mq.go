@@ -28,9 +28,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/secretbox"
 	"github.com/vincent-wuhan/opskeeper/core/manager/middleware/adapter"
 	"github.com/vincent-wuhan/opskeeper/core/manager/middleware/registry"
-	"github.com/vincent-wuhan/opskeeper/core/base/pkg/secretbox"
 )
 
 const defaultTimeout = 30 * time.Second
@@ -120,6 +120,14 @@ func (a *Adapter) Connect(ctx context.Context, conn adapter.ConnectionSpec) erro
 	}
 	if err != nil {
 		return fmt.Errorf("mq: %s is not reachable: %w", kind, err)
+	}
+
+	// The sampler starts once the broker answered, so a control plane never
+	// runs a background loop against a connection it could not open. It is
+	// the history's existence that makes the tool's window worth having,
+	// and a window that only exists while somebody is looking is not one.
+	if kf != nil {
+		kf.StartRebalanceSampler(sampleInterval)
 	}
 
 	a.mu.Lock()

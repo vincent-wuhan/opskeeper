@@ -11,18 +11,19 @@ import (
 	"strings"
 
 	"github.com/vincent-wuhan/opskeeper/core/domain"
+	"github.com/vincent-wuhan/opskeeper/core/edge/agentmodel"
 	"github.com/vincent-wuhan/opskeeper/core/edge/agentprofile"
 	"github.com/vincent-wuhan/opskeeper/core/floor/pluginmanifest"
 	"github.com/vincent-wuhan/opskeeper/core/pig/pigprofile"
 )
 
-// agentSettingsFile is the per-project settings the agent reads on start.
+// agentSettingsFile is the agent settings file the node writes.
 //
-// A node does not pass packages on the command line: the agent discovers
-// its plugins from the project config in its working directory, and the
-// working directory is the single most security-relevant thing a node
-// points at. Writing the file here rather than letting a package decide
-// where it goes is what makes "which code runs on this host" a question
+// A node does not pass packages on the command line: the agent discovers its
+// plugins from a settings list, and the working directory is the single most
+// security-relevant thing a node points at. Writing the file here rather than
+// letting a package decide where it goes is what makes "which code runs on
+// this host" a question
 // with one answer.
 const agentSettingsFile = "settings.json"
 
@@ -363,6 +364,37 @@ func agentExtensions(plugins []pluginmanifest.Plugin) ([]agentprofile.Extension,
 	return agentprofile.Scopes(out)
 }
 
+// agentSettingsPath is where the agent actually reads its package list from,
+// and getting this path wrong is the single most expensive silent failure in
+// this file's history.
+//
+// PiG reads settings from exactly two places:
+//
+//	<AgentDir>/settings.json        the AGENT scope  (PIG_CODING_AGENT_DIR)
+//	<Cwd>/.pig/settings.json        the PROJECT scope
+//
+// The node used to write the project one. That made every admitted package a
+// PROJECT-scope package, and a project package is loaded only when the
+// agent's discovery list admits the "workspace" source -- while the node
+// profile deliberately admits only "user". So the agent started, reported
+// healthy, was offered PiG's built-ins minus the ones the profile strips
+// (codemode and tool_search), and had not one plugin tool from any manifest
+// it had admitted. No error, no diagnostic, clean exit: the gate saw a node
+// that had loaded nothing and could not say so.
+//
+// The agent scope also needs no trust, where a project scope needs a trusted
+// project -- and a node has no way to answer a trust prompt. So the agent
+// scope is both the one that works and the one that can be relied on to.
+//
+// The fallback is the old project path, for a node with no agent scope
+// configured: same behaviour as before, still loadable, still reviewable.
+func agentSettingsPath(cwd string) string {
+	if dir := strings.TrimSpace(os.Getenv(agentmodel.ConfigDirEnv)); dir != "" {
+		return filepath.Join(dir, agentSettingsFile)
+	}
+	return filepath.Join(cwd, agentConfigDirName(), agentSettingsFile)
+}
+
 // writeAgentSettings points the agent at the admitted packages.
 //
 // It replaces the file rather than editing it, and it is written to a
@@ -370,13 +402,13 @@ func agentExtensions(plugins []pluginmanifest.Plugin) ([]agentprofile.Extension,
 // this leaves either the old package set or the new one - never a
 // truncated file that would start an agent with no plugins at all and no
 // explanation.
-func writeAgentSettings(dir string, packages []string) (string, error) {
-	if dir == "" {
+func writeAgentSettings(cwd string, packages []string) (string, error) {
+	if cwd == "" {
 		return "", errors.New("agent: no working directory to write settings into")
 	}
-	configDir := filepath.Join(dir, agentConfigDirName())
-	if err := os.MkdirAll(configDir, 0o750); err != nil {
-		return "", fmt.Errorf("agent: create %s: %w", configDir, err)
+	path := agentSettingsPath(cwd)
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return "", fmt.Errorf("agent: create %s: %w", filepath.Dir(path), err)
 	}
 
 	settings := agentSettings{Packages: make([]string, 0, len(packages))}
@@ -388,9 +420,9 @@ func writeAgentSettings(dir string, packages []string) (string, error) {
 		return "", fmt.Errorf("agent: encode settings: %w", err)
 	}
 	body = append(body, '\n')
+	final := path
 
-	final := filepath.Join(configDir, agentSettingsFile)
-	tmp, err := os.CreateTemp(configDir, agentSettingsFile+".*")
+	tmp, err := os.CreateTemp(filepath.Dir(path), agentSettingsFile+".*")
 	if err != nil {
 		return "", fmt.Errorf("agent: stage settings: %w", err)
 	}

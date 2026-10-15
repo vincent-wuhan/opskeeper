@@ -1,5 +1,6 @@
 ---
 name: reporter
+avatar: 📊
 description: 定时运维报告 worker，把已算好的事实数据写成带叙事的运维报告，聚焦资源趋势与监控覆盖，不只盯故障；不计算、不发明任何数字
 when_to_use: |
   由 report 调度器 / 手动"立即生成"触发（非用户 chat spawn）。输入是一份

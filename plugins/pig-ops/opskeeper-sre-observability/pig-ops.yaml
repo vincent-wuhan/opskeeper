@@ -21,7 +21,7 @@ apiVersion: opskeeper.io/v1
 kind: Plugin
 metadata:
   name: opskeeper-sre-observability
-  version: 0.1.0
+  version: 0.2.0
   vendor: opskeeper
   homepage: https://github.com/vincent-wuhan/opskeeper
 spec:
@@ -110,4 +110,6 @@ spec:
     # rather than a formality. The repair package is pinned precisely
     # because that is not true of it.
     strategy: rolling
+    # pig 下限此前不存在；本仓固定 PiG v0.4.0（决策 455）。
+    min_pig_version: 0.4.0
     min_edge_version: 0.8.0

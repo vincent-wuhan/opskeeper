@@ -166,3 +166,12 @@ plugins/opskeeper-teamharness/eval/reports/
 # into a commit; it was caught before it was pushed (decision 420).
 .devrun/
 .worktrees/
+# `.comet/` stays ignored, and that is not an oversight. The Comet tooling
+# reads its config from the working tree, not from the index, so tracking it
+# buys the tool nothing and costs the release a path scripts/audit_open_source.py
+# refuses to ship — see the block above, which reached the same conclusion for
+# the other private working material. A whitelist here does not narrow the
+# auditor; it only makes the gate red on every push.
+
+# codegraph 本地 daemon 的 PID/套接字状态,含私有路径,不得入版本库
+.codegraph/daemon.pid

@@ -25,12 +25,22 @@ const Name = "logs"
 // The returned *plugins.SubprocessPlugin satisfies plugins.Plugin and is
 // registered with the Supervisor by opskeeper-edge main.
 func New(binDir, workDir string, log *slog.Logger) plugins.Plugin {
-	return plugins.NewSubprocess(plugins.SubprocessOpts{
-		Name:         Name,
-		Binary:       filepath.Join(binDir, "promtail"),
-		WorkDir:      filepath.Join(workDir, Name),
-		ConfigFile:   filepath.Join(workDir, Name, "promtail.yaml"),
-		ConfigRender: render,
+	return plugins.NewSubprocessCollector(Spec(), binDir, workDir, log)
+}
+
+// Spec declares the logs collector: the promtail binary and the config
+// template it is run with.
+//
+// It is the declaration NewSubprocessCollector consumes. Before it, the
+// binary name and template were inline in New, so the node's collector set
+// could only be read by reading this constructor; now it is a value, and a
+// third-party collector package is built from its own Spec the same way.
+func Spec() plugins.CollectorSpec {
+	return plugins.CollectorSpec{
+		Name:           Name,
+		BinaryName:     "promtail",
+		ConfigFileName: "promtail.yaml",
+		Render:         render,
 		Args: func(_ plugins.PluginConfig, configFile string) []string {
 			return []string{
 				"-config.file=" + configFile,
@@ -39,6 +49,5 @@ func New(binDir, workDir string, log *slog.Logger) plugins.Plugin {
 				"-positions.file=" + filepath.Join(filepath.Dir(configFile), "positions.yaml"),
 			}
 		},
-		Log: log,
-	})
+	}
 }

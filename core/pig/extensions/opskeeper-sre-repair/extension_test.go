@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/MichaelKinsy/PiG/extensions/sdk"
 	"github.com/vincent-wuhan/opskeeper/core/wire"
 )
 
@@ -268,7 +269,11 @@ func TestACallIsCarriedToTheHostWithTheNameBoundAtRegistration(t *testing.T) {
 		t.Errorf("arguments = %v, want the model's proposal carried through unaltered", seen[0].Arguments)
 	}
 
-	body, ok := out.(map[string]any)
+	res, ok := out.(sdk.ToolResult)
+	if !ok {
+		t.Fatalf("result is %T, want sdk.ToolResult", out)
+	}
+	body, ok := res.Details.(map[string]any)
 	if !ok || body["restarted"] != true {
 		t.Errorf("result = %#v, want the host's restart envelope decoded", out)
 	}

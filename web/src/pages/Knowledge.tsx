@@ -120,12 +120,18 @@ export default function KnowledgePage() {
   const [lastVaultSync, setLastVaultSync] = useState<{
     count: number;
     at: string;
-    source: 'cloud' | 'embedded';
   } | null>(null);
   // Transient "✓ synced" banner so a successful click has a visible result
   // (the count alone is easy to miss when it doesn't change). Cleared after
   // a few seconds or on the next action.
-  const [syncOk, setSyncOk] = useState<{ count: number; source: 'cloud' | 'embedded' } | null>(null);
+  const [syncOk, setSyncOk] = useState<{ count: number } | null>(null);
+  const syncOkTimer = useRef<number | null>(null);
+
+  // Clear the pending banner timer on unmount so it can't fire setState on
+  // an unmounted component (React logs a warning; the timer also leaks).
+  useEffect(() => () => {
+    if (syncOkTimer.current !== null) window.clearTimeout(syncOkTimer.current);
+  }, []);
 
   const fetchAll = useCallback(async (silent = false) => {
     if (silent) setRefreshing(true);
@@ -133,8 +139,10 @@ export default function KnowledgePage() {
     try {
       // The folder tree is derived per-scope from the docs themselves
       // (each source has its own tree), so we no longer need the aggregate
-      // /knowledge/paths endpoint here.
-      const docsR = await listDocs();
+      // /knowledge/paths endpoint here. Ask for a high limit explicitly:
+      // the backend otherwise defaults to 200 and the tree would silently
+      // drop every doc past the 200th (both scopes share this one call).
+      const docsR = await listDocs({ limit: 1000 });
       setItems(docsR.items ?? []);
       setErr(null);
     } catch (e) {
@@ -155,10 +163,11 @@ export default function KnowledgePage() {
     setSyncOk(null);
     try {
       const res = await syncVault();
-      setLastVaultSync({ count: res.file_count, at: res.synced_at, source: res.source });
-      setSyncOk({ count: res.file_count, source: res.source });
+      setLastVaultSync({ count: res.file_count, at: res.synced_at });
+      setSyncOk({ count: res.file_count });
       await fetchAll(true);
-      window.setTimeout(() => setSyncOk(null), 6000);
+      if (syncOkTimer.current !== null) window.clearTimeout(syncOkTimer.current);
+      syncOkTimer.current = window.setTimeout(() => setSyncOk(null), 6000);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : (e as Error).message;
       setSyncErr(msg);
@@ -324,15 +333,10 @@ export default function KnowledgePage() {
 
       {syncOk && (
         <div className="mx-6 mt-3 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
-          {syncOk.source === 'cloud'
-            ? tr(
-                `✓ 已从云端同步内置知识库 · ${syncOk.count} 篇`,
-                `✓ Synced built-in vault from cloud · ${syncOk.count} docs`,
-              )
-            : tr(
-                `✓ 已同步内置知识库 · ${syncOk.count} 篇（云端不可达，使用离线内置版）`,
-                `✓ Synced built-in vault · ${syncOk.count} docs (cloud unreachable — used offline baseline)`,
-              )}
+          {tr(
+            `✓ 已同步内置知识库 · ${syncOk.count} 篇`,
+            `✓ Synced built-in vault · ${syncOk.count} docs`,
+          )}
         </div>
       )}
 
@@ -437,10 +441,10 @@ export default function KnowledgePage() {
                 title={
                   lastVaultSync
                     ? tr(
-                        `上次同步 ${fullDateTime(lastVaultSync.at)} · ${lastVaultSync.count} 篇 · ${lastVaultSync.source === 'cloud' ? '来源云端' : '离线内置'}`,
-                        `Last synced ${fullDateTime(lastVaultSync.at)} · ${lastVaultSync.count} docs · ${lastVaultSync.source === 'cloud' ? 'from cloud' : 'offline baseline'}`,
+                        `上次同步 ${fullDateTime(lastVaultSync.at)} · ${lastVaultSync.count} 篇 · 内置快照`,
+                        `Last synced ${fullDateTime(lastVaultSync.at)} · ${lastVaultSync.count} docs · embedded snapshot`,
                       )
-                    : tr('从云端同步内置知识库（github.com/builtin://vault，连不上则用离线内置版）', 'Sync built-in vault from cloud (github.com/builtin://vault; offline baseline if unreachable)')
+                    : tr('重新同步内置知识库（使用随二进制打包的内置快照）', 'Re-sync built-in vault (from the snapshot bundled in the binary)')
                 }
                 className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-50"
               >
@@ -470,7 +474,7 @@ export default function KnowledgePage() {
               action={
                 sourceScope === 'builtin' ? (
                   <Button variant="ghost" onClick={() => void onSyncBuiltin()} disabled={syncingBuiltin}>
-                    <DownloadCloud size={12} /> {tr('从云端同步内置知识库', 'Sync built-in vault from cloud')}
+                    <DownloadCloud size={12} /> {tr('同步内置知识库', 'Sync built-in vault')}
                   </Button>
                 ) : (
                   <div className="flex items-center gap-2">
@@ -766,7 +770,7 @@ function DocCard({
           <div className="truncate text-sm font-medium text-zinc-100" title={localizedDocTitle(doc)}>
             {localizedDocTitle(doc)}
           </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-500">
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5 border-b border-zinc-800/60 bg-zinc-950/40 text-left text-[11px] uppercase tracking-wider text-zinc-500">
             <span className={sourceBadge.cls}>{sourceBadge.label}</span>
             {doc.path && (
               <span className="rounded bg-zinc-800/60 px-1.5 py-0.5 font-normal normal-case text-zinc-300">
@@ -838,6 +842,7 @@ function DocCard({
 }
 
 function SearchHitCard({ hit }: { hit: SearchHit }) {
+  const { tr } = useI18n();
   return (
     <div className="rounded-md border border-zinc-800/60 bg-zinc-950/40 px-3 py-2">
       <div className="flex items-center justify-between text-[11px] text-zinc-500">
@@ -854,7 +859,16 @@ function SearchHitCard({ hit }: { hit: SearchHit }) {
             </span>
           )}
         </div>
-        <span>score {hit.score.toFixed(2)}</span>
+        {hit.score > 0 ? (
+          <span>score {hit.score.toFixed(2)}</span>
+        ) : (
+          // Keyword-only hits carry no vector score (the backend reports 0),
+          // so "score 0.00" would read as a failed match. Label the path that
+          // actually matched instead.
+          <span className="rounded bg-zinc-800/60 px-1.5 py-0.5 text-[10px] text-zinc-400">
+            {tr('关键词命中', 'keyword match')}
+          </span>
+        )}
       </div>
       {/* 预览只给正文：frontmatter 占满 3 行预览毫无信息量 */}
       <div className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-[12px] text-zinc-300">

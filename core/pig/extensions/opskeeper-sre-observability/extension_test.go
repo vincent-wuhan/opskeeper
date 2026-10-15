@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/MichaelKinsy/PiG/extensions/sdk"
 	"github.com/vincent-wuhan/opskeeper/core/wire"
 )
 
@@ -246,9 +247,13 @@ func TestACallIsCarriedToTheHostWithItsArgumentsUnaltered(t *testing.T) {
 		t.Errorf("arguments = %v, want the model's query carried through unaltered", seen[0].Arguments)
 	}
 
-	body, ok := out.(map[string]any)
+	res, ok := out.(sdk.ToolResult)
+	if !ok {
+		t.Fatalf("result is %T, want sdk.ToolResult", out)
+	}
+	body, ok := res.Details.(map[string]any)
 	if !ok || body["result_type"] != "vector" {
-		t.Errorf("result = %#v, want the host's answer decoded", out)
+		t.Errorf("details = %#v, want the host's answer decoded", res.Details)
 	}
 }
 
@@ -358,8 +363,11 @@ func TestAnEmptyResultIsAnEmptyObjectRatherThanNothing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	body, ok := out.(map[string]any)
-	if !ok || len(body) != 0 {
-		t.Errorf("result = %#v, want an empty object rather than nothing", out)
+	res, ok := out.(sdk.ToolResult)
+	if !ok {
+		t.Fatalf("result is %T, want sdk.ToolResult", out)
+	}
+	if strings.TrimSpace(res.Content) != "{}" {
+		t.Errorf("content = %q, want an empty object rather than nothing", res.Content)
 	}
 }

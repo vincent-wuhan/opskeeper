@@ -5,14 +5,14 @@
 // agentId conventions:
 //   - undefined / null / empty → coordinator default; nothing rendered
 //     (we don't want a "default" badge cluttering every session)
-//   - non-empty string → render a small chip with Bot icon + Chinese
-//     display name (mapped from agent_id; falls back to agent_id when
-//     unknown so future personas still show something)
+//   - non-empty string → render a small chip with the persona icon +
+//     Chinese display name (mapped from agent_id; falls back to
+//     agent_id when unknown so future personas still show something)
 //
-// Color is fixed (indigo) — different personas don't need different
-// hues today; it's a "this session is pinned to a persona" affordance.
-import { Bot } from 'lucide-react';
+// Color follows the persona tone (D2, via personaVisual) instead of a
+// fixed indigo, so the chip agrees with the AgentAvatar elsewhere.
 import { cn } from '@/lib/cn';
+import { personaVisual, TONE_CLASS, type PersonaTone } from './AgentAvatar';
 import { tr as trInline, useI18n } from '@/i18n/locale';
 
 export type AgentBadgeSize = 'xs' | 'sm';
@@ -26,6 +26,9 @@ const AGENT_LABELS_ZH: Record<string, string> = {
   'specialist-network': '网络专家',
   'specialist-disk': '磁盘专家',
   reviewer: '审核员',
+  critic: '评审员',
+  verifier: '验证员',
+  reporter: '报告员',
 };
 const AGENT_LABELS_EN: Record<string, string> = {
   default: 'Default',
@@ -36,7 +39,44 @@ const AGENT_LABELS_EN: Record<string, string> = {
   'specialist-network': 'Network specialist',
   'specialist-disk': 'Disk specialist',
   reviewer: 'Reviewer',
+  critic: 'Critic',
+  verifier: 'Verifier',
+  reporter: 'Reporter',
 };
+
+// Border + ring tint per persona tone. Kept as full literal class names
+// (never template-interpolated) so Tailwind's scanner sees every one.
+const TONE_EDGE: Record<PersonaTone, string> = {
+  violet: 'border-violet-500/40 ring-violet-500/20',
+  rose: 'border-rose-500/40 ring-rose-500/20',
+  amber: 'border-amber-500/40 ring-amber-500/20',
+  emerald: 'border-emerald-500/40 ring-emerald-500/20',
+  sky: 'border-sky-500/40 ring-sky-500/20',
+  cyan: 'border-cyan-500/40 ring-cyan-500/20',
+};
+
+// personaLabel resolves an agent_id to its localized display name using the
+// same two tables AgentBadge renders from, falling back to the raw agent_id
+// so a persona added later still shows something instead of blank.
+//
+// The optional `translate` argument exists because trInline reads
+// localStorage once at call time and never re-reads on locale change. A
+// component that wants to repaint when the user flips the language must pass
+// its own useI18n() `tr`; callers without that need (module-level constants,
+// AgentBadge itself, which already re-renders via useI18n) can omit it.
+// See src/i18n/locale.ts on the standalone tr caveat.
+//
+// Empty string for a falsy agent_id: an unset agent_id has no persona to
+// name, and the row that renders this shouldn't grow a "default" label just
+// to fill space.
+export function personaLabel(
+  agentId?: string | null,
+  translate: (zh: string, en: string) => string = trInline,
+): string {
+  if (!agentId) return '';
+  const zh = AGENT_LABELS_ZH[agentId];
+  return zh ? translate(zh, AGENT_LABELS_EN[agentId] ?? zh) : agentId;
+}
 
 export function AgentBadge({
   agentId,
@@ -49,10 +89,13 @@ export function AgentBadge({
 }) {
   const { tr } = useI18n();
   if (!agentId) return null;
-  const zh = AGENT_LABELS_ZH[agentId];
-  const label = zh ? trInline(zh, AGENT_LABELS_EN[agentId] ?? zh) : agentId;
-  const base =
-    'inline-flex items-center gap-1 rounded-md border border-indigo-500/40 bg-indigo-500/10 text-indigo-200 ring-1 ring-inset ring-indigo-500/20';
+  const label = personaLabel(agentId);
+  const { icon: Icon, tone } = personaVisual(agentId);
+  const base = cn(
+    'inline-flex items-center gap-1 rounded-md border ring-1 ring-inset',
+    TONE_EDGE[tone],
+    TONE_CLASS[tone],
+  );
   const sizeCls =
     size === 'sm'
       ? 'px-1.5 py-0.5 text-[11px]'
@@ -63,7 +106,7 @@ export function AgentBadge({
       title={tr(`此会话固定使用 ${label}（${agentId}）`, `This session is pinned to ${label} (${agentId})`)}
       className={cn(base, sizeCls, className)}
     >
-      <Bot size={iconSize} />
+      <Icon size={iconSize} aria-hidden="true" />
       {label}
     </span>
   );

@@ -241,7 +241,7 @@ export function NLQueryHelper({ dialect, context, onAccept, children }: NLQueryH
           {result && (
             <div className="space-y-2 rounded-md border border-zinc-800 bg-zinc-950/40 p-3">
               <div>
-                <div className="mb-1 text-[10px] uppercase tracking-wider text-zinc-500">
+                <div className="mb-1 border-b border-zinc-800/60 bg-zinc-950/40 text-left text-[11px] uppercase tracking-wider text-zinc-500">
                   {DIALECT_LABELS[dialect]}
                 </div>
                 <pre

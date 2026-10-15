@@ -6,6 +6,9 @@ import type { IconType } from '@/lib/icon';
 // Logs / IncidentDetail).
 type Props = {
   icon?: IconType;
+  /** Override the icon tint (default zinc-600). e.g. a positive "all clear"
+   *  empty state can pass `text-emerald-500/60`. */
+  iconClassName?: string;
   title: string;
   hint?: string;
   /** Renders below the title; pass a button or link styled consistently
@@ -15,7 +18,7 @@ type Props = {
   className?: string;
 };
 
-export function EmptyState({ icon: Icon, title, hint, action, className }: Props) {
+export function EmptyState({ icon: Icon, iconClassName, title, hint, action, className }: Props) {
   return (
     <div
       className={
@@ -23,7 +26,7 @@ export function EmptyState({ icon: Icon, title, hint, action, className }: Props
         'flex h-60 flex-col items-center justify-center gap-2 text-center'
       }
     >
-      {Icon && <Icon size={28} className="text-zinc-600" />}
+      {Icon && <Icon size={28} className={iconClassName ?? 'text-zinc-600'} />}
       <div className="text-sm text-zinc-500">{title}</div>
       {hint && <div className="text-xs text-zinc-600">{hint}</div>}
       {action && <div className="mt-3">{action}</div>}

@@ -28,15 +28,16 @@ import {
   GitBranch,
   ChevronDown,
   ChevronRight,
-  Pencil,
-  Trash2,
   Share2,
   Plug,
   Package,
   Sparkles,
+  ClipboardCheck,
+  Plus,
+  FileBarChart,
 } from 'lucide-react';
 import { Avatar } from './Avatar';
-import { AgentBadge } from './AgentBadge';
+import { SessionList } from './SessionList';
 import { OpskeeperLogo } from './OpskeeperLogo';
 import { useI18n } from '@/i18n/locale';
 import { useThemeMode } from '@/store/mode';
@@ -46,9 +47,11 @@ import type { IconType } from '@/lib/icon';
 import { useAuth } from '@/store/auth';
 import { useUi } from '@/store/ui';
 import { useIncidentBadge } from '@/store/incidentBadge';
+import { useApprovalBadge } from '@/store/approvalBadge';
 import { useMe, usePermissions } from '@/store/me';
 import { useChatSessions, invalidateChatSessions } from '@/store/chatSessions';
-import { deleteSession, renameSession, type ChatSession } from '@/api/chat';
+import { createSession, deleteSession, type ChatSession } from '@/api/chat';
+import { Button } from '@/components/ui/Button';
 import { listEdges, type EdgeRole } from '@/api/edges';
 import { onDevicesChanged } from '@/lib/events';
 
@@ -70,6 +73,10 @@ export function Sidebar() {
   // Unack'd incident count drives the red pill on 告警 items + a dot on
   // the collapsed icon-rail. Polled by useIncidentBadge in Layout.
   const incidentOpen = useIncidentBadge((s) => s.openCount);
+  // Pending-approval count drives the red pill on the 审批中心 item.
+  // Polled by useApprovalBadge in Layout; the store itself only calls
+  // /approvals/count for admins, matching the group guard below.
+  const approvalsPending = useApprovalBadge((s) => s.pending);
   const [showAllSessions, setShowAllSessions] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ChatSession | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -150,6 +157,15 @@ export function Sidebar() {
     setUserMenuOpen(false);
     logout();
     navigate('/login');
+  };
+
+  // 新对话 CTA — creates an empty session and jumps straight into it, the
+  // same shape as Home.tsx's startSession minus the initial prompt: from the
+  // sidebar there is no typed content to hand over, so the thread opens empty
+  // and ChatThread owns everything from there.
+  const startNewChat = async () => {
+    const s = await createSession({ title: tr('新对话', 'New chat').slice(0, 30), agent_id: 'default' });
+    navigate(`/chat/${s.id}`);
   };
 
   const { preference: themePref, resolved: themeMode, cycle: cycleTheme } = useThemeMode();
@@ -259,7 +275,7 @@ export function Sidebar() {
           <PanelLeftOpen size={16} />
         </button>
         <Link
-          to="/dashboard"
+          to="/home"
           aria-label={tr('首页', 'Home')}
           className="rounded-lg p-2 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
         >
@@ -301,7 +317,7 @@ export function Sidebar() {
           <HardDrive size={16} />
         </Link>
         <Link
-          to="/skills"
+          to="/discover?tab=skills"
           aria-label={tr('技能', 'Skills')}
           className="rounded-lg p-2 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100"
         >
@@ -406,14 +422,58 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 pb-3">
+        {/* 新对话 是侧栏里唯一的主 CTA: 想开新线程时不需要先想清楚该落在哪个
+            页面, 一个动作直达一个空会话。 */}
+        <div className="mt-3">
+          <Button
+            variant="primary"
+            className="w-full justify-center"
+            onClick={() => void startNewChat()}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {tr('新对话', 'New chat')}
+          </Button>
+        </div>
+
         {/* L1 顶级入口 — 不缩进，直接可点 */}
-        <div className="mt-1 space-y-0.5">
-          <SidebarNavItem to="/dashboard" icon={Home} label={tr('首页', 'Home')} exact level={1} />
+        <div className="mt-3 space-y-0.5">
+          <SidebarNavItem to="/home" icon={Home} label={tr('首页', 'Home')} exact level={1} />
           <SidebarNavItem to="/dashboard" icon={LayoutDashboard} label={tr('仪表盘', 'Dashboard')} level={1} />
         </div>
 
-        {/* AIOps 是主舞台 — Agent (运行) 与 知识库 / 代码仓库 (素材) 顶级并列，
-            观测数据 (设备 / 监控告警) 折叠在下方做数据源。 */}
+        {/* IA 重排 (2.1): 对话 / Agent / Discover / 运维 / 日常 / 审批 六组,
+            管理留在底部 footer 区。分组取代了旧的扁平堆叠, 但**没有新增页面**,
+            也没有改动任何一条 route 字符串 —— 变的只是归属。
+            组名 Agent / Discover 保持英文, 与既有 SectionLabel 一致。 */}
+
+        {/* 对话 —— 会话列表。行本身的视觉(AgentAvatar 32 + persona 名 +
+            标题摘要)与重命名 / 删除交互都在 SessionList 里; 这里只负责
+            切片的条数、空态、展开按钮和删除 modal。传入的是
+            visibleSessions 而不是 sessions, 否则 5 条上限会静默失效。 */}
+        <SectionLabel>{tr('对话', 'Chats')}</SectionLabel>
+        <div className="ml-2 space-y-0.5">
+          {sessions.length === 0 ? (
+            <div className="px-2 py-1.5 text-[12px] text-zinc-600">{tr('暂无会话', 'No sessions yet')}</div>
+          ) : (
+            <SessionList
+              sessions={visibleSessions}
+              onDelete={(s) => setDeleteTarget(s)}
+            />
+          )}
+          {hasMoreSessions ? (
+            <button
+              type="button"
+              onClick={() => setShowAllSessions((v) => !v)}
+              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-[12px] text-zinc-500 transition-colors hover:bg-zinc-800/60 hover:text-zinc-200"
+            >
+              {showAllSessions ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              <span>{showAllSessions ? tr('收起', 'Collapse') : tr(`展开剩余 ${Math.min(sessions.length, 10) - 5} 条`, `Show ${Math.min(sessions.length, 10) - 5} more`)}</span>
+            </button>
+          ) : null}
+        </div>
+
+        {/* Agent —— agent 怎么定义、在哪跑、怎么编排。MCP 是 agent 的外部工具
+            接线面, 与助理同属 agent 侧, 所以留在这里而不是挪去管理。 */}
         <SectionLabel>Agent</SectionLabel>
         <NavSection>
           <SidebarNavItem to="/agents" icon={Bot} label={tr('助理', 'Assistants')} />
@@ -423,28 +483,33 @@ export function Sidebar() {
               operator looking for "what can I install" should not have to
               scroll past "what is running right now". */}
           <SidebarNavItem to="/node-agents" icon={Server} label={tr('节点 Agent', 'Node Agents')} />
-          {/* The marketplace sits here rather than in settings because it
-              is the way packages get IN, which is an agent concern; the
-              release console that puts them on hosts stays under Admin. */}
-          <SidebarNavItem to="/plugins" icon={Package} label={tr('插件市场', 'Plugins')} />
-          {/* 自愈规则 sits beside the marketplace because it is the other
-              way a package can be born: the marketplace takes one IN, and
-              this page is where the platform asks a human to let it write
-              one OUT of its own history. */}
-          <SidebarNavItem to="/crystallized" icon={Sparkles} label={tr('自愈规则', 'Runbooks')} />
           <SidebarNavItem to="/workflows" icon={Route} label={tr('工作流', 'Workflows')} />
-          <SidebarNavItem to="/skills" icon={Wrench} label={tr('技能', 'Skills')} />
           <SidebarNavItem to="/mcp" icon={Plug} label="MCP" />
         </NavSection>
 
-        <SectionLabel>{tr('知识库', 'Knowledge')}</SectionLabel>
+        {/* Discover —— agent 能拿到什么。三条链接都指向统一的 /discover 壳,
+            用 ?tab= 定位面板; 旧路由 /skills /plugins /crystallized 保留为
+            保参重定向, 老书签与深链仍然可用。 */}
+        <SectionLabel>Discover</SectionLabel>
         <NavSection>
-          <SidebarNavItem to="/knowledge" icon={BookOpen} label={tr('知识库', 'Knowledge')} />
-          <SidebarNavItem to="/knowledge/repos" icon={GitBranch} label={tr('代码仓库', 'Repos')} />
+          {/* The marketplace sits here rather than in settings because it
+              is the way packages get IN, which is a discover concern; the
+              release console that puts them on hosts stays under Admin. */}
+          <SidebarNavItem to="/discover?tab=plugins" icon={Package} label={tr('插件', 'Plugins')} />
+          <SidebarNavItem to="/discover?tab=skills" icon={Wrench} label={tr('技能', 'Skills')} />
+          {/* 自愈规则 是另一种"包"的来源: 市场是把它拿进来, 这一页是让平台
+              请求人许可它从自己的历史里写出一个来。 */}
+          <SidebarNavItem to="/discover?tab=crystals" icon={Sparkles} label={tr('自愈规则', 'Runbooks')} />
         </NavSection>
 
-        <CollapsibleSection storageKey="devices" title={tr('设备', 'Devices')} defaultOpen={false}>
-          <SidebarNavItem to="/devices" icon={HardDrive} label={tr('全部', 'All')} />
+        {/* 运维 —— agent 的观测面与它操作的物理对象。折叠头本身即分组名,
+            展开后 设备在前, 拓扑/监控/日志/链路/告警 紧随其后, 保持"先看对象
+            再看数据"的顺序。storageKey 用 ops: 原来的 devices 与 observability
+            两段被本 IA 合成一段, 1:1 的旧 key 映射已不存在。 */}
+        <CollapsibleSection storageKey="ops" title={tr('运维', 'Operations')} defaultOpen={false}>
+          {/* 设备 的角色子项按 presentRoles 过滤: 没有该角色的设备时整条不渲染,
+              未分类(零 edge)直接省略, 见上方 presentRoles 的说明。 */}
+          <SidebarNavItem to="/devices" icon={HardDrive} label={tr('设备', 'Devices')} />
           {presentRoles.has('server') && (
             <SidebarNavItem to="/devices?roles=server" icon={Server} label={tr('服务器', 'Servers')} />
           )}
@@ -458,48 +523,45 @@ export function Sidebar() {
             <SidebarNavItem to="/devices?roles=network" icon={Network} label={tr('网络设备', 'Network')} />
           )}
           <SidebarNavItem to="/topology" icon={Share2} label={tr('拓扑', 'Topology')} />
-        </CollapsibleSection>
-
-        <CollapsibleSection storageKey="observability" title={tr('监控告警', 'Observability')} defaultOpen={false}>
           <SidebarNavItem to="/monitor" icon={ChartLine} label={tr('监控', 'Monitor')} />
           <SidebarNavItem to="/logs" icon={FileText} label={tr('日志', 'Logs')} />
           <SidebarNavItem to="/traces" icon={Waypoints} label={tr('链路', 'Traces')} />
           <SidebarNavItem to="/alerts" icon={Siren} label={tr('告警', 'Alerts')} badge={incidentOpen} />
         </CollapsibleSection>
 
+        {/* 日常 —— 团队的周期性工作产出。代码仓库与知识库并列, 二者是同一
+            类"喂给 agent 的素材"。storageKey 沿用旧的 operations, 保住用户
+            已有的折叠偏好。 */}
         <CollapsibleSection storageKey="operations" title={tr('日常', 'Daily')} defaultOpen={false}>
           <SidebarNavItem to="/tasks" icon={CalendarClock} label={tr('任务', 'Tasks')} />
           <SidebarNavItem to="/pages" icon={AppWindow} label={tr('产物', 'Artifacts')} />
+          <SidebarNavItem to="/pages?tab=reports" icon={FileBarChart} label={tr('报表', 'Reports')} />
+          <SidebarNavItem to="/knowledge" icon={BookOpen} label={tr('知识库', 'Knowledge')} />
+          <SidebarNavItem to="/knowledge/repos" icon={GitBranch} label={tr('代码仓库', 'Repos')} />
         </CollapsibleSection>
 
-        <SectionLabel>{tr('会话', 'Sessions')}</SectionLabel>
-        <div className="ml-2 space-y-0.5">
-          {sessions.length === 0 ? (
-            <div className="px-2 py-1.5 text-[12px] text-zinc-600">{tr('暂无会话', 'No sessions yet')}</div>
-          ) : (
-            visibleSessions.map((s, index) => (
-              <SessionRow
-                key={s.id}
-                session={s}
-                index={index}
-                onDelete={() => setDeleteTarget(s)}
+        {/* 审批 —— 常驻入口 + 待审批红点。整个分组对非 admin 隐藏:
+            /v1/approvals 的每个 handler 都在 requireAdmin 之后, 所以非
+            admin 点进去必然 403。SectionLabel 一起包住, 否则非 admin 会
+            看到一个空标题。store 里的 role 门禁是独立的第二道保险。 */}
+        {isAdmin && (
+          <>
+            <SectionLabel>{tr('审批', 'Approvals')}</SectionLabel>
+            <NavSection>
+              <SidebarNavItem
+                to="/approvals"
+                icon={ClipboardCheck}
+                label={tr('审批中心', 'Approvals')}
+                badge={approvalsPending}
               />
-            ))
-          )}
-          {hasMoreSessions ? (
-            <button
-              type="button"
-              onClick={() => setShowAllSessions((v) => !v)}
-              className="flex items-center gap-1 rounded-md px-2 py-1.5 text-[12px] text-zinc-500 transition-colors hover:bg-zinc-800/60 hover:text-zinc-200"
-            >
-              {showAllSessions ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-              <span>{showAllSessions ? tr('收起', 'Collapse') : tr(`展开剩余 ${Math.min(sessions.length, 10) - 5} 条`, `Show ${Math.min(sessions.length, 10) - 5} more`)}</span>
-            </button>
-          ) : null}
-        </div>
+            </NavSection>
+          </>
+        )}
       </nav>
 
+      {/* 管理 —— 留在 footer 区: 这些是低频入口, 不该和上面的工作面抢视觉权重。 */}
       <div className="mb-4 border-t border-zinc-800/60 p-2">
+        <SectionLabel>{tr('管理', 'Admin')}</SectionLabel>
         {isAdmin && (
           <SidebarNavItem to="/admin/users" icon={UsersRound} label={tr('用户管理', 'Users & Orgs')} level={2} />
         )}
@@ -516,144 +578,6 @@ export function Sidebar() {
         />
       )}
     </aside>
-  );
-}
-
-function SessionRow({
-  session,
-  index,
-  onDelete,
-}: {
-  session: ChatSession;
-  index: number;
-  onDelete: () => void;
-}) {
-  const { tr } = useI18n();
-  const fallbackTitle = tr(`会话 ${index + 1}`, `Session ${index + 1}`);
-  const displayTitle = session.title || fallbackTitle;
-  const [renaming, setRenaming] = useState(false);
-  const [draft, setDraft] = useState(session.title || '');
-  const [saving, setSaving] = useState(false);
-  const inputRef = useRef<HTMLInputElement | null>(null);
-
-  // When external session title changes (e.g. another tab renamed it
-  // and invalidateChatSessions refetched) sync the draft so the next
-  // edit starts from the latest value rather than a stale string.
-  useEffect(() => {
-    if (!renaming) setDraft(session.title || '');
-  }, [session.title, renaming]);
-
-  const enterRename = () => {
-    setDraft(session.title || '');
-    setRenaming(true);
-    // focus + select on next tick so the input is mounted.
-    setTimeout(() => inputRef.current?.select(), 0);
-  };
-
-  const cancelRename = () => {
-    setRenaming(false);
-    setDraft(session.title || '');
-  };
-
-  const commit = async () => {
-    const t = draft.trim();
-    if (t === '' || t === (session.title || '')) {
-      cancelRename();
-      return;
-    }
-    setSaving(true);
-    try {
-      await renameSession(session.id, t);
-      invalidateChatSessions();
-      setRenaming(false);
-    } catch {
-      // Keep editor open on failure so the user can retry.
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (renaming) {
-    return (
-      <div className="group relative">
-        <div className="flex items-center gap-1.5 rounded-md bg-zinc-800/80 py-1 pl-2 pr-7">
-          <input
-            ref={inputRef}
-            value={draft}
-            disabled={saving}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={() => void commit()}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                void commit();
-              } else if (e.key === 'Escape') {
-                e.preventDefault();
-                cancelRename();
-              }
-            }}
-            className="w-full bg-transparent text-[13px] text-zinc-100 outline-none placeholder:text-zinc-600"
-            placeholder={fallbackTitle}
-            maxLength={256}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="group relative">
-      <NavLink
-        to={`/chat/${session.id}`}
-        title={displayTitle}
-        onDoubleClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          enterRename();
-        }}
-        className={({ isActive }) =>
-          cn(
-            'flex items-center gap-1.5 truncate rounded-md py-1.5 pl-2 pr-12 text-[13px] text-zinc-400 transition-colors',
-            'hover:bg-zinc-800/60 hover:text-zinc-100',
-            isActive && 'bg-zinc-800/80 text-zinc-100'
-          )
-        }
-      >
-        <span className="truncate">{displayTitle}</span>
-        <AgentBadge agentId={session.agent_id} />
-      </NavLink>
-      <button
-        type="button"
-        aria-label={tr('重命名会话', 'Rename session')}
-        title={tr('双击会话名也可重命名', 'Double-click the title to rename')}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          enterRename();
-        }}
-        className={cn(
-          'absolute right-7 top-1/2 -translate-y-1/2 rounded p-1 text-zinc-600 transition-opacity',
-          'opacity-0 hover:bg-zinc-800 hover:text-zinc-200 focus:opacity-100 group-hover:opacity-100'
-        )}
-      >
-        <Pencil size={12} />
-      </button>
-      <button
-        type="button"
-        aria-label={tr('删除会话', 'Delete session')}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          onDelete();
-        }}
-        className={cn(
-          'absolute right-1 top-1/2 -translate-y-1/2 rounded p-1 text-zinc-600 transition-opacity',
-          'opacity-0 hover:bg-red-900/30 hover:text-red-300 focus:opacity-100 group-hover:opacity-100'
-        )}
-      >
-        <Trash2 size={12} />
-      </button>
-    </div>
   );
 }
 
@@ -729,6 +653,12 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 // flows are the primary surface; observability + device management are
 // data sources for the agent. Keeping them collapsed by default puts
 // visual weight where the product's value is.
+//
+// The 2.1 IA regroups those same data-source items under a single 运维
+// heading, which is *longer* than either original section — 运维 alone is
+// 10 rows once the device role filters render. That makes the fold more
+// worth keeping, not less, so 运维 and 日常 stay collapsible while the
+// short groups (对话 / Agent / Discover / 审批 / 管理) use SectionLabel.
 function CollapsibleSection({
   storageKey,
   title,

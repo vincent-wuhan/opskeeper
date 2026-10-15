@@ -61,12 +61,14 @@ import (
 //   - rabbitmq.scale_consumer   same, and the real operation that resembles
 //     it (a policy raising prefetch) is not that
 //
-// kafka.rebalance_history is the fourth: Kafka exposes a group's CURRENT
-// members and assignments and no history of past rebalances. All four are
-// naming decisions about what the platform can honestly claim, recorded in
-// docs/opskeeper2-architecture.md (decision 53), and each is better as a
-// visible gap in the capability report than as a stub that makes the report
-// lie.
+// kafka.rebalance_history was a fourth name here for as long as it was a
+// naming decision: Kafka exposes a group's CURRENT members and no history of
+// past rebalances. It stopped being one at 决策 453, when a throttled
+// DescribeGroups sampler and a bounded store made the history something this
+// build can answer. The remaining names are naming decisions about what the
+// platform can honestly claim, recorded in docs/opskeeper2-architecture.md
+// (decision 53), and each is better as a visible gap in the capability
+// report than as a stub that makes the report lie.
 //
 // An empty map is still checked: the test above requires exact set equality
 // in both directions, so the next stub added anywhere fails immediately.

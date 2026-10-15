@@ -258,6 +258,15 @@ jobs:
       - name: The ledger's numbers are the tree's own numbers
         run: make ledger-check
 
+      # The plugin-ecosystem census. It had a target, a score that is quoted
+      # in the ledger, and no CI step, so the number was true only on the
+      # machine of whoever last remembered to type it — and a stale cell
+      # reads exactly like a fresh one, because the score barely moves when
+      # a cell's *reason* goes out of date (decision 462 found one: it still
+      # claimed the index read a single root, a knife earlier).
+      - name: The plugin ecosystem census is current
+        run: make dcell-check
+
       - name: The release tag grammar accepts this repository's own versions
         run: make tag-format-check
 

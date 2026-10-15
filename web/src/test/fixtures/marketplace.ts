@@ -1,5 +1,6 @@
 import type {
   CapabilityDeclaration,
+  CatalogEntry,
   InstalledPack,
   RegistryEntry,
 } from '@/api/marketplace';
@@ -48,3 +49,22 @@ export const registries: RegistryEntry[] = [
 ];
 
 export const registriesEmpty: RegistryEntry[] = [];
+
+// One usable registry (allow-listed + configured index url) so a registry
+// catalog row can be uniquely attributed during install mapping.
+export const registryOfficial: RegistryEntry[] = [
+  { name: 'opskeeper-official', url: 'https://registry.opskeeper.io/index.json', allowed: true },
+];
+
+export function catalogFixture(over: Partial<CatalogEntry>): CatalogEntry {
+  return {
+    name: 'opskeeper-sre-readonly',
+    version: '0.2.0',
+    origin: 'registry',
+    targets: ['edge'],
+    safety_level: 'L1',
+    capability: 'read',
+    tool_count: 3,
+    ...over,
+  };
+}

@@ -69,7 +69,8 @@ func (r *Repo) CreateRepo(ctx context.Context, repo *model.Repository) error {
 	return r.db.WithContext(ctx).Create(repo).Error
 }
 
-// UpdateRepoSync refreshes last_synced_at + last_sync_error + file_count.
+// UpdateRepoSync refreshes last_synced_at + last_sync_error + file_count
+// after a successful sync.
 func (r *Repo) UpdateRepoSync(ctx context.Context, id uint64, fileCount int, syncErr string) error {
 	res := r.db.WithContext(ctx).Model(&model.Repository{}).Where("id = ?", id).
 		Updates(map[string]any{
@@ -77,6 +78,22 @@ func (r *Repo) UpdateRepoSync(ctx context.Context, id uint64, fileCount int, syn
 			"last_sync_error": syncErr,
 			"last_synced_at":  gorm.Expr("CURRENT_TIMESTAMP"),
 		})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return errs.ErrNotFound
+	}
+	return nil
+}
+
+// MarkRepoSyncFailed records a failed sync WITHOUT touching file_count or
+// last_synced_at: a failure happens before the point-set swap, so the
+// previously indexed docs are still live and those columns must keep
+// describing the last successful sync.
+func (r *Repo) MarkRepoSyncFailed(ctx context.Context, id uint64, syncErr string) error {
+	res := r.db.WithContext(ctx).Model(&model.Repository{}).Where("id = ?", id).
+		Update("last_sync_error", syncErr)
 	if res.Error != nil {
 		return res.Error
 	}

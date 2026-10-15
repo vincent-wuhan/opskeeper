@@ -985,6 +985,8 @@ type agentDTO struct {
 	MaxTurns         int      `json:"max_turns,omitempty"`
 	SystemPrompt     string   `json:"system_prompt,omitempty"`
 	CriticalReminder string   `json:"critical_reminder,omitempty"`
+	// Avatar：persona 形象（emoji 文本或图片 URL），透传给 SPA。
+	Avatar string `json:"avatar,omitempty"`
 	// Source: "builtin" | "disk" | "user". When empty default to
 	// "builtin" client-side. Determines whether the SPA shows
 	// edit/delete affordances on the agent card.
@@ -1012,6 +1014,7 @@ func toAgentDTO(a *chatruntime.Agent) agentDTO {
 		MaxTurns:         a.MaxTurns,
 		SystemPrompt:     a.SystemPrompt,
 		CriticalReminder: a.CriticalReminder,
+		Avatar:           a.Avatar,
 		Source:           src,
 	}
 }

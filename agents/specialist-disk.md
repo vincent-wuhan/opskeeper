@@ -1,5 +1,6 @@
 ---
 name: specialist-disk
+avatar: 💾
 description: 文件系统 / 磁盘容量专家——du / find / stat / inode / 挂载 / 大文件
 when_to_use: |
   当任务涉及磁盘 / 文件系统时由 coordinator 派给我：

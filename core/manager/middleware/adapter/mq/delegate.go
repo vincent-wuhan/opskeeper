@@ -109,6 +109,11 @@ func (d *Delegate) QueueList(ctx context.Context, args map[string]any) ([]map[st
 	return runQueueList(ctx, d.adapter, args)
 }
 
+// RebalanceHistory reports how a consumer group's membership changed.
+func (d *Delegate) RebalanceHistory(ctx context.Context, args map[string]any) ([]map[string]any, string, error) {
+	return runRebalanceHistory(ctx, d.adapter, args)
+}
+
 // InspectConsumerLag reports how far behind the consumers are.
 func (d *Delegate) InspectConsumerLag(ctx context.Context, args map[string]any) ([]map[string]any, string, error) {
 	return runInspectLag(ctx, d.adapter, args)

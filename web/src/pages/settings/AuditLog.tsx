@@ -116,7 +116,7 @@ export default function SettingsAuditLog() {
             onChange={(e) => setFilter((f) => ({ ...f, action: e.target.value || undefined }))}
             className="rounded-md border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-zinc-600 cursor-pointer"
           >
-            <option value="">{tr('全部 action', 'All actions')}</option>
+            <option value="">{tr('全部动作', 'All actions')}</option>
             {actionOptions.map((a) => (
               <option key={a} value={a}>{actionLabel(a)}</option>
             ))}
@@ -156,15 +156,15 @@ export default function SettingsAuditLog() {
 
       <Card className="mt-3 flex-1 overflow-auto">
         <table className="min-w-full text-left text-[13px]">
-          <thead className="sticky top-0 z-10 bg-zinc-900 text-zinc-400">
+          <thead className="sticky z-10 border-b border-zinc-800/60 bg-zinc-950/40 text-left text-[11px] uppercase tracking-wider text-zinc-500">
             <tr>
               <th className="px-3 py-2">{tr('时间', 'Time')}</th>
               <th className="px-3 py-2">{tr('用户', 'Actor')}</th>
-              <th className="px-3 py-2">action</th>
+              <th className="px-3 py-2">{tr('动作', 'Action')}</th>
               <th className="px-3 py-2">{tr('资源', 'Resource')}</th>
               <th className="px-3 py-2">{tr('结果', 'Status')}</th>
               <th className="px-3 py-2">IP</th>
-              <th className="px-3 py-2" />
+              <th className="whitespace-nowrap px-3 py-2" />
             </tr>
           </thead>
           <tbody>
@@ -176,8 +176,13 @@ export default function SettingsAuditLog() {
                   {row.role && <div className="text-[11px] text-zinc-500">{row.role}</div>}
                 </td>
                 <td className="px-3 py-2">
+                  {/* Label first, raw action underneath — but only when they
+                      differ, else unmapped actions render the same string
+                      twice (which read as a bug on the walkthrough). */}
                   <div className="text-zinc-200">{actionLabel(row.action)}</div>
-                  <div className="font-mono text-[11px] text-zinc-500">{row.action}</div>
+                  {actionLabel(row.action) !== row.action && (
+                    <div className="font-mono text-[11px] text-zinc-500">{row.action}</div>
+                  )}
                 </td>
                 <td className="px-3 py-2">
                   <div className="text-zinc-300">{resourceLabel(row.resource_type)}</div>
@@ -189,7 +194,7 @@ export default function SettingsAuditLog() {
                   <StatusChip status={row.status} />
                 </td>
                 <td className="px-3 py-2 font-mono text-xs text-zinc-400">{row.ip || '—'}</td>
-                <td className="px-3 py-2 text-right">
+                <td className="whitespace-nowrap px-3 py-2 text-right">
                   <Button variant="ghost" onClick={() => setSelected(row)}>
                     {tr('详情', 'Detail')}
                   </Button>
@@ -238,15 +243,26 @@ function DetailDrawer({ row, onClose }: { row: AuditLog; onClose: () => void }) 
   } catch {
     /* keep raw */
   }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/40" onClick={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={tr('审计详情', 'Audit detail')}
         className="h-full w-full max-w-lg overflow-y-auto bg-zinc-950 p-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-base font-semibold">{tr('审计详情', 'Audit detail')}</h2>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose} aria-label={tr('关闭', 'Close')}>
             <X size={14} />
           </Button>
         </div>

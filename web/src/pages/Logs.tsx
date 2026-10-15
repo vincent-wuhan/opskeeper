@@ -17,7 +17,7 @@ import { ApiError } from '@/api/client';
 import { listEdges, type Edge, type EdgeRole } from '@/api/edges';
 import { onDevicesChanged } from '@/lib/events';
 import { Link } from 'react-router-dom';
-import { RoleSelect } from '@/components/ui';
+import { RoleSelect, DependencyNotice } from '@/components/ui';
 import { NLQueryHelper } from '@/components/NLQueryHelper';
 import { useObservability } from '@/store/observability';
 import { openObservabilityUrl, buildExploreUrl } from '@/lib/drilldown';
@@ -858,12 +858,7 @@ export default function LogsPage() {
             )}
           </div>
           <div ref={rowsContainerRef} className="flex-1 overflow-y-auto px-4 py-4">
-            {err && (
-              <div className="mb-4 flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300">
-                <AlertTriangle size={12} className="mt-0.5" />
-                <span>{err}</span>
-              </div>
-            )}
+            {err && <DependencyNotice className="mb-4" message={err} />}
             {!loading && rows.length === 0 && !err && noStreams && (
               <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
                 <SearchIcon size={28} className="text-zinc-600" />

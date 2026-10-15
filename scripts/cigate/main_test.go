@@ -4,7 +4,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+
+	"github.com/vincent-wuhan/opskeeper/scripts/internal/gatename"
 	"testing"
 )
 
@@ -291,10 +294,10 @@ func TestAnUnpromisedCheckTargetIsReported(t *testing.T) {
 // exemption every run of the real repository would red on ci-gate-check
 // itself, and the temptation would be to delete the rule.
 func TestTheCheckerExemptsItself(t *testing.T) {
-	if _, ok := SelfExempt["ci-gate-check"]; !ok {
+	if _, ok := gatename.SelfExempt["ci-gate-check"]; !ok {
 		t.Fatal("ci-gate-check is not self-exempt, so wiring this checker into CI would red on itself")
 	}
-	for target, why := range SelfExempt {
+	for target, why := range gatename.SelfExempt {
 		if strings.TrimSpace(why) == "" {
 			t.Errorf("self-exempt %q has no reason recorded", target)
 		}
@@ -800,9 +803,9 @@ func TestACheckThatCIRunsIsNotReported(t *testing.T) {
 // rots from exactly that shape.
 func TestAnExemptionWithoutAReasonIsReported(t *testing.T) {
 	defined := map[string]bool{"some-check": true}
-	NotRun["some-check"] = "   "
+	gatename.NotRun["some-check"] = "   "
 	problems := unwiredCheckTargets(defined, map[string]bool{})
-	delete(NotRun, "some-check")
+	delete(gatename.NotRun, "some-check")
 	if len(problems) != 1 || !strings.Contains(problems[0], "empty reason") {
 		t.Fatalf("an exemption with no reason was accepted: %v", problems)
 	}
@@ -850,5 +853,31 @@ func TestTheDeliveryJobMustRunWhatThePerPushJobExcludes(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "E2E_BROKER_TESTS") {
 		t.Fatalf("reported for the wrong reason: %v", err)
+	}
+}
+
+// A reason that quotes a score is a number nobody recomputes.
+//
+// This file caught one being written a knife after the ledger recorded the
+// disease: the dcell gate's reason said the census "reads 15 of 16 cells",
+// which was true on the day it was typed and is a sentence a reader believes
+// forever after. The census has its own target and prints its own number; a
+// second copy of it in prose here is a copy with no owner, and it is exactly
+// the shape decision 462 spent a knife removing from the census itself.
+//
+// So the shape is banned rather than the particular number. A reason may
+// still name decisions, counts of things that no longer exist, and historical
+// failures — those are history and history does not drift. What drifts is a
+// score, and a score has one home.
+func TestNoGateReasonQuotesAScore(t *testing.T) {
+	score := regexp.MustCompile(`\b\d+\s+of\s+\d+\b|\b\d+/\d+\b`)
+	for _, g := range allGates() {
+		if m := score.FindString(g.Why); m != "" {
+			t.Errorf("gate %q quotes %q in its reason. A score printed by the gate it describes "+
+				"has one home; a second copy in prose is a copy nobody recomputes, and it is the "+
+				"shape decision 462 removed from the census. State the property instead: what "+
+				"stops being true when this stops running.",
+				g.Target, m)
+		}
 	}
 }

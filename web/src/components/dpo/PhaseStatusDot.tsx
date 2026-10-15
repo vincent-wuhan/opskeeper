@@ -27,7 +27,7 @@ const STATUS_COLOR: Record<PhaseStatus, string> = {
   skipped: 'bg-zinc-600',
 };
 
-const STATUS_LABEL_ZH: Record<PhaseStatus, string> = {
+export const STATUS_LABEL_ZH: Record<PhaseStatus, string> = {
   pending: '待执行',
   running: '运行中',
   success: '成功',
@@ -35,7 +35,7 @@ const STATUS_LABEL_ZH: Record<PhaseStatus, string> = {
   skipped: '已跳过',
 };
 
-const STATUS_LABEL_EN: Record<PhaseStatus, string> = {
+export const STATUS_LABEL_EN: Record<PhaseStatus, string> = {
   pending: 'Pending',
   running: 'Running',
   success: 'Success',

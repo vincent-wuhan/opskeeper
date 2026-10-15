@@ -212,7 +212,7 @@ export default function SkillRunPage() {
             )}
 
             <div className="grid gap-4 lg:grid-cols-2">
-              <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+              <section className="surface-card rounded-rk-lg p-4">
                 <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">
                   {tr('参数', 'Parameters')}
                 </div>
@@ -291,7 +291,7 @@ export default function SkillRunPage() {
                 </div>
               </section>
 
-              <section className="flex min-h-[260px] flex-col rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+              <section className="flex min-h-[260px] flex-col surface-card rounded-rk-lg p-4">
                 <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-400">
                   {tr('结果', 'Result')}
                 </div>

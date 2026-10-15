@@ -255,7 +255,7 @@ A plugin ships two manifests side by side:
 ```yaml
 apiVersion: opskeeper.io/v1
 kind: Plugin
-metadata: {name: opskeeper-sre-readonly, version: 0.1.0}
+metadata: {name: opskeeper-sre-readonly, version: 0.2.0}
 spec:
   targets: [edge]              # where it may run
   safety_level: L1             # L0 read-only … L3 external mutation

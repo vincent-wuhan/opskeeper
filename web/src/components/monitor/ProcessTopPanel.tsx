@@ -220,7 +220,7 @@ export function ProcessTopPanel({
             </summary>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="text-[10px] uppercase tracking-wider text-zinc-500">
+                <thead className="border-b border-zinc-800/60 bg-zinc-950/40 text-left text-[11px] uppercase tracking-wider text-zinc-500">
                   <tr className="border-b border-zinc-800/60">
                     <th className="px-4 py-1.5 text-left font-medium">{tr('进程组', 'Process group')}</th>
                     <th className="px-4 py-1.5 text-right font-medium">

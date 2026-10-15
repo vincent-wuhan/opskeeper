@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/MichaelKinsy/PiG/extensions/sdk"
 	"github.com/vincent-wuhan/opskeeper/core/wire"
 )
 
@@ -362,9 +363,16 @@ func TestARunIsReturnedDecodedRatherThanAsBytes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("call: %v", err)
 	}
-	m, ok := got.(map[string]any)
+	res, ok := got.(sdk.ToolResult)
 	if !ok {
-		t.Fatalf("result is %T, want a decoded object", got)
+		t.Fatalf("result is %T, want sdk.ToolResult", got)
+	}
+	if !strings.Contains(res.Content, `"verdict":"run"`) {
+		t.Errorf("content = %q, want the host's verdict as the result text", res.Content)
+	}
+	m, ok := res.Details.(map[string]any)
+	if !ok {
+		t.Fatalf("details is %T, want a decoded object", res.Details)
 	}
 	if m["verdict"] != "run" || m["ran"] != true {
 		t.Errorf("result = %v, want the host's verdict carried through", m)

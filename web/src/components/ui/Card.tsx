@@ -3,9 +3,16 @@ import { cn } from '@/lib/cn';
 
 // Card — unified card surface used across pages (DocCard / AgentCard /
 // IncidentCard / etc.). Visual rules per HLD-style guide:
-//   rounded-xl border border-zinc-800/60 bg-zinc-900/40
+//   rounded-2xl + .surface-card (which carries the card background, the
+//   weak semantic border and the shadow-card token layer)
 //   default p-4, compact p-3.5
-//   hover (when interactive) hover:border-zinc-700 hover:bg-zinc-900/60
+//   hover (when interactive) hover:border-border hover:bg-card
+// The container no longer hardcodes bg-zinc-*/border-zinc-*, nor repeats
+// the surface rules as utilities: .surface-card (styles/index.css) is
+// token-driven, so the light/dark flip is automatic and the light-mode
+// zinc remap in index.css is not load-bearing here. The interactive
+// hover utilities stay as utilities — at (0,2,0) they still override
+// the plain (0,1,0) .surface-card rule.
 type CardProps = HTMLAttributes<HTMLDivElement> & {
   /** When true, the card is clickable / hover affordances kick in. */
   interactive?: boolean;
@@ -24,9 +31,9 @@ export function Card({
   return (
     <Tag
       className={cn(
-        'rounded-xl border border-zinc-800/60 bg-zinc-900/40',
+        'rounded-2xl surface-card',
         compact ? 'p-3.5' : 'p-4',
-        interactive && 'transition-colors hover:border-zinc-700 hover:bg-zinc-900/60',
+        interactive && 'transition-colors hover:border-border hover:bg-card',
         className,
       )}
       {...rest}

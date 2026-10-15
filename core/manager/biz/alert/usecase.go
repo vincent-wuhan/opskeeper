@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/errs"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/notify"
 	"github.com/vincent-wuhan/opskeeper/core/floor/prom"
 	"github.com/vincent-wuhan/opskeeper/core/floor/tunnel"
 	model "github.com/vincent-wuhan/opskeeper/core/manager/model/alert"
-	"github.com/vincent-wuhan/opskeeper/core/base/pkg/errs"
-	"github.com/vincent-wuhan/opskeeper/core/base/pkg/notify"
 )
 
 // Notifier is the narrow notify surface this package needs. The notify
@@ -1480,23 +1480,30 @@ func BuildSenderFromChannel(ch *model.Channel) (notify.Sender, error) {
 		return nil, fmt.Errorf("channel %q has no endpoint", ch.Name)
 	}
 	secret := strings.TrimSpace(cfg["secret"])
-	switch ch.ChannelType {
-	case model.ChannelTypeSlack:
-		return notify.NewSlackSender(ch.Name, endpoint, nil), nil
-	case model.ChannelTypeFeishu:
-		return notify.NewFeishuSender(ch.Name, endpoint, secret, nil), nil
-	case model.ChannelTypeDingTalk:
-		return notify.NewDingTalkSender(ch.Name, endpoint, secret, nil), nil
-	case model.ChannelTypeWeCom:
-		return notify.NewWeComSender(ch.Name, endpoint, nil), nil
-	case model.ChannelTypeTelegram:
-		// endpoint = bot sendMessage URL; secret field carries the chat_id.
-		return notify.NewTelegramSender(ch.Name, endpoint, secret, nil), nil
-	case model.ChannelTypeWebhook, "":
-		return notify.NewGenericWebhookSender(ch.Name, endpoint, secret, nil), nil
-	default:
+	// The channel type selects a factory in the notify registry, so a
+	// channel type a package registers is buildable here without an edit.
+	// The switch this replaced hardcoded the six built-ins and had to be
+	// kept in step with the config path by hand; now both read one registry.
+	//
+	// Telegram carries its chat_id in the secret field, which is why the
+	// same value is handed over as ChatID.
+	spec := notify.ChannelSpec{
+		Type:   string(ch.ChannelType),
+		Name:   ch.Name,
+		URL:    endpoint,
+		Secret: secret,
+		ChatID: secret,
+	}
+	sender, err := notify.BuildChannel(spec, nil)
+	if err != nil {
+		// An empty type is the legacy spelling of the generic webhook.
+		if ch.ChannelType == "" {
+			spec.Type = "webhook"
+			return notify.BuildChannel(spec, nil)
+		}
 		return nil, fmt.Errorf("unknown channel type %q", ch.ChannelType)
 	}
+	return sender, nil
 }
 
 // resolveChannels picks the recipients for an incident. Resolver wins when

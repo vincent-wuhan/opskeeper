@@ -1,38 +1,32 @@
 #!/usr/bin/env bash
 # Re-vendor the built-in knowledge vault into the opskeeper binary.
 #
-# The vault content lives upstream in github.com/builtin://vault. It is
-# embedded (go:embed) into the manager binary so a fresh install populates
-# its knowledge base with no network access — see
-# core/manager/biz/knowledge/builtin_vault.go.
+# The vault is embedded (go:embed) into the manager binary so a fresh
+# install populates its knowledge base with no network access — see
+# core/manager/biz/knowledge/builtin_vault.go. There is NO public
+# upstream URL: the runtime no longer clones anything (the old
+# "cloud sync" pointed at a placeholder that never existed). Vendoring
+# is a maintainer step driven from a vault checkout you provide.
 #
-# Run this after the upstream vault changes to refresh the vendored copy,
+# Run this after the vault content changes to refresh the vendored copy,
 # then commit the diff under core/manager/biz/knowledge/builtin_vault/.
 #
 # Usage:
-#   scripts/sync-builtin-vault.sh [path-to-vault-checkout]
+#   scripts/sync-builtin-vault.sh <path-to-vault-checkout>
 #
-# With no arg it clones a shallow copy of the upstream repo to a temp dir
-# (needs git access to github.com/builtin://vault). Pass a local checkout
-# path to vendor from that instead (offline / pinned).
+# The source dir must be a local checkout — offline and pinned by design.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DST="$REPO_ROOT/core/manager/biz/knowledge/builtin_vault"
-UPSTREAM="git@github.com:builtin://vault.git"
 
-cleanup_tmp=""
-trap '[ -n "$cleanup_tmp" ] && rm -rf "$cleanup_tmp"' EXIT
-
-if [ "$#" -ge 1 ]; then
-  SRC="$1"
-  [ -d "$SRC" ] || { echo "error: source dir not found: $SRC" >&2; exit 1; }
-else
-  cleanup_tmp="$(mktemp -d)"
-  SRC="$cleanup_tmp"
-  echo "[sync-builtin-vault] cloning $UPSTREAM (shallow)..."
-  git clone --depth=1 "$UPSTREAM" "$SRC"
+if [ "$#" -lt 1 ]; then
+  echo "error: missing vault source dir." >&2
+  echo "usage: scripts/sync-builtin-vault.sh <path-to-vault-checkout>" >&2
+  exit 2
 fi
+SRC="$1"
+[ -d "$SRC" ] || { echo "error: source dir not found: $SRC" >&2; exit 1; }
 
 echo "[sync-builtin-vault] vendoring .md from $SRC → $DST"
 rm -rf "$DST"
@@ -44,10 +38,9 @@ mkdir -p "$DST"
 # article content (LWN / brendangregg / et al) — useful for an internal
 # knowledge graph but redistributing other people's articles inside the
 # binary is a license headache, and the first-party docs already cover
-# the same ground from our angle. The 38 first-party files give the
-# operator a topical starter pack; external content stays on the
-# upstream git repo for operators who explicitly opt-in by registering
-# the github URL alongside builtin://vault.
+# the same ground from our angle. The first-party files give the
+# operator a topical starter pack; external content stays in the vault
+# checkout and is not redistributed in the binary.
 (cd "$SRC" && find . \
     -path ./.git -prune -o \
     -path './reference/external' -prune -o \

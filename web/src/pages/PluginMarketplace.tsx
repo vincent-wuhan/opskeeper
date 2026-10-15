@@ -25,7 +25,7 @@
 // therefore the largest thing on the card, and the counts are the smallest.
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, FileUp, Loader2, Package, Rocket, Upload } from 'lucide-react';
+import { AlertTriangle, FileUp, Loader2, Network, Package, Rocket, Upload } from 'lucide-react';
 
 import { ApiError } from '@/api/client';
 import { importPack, type ImportResponse } from '@/api/pluginImport';
@@ -55,12 +55,21 @@ export default function PluginMarketplacePage() {
           'Convert legacy containers into PiG packages, and see which nodes can host them before a release'
         )}
         actions={
-          <Link to="/admin/plugins">
-            <Button variant="ghost">
-              <Rocket className="h-3.5 w-3.5" />
-              {tr('发布控制台', 'Release console')}
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            {/* 只读跳转:装到哪台机器由设备页决定,这个 Tab 不伪造安装态 */}
+            <Link to="/devices">
+              <Button variant="ghost">
+                <Network className="h-3.5 w-3.5" />
+                {tr('节点安装面', 'Node install surface')}
+              </Button>
+            </Link>
+            <Link to="/admin/plugins">
+              <Button variant="ghost">
+                <Rocket className="h-3.5 w-3.5" />
+                {tr('发布控制台', 'Release console')}
+              </Button>
+            </Link>
+          </div>
         }
       />
       <div className="grid flex-1 grid-cols-1 items-start gap-4 overflow-auto p-6 xl:grid-cols-2">

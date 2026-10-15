@@ -17,6 +17,8 @@ export type AgentSummary = {
   max_turns?: number;
   system_prompt?: string;
   critical_reminder?: string;
+  /** persona 形象：emoji 文本或图片 URL；缺省表示无 avatar。 */
+  avatar?: string;
   source?: AgentSource;
 };
 

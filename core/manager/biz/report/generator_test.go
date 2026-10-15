@@ -3,6 +3,7 @@ package report
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -228,10 +229,82 @@ func TestExtractJSON(t *testing.T) {
 		"```json\n{\"a\":1}\n```":            `{"a":1}`,
 		"```\n{\"a\":1}\n```":                `{"a":1}`,
 		"here you go:\n{\"a\":1}\nthat's it": `{"a":1}`,
+		// MiniMax-M3 has shipped both of these in real daily reports; each
+		// used to kill the whole document at ParseContent. The invalid byte
+		// is dropped but the ASCII byte that followed it survives.
+		"{\"a\":[1,2,],\"b\":2,}":      `{"a":[1,2],"b":2}`,
+		"{\"t\":\"a, } still here\",}": `{"t":"a, } still here"}`,
+		"{\"t\":\"bad \xc3( byte\"}":   `{"t":"bad ( byte"}`,
+		"{\"a\":[\"x\"]\xe8\n}":        "{\"a\":[\"x\"]\n}",
 	}
 	for in, want := range cases {
 		if got := extractJSON(in); got != want {
 			t.Errorf("extractJSON(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// §3.1 三节模板经 schedule prompt_override 注入 + 待审批事实进事实 JSON。
+func TestGenerator_PromptOverrideAndPendingFactsInjected(t *testing.T) {
+	rpt := pendingReport()
+	rpt.Kind = model.KindDaily
+	sid := uint64(1)
+	rpt.ScheduleID = &sid
+	repo := newGenTestRepo(rpt)
+
+	tmpl := "固定三节:昨夜事件摘要 / 待审批项 / 告警趋势与今日关注"
+	repo.schedules[1] = &model.ReportSchedule{
+		ID: 1, Kind: model.KindDaily, Timezone: "UTC",
+		ChannelIDsJSON: "[]", PromptOverride: &tmpl,
+	}
+	runner := &fakeRunner{result: sampleContent().MustJSON()}
+	gen := NewWorkerGenerator(repo, fakeFacts{facts: sampleFacts()}, runner, GeneratorConfig{DefaultLocale: "zh"}, nil)
+
+	gen.Generate(context.Background(), rpt.ID)
+
+	// 三节模板必须作为「额外要求」出现在 prompt 里。
+	if !strings.Contains(runner.gotReq.Prompt, tmpl) {
+		t.Errorf("prompt_override 未注入:\n%s", runner.gotReq.Prompt)
+	}
+	// 待审批事实必须出现在事实 JSON 里(LLM 只叙事、不产数)。
+	if !strings.Contains(runner.gotReq.Prompt, `"pending_approvals"`) {
+		t.Errorf("事实 JSON 缺少 pending_approvals:\n%s", runner.gotReq.Prompt)
+	}
+	// 平静态口径:sampleFacts 的待审批为零 → 事实 JSON 里计数为 0,而非缺席。
+	if !strings.Contains(runner.gotReq.Prompt, `"total": 0`) {
+		t.Errorf("平静态待审批队列应渲染为 0,而非消失:\n%s", runner.gotReq.Prompt)
+	}
+}
+
+// §4.2 推送复用既有 delivery fan-out;渠道未配置时仅生成不推送(既有降级)。
+func TestGenerator_DeliveryChannelDegradation(t *testing.T) {
+	sid := uint64(1)
+	runner := &fakeRunner{result: sampleContent().MustJSON()}
+
+	// 未配置渠道 → deliverer 不得被调用。
+	rptNoCh := pendingReport()
+	rptNoCh.ScheduleID = &sid
+	repoNoCh := newGenTestRepo(rptNoCh)
+	repoNoCh.schedules[1] = &model.ReportSchedule{ID: 1, Kind: model.KindDaily, Timezone: "UTC", ChannelIDsJSON: "[]"}
+	recNoCh := &recordingDeliverer{}
+	NewWorkerGenerator(repoNoCh, fakeFacts{facts: sampleFacts()}, runner, GeneratorConfig{}, nil).
+		WithDeliverer(recNoCh).
+		Generate(context.Background(), rptNoCh.ID)
+	if recNoCh.called {
+		t.Errorf("未配置渠道 → deliverer 不得被调用")
+	}
+
+	// 已配置渠道 → 经该渠道推送。
+	rptCh := pendingReport()
+	rptCh.ID = "rpt-2"
+	rptCh.ScheduleID = &sid
+	repoCh := newGenTestRepo(rptCh)
+	repoCh.schedules[1] = &model.ReportSchedule{ID: 1, Kind: model.KindDaily, Timezone: "UTC", ChannelIDsJSON: "[12]"}
+	recCh := &recordingDeliverer{}
+	NewWorkerGenerator(repoCh, fakeFacts{facts: sampleFacts()}, runner, GeneratorConfig{}, nil).
+		WithDeliverer(recCh).
+		Generate(context.Background(), rptCh.ID)
+	if !recCh.called || len(recCh.gotChannels) != 1 || recCh.gotChannels[0] != 12 {
+		t.Errorf("已配置渠道未推送: called=%v channels=%v", recCh.called, recCh.gotChannels)
 	}
 }

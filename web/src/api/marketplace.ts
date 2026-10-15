@@ -276,6 +276,77 @@ export async function listRegistries(): Promise<RegistryEntry[]> {
   return r.items ?? r.Items ?? [];
 }
 
+// ---------- skill catalog (GET /v1/marketplace/catalog) --------------------
+
+/** Where a catalog row was read from — mirrors pluginmanifest.Origin*.
+ *  "registry" rows are the only ones a catalog install can act on. */
+export type CatalogOrigin = 'tenant' | 'system' | 'builtin' | 'registry';
+
+/** One row of GET /v1/marketplace/catalog. Mirrors pluginmanifest.Entry
+ *  (core/floor/pluginmanifest/catalog.go:86). */
+export interface CatalogEntry {
+  name: string;
+  version: string;
+  vendor?: string;
+  origin?: CatalogOrigin;
+  shadowed?: boolean;
+  targets: string[];
+  safety_level: string;
+  capability: string;
+  scopes?: string[];
+  tool_count: number;
+  install_strategy?: string;
+  min_edge_version?: string;
+  min_pig_version?: string;
+  undeclared_floors?: string[];
+}
+
+export interface MarketplaceCatalog {
+  items: CatalogEntry[];
+  total: number;
+}
+
+type CatalogResp = {
+  items?: CatalogEntry[] | null;
+  Items?: CatalogEntry[] | null;
+  total?: number;
+  Total?: number;
+};
+
+/** The catalog index — what this tenant can install (any auth user). */
+export async function getMarketplaceCatalog(): Promise<MarketplaceCatalog> {
+  const r = await request<CatalogResp>('GET', '/marketplace/catalog');
+  const items = r.items ?? r.Items ?? [];
+  return { items, total: r.total ?? r.Total ?? items.length };
+}
+
+/** registries an install could actually target: allow-listed AND carrying a
+ *  configured index URL (== the names resolveRegistryItem can fetch). */
+export function installableRegistries(registries: RegistryEntry[]): RegistryEntry[] {
+  return registries.filter((r) => r.allowed && !!r.url);
+}
+
+/** catalogInstallSource maps a catalog Entry to the registry-install payload,
+ *  or null when the catalog cannot honestly support an install for that row.
+ *
+ *  - local roots (tenant/system/builtin) are already on disk → no action.
+ *  - a registry row is only installable when EXACTLY ONE usable registry
+ *    exists (the Entry does not name its origin registry, so >1 is ambiguous
+ *    and 0 has nothing to fetch from).
+ *  - the version is required (registry installs must pin a version).
+ *  - pack_id == entry.name: the registry index names packs by manifest name
+ *    and resolveRegistryItem matches item.Name == src.PackID. */
+export function catalogInstallSource(
+  entry: CatalogEntry,
+  registries: RegistryEntry[],
+): InstallSource | null {
+  if (entry.origin !== 'registry') return null;
+  const usable = installableRegistries(registries);
+  if (usable.length !== 1) return null;
+  if (!entry.version) return null;
+  return { type: 'registry', registry: usable[0].name, pack_id: entry.name, version: entry.version };
+}
+
 // ---------- error helpers (for UI toast wording) --------------------------
 
 export type MarketplaceErrorKind =

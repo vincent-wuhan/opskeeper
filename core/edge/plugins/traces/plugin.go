@@ -12,7 +12,6 @@ package traces
 
 import (
 	"log/slog"
-	"path/filepath"
 
 	"github.com/vincent-wuhan/opskeeper/core/edge/plugins"
 )
@@ -29,12 +28,18 @@ const Name = "traces"
 // The returned *plugins.SubprocessPlugin satisfies plugins.Plugin and is
 // registered with the Supervisor by opskeeper-edge main.
 func New(binDir, workDir string, log *slog.Logger) plugins.Plugin {
-	return plugins.NewSubprocess(plugins.SubprocessOpts{
-		Name:         Name,
-		Binary:       filepath.Join(binDir, "otelcol-contrib"),
-		WorkDir:      filepath.Join(workDir, Name),
-		ConfigFile:   filepath.Join(workDir, Name, "otelcol.yaml"),
-		ConfigRender: render,
+	return plugins.NewSubprocessCollector(Spec(), binDir, workDir, log)
+}
+
+// Spec declares the traces collector: the otelcol-contrib binary and the
+// config template it is run with. See logs.Spec for why the collector set is
+// a set of declarations rather than of constructors.
+func Spec() plugins.CollectorSpec {
+	return plugins.CollectorSpec{
+		Name:           Name,
+		BinaryName:     "otelcol-contrib",
+		ConfigFileName: "otelcol.yaml",
+		Render:         render,
 		Args: func(_ plugins.PluginConfig, configFile string) []string {
 			// otelcol-contrib uses --config=... (also accepts repeated flags
 			// for layered configs; we only need a single rendered file).
@@ -42,6 +47,5 @@ func New(binDir, workDir string, log *slog.Logger) plugins.Plugin {
 				"--config=" + configFile,
 			}
 		},
-		Log: log,
-	})
+	}
 }

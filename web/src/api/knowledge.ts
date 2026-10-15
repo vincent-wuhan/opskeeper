@@ -38,8 +38,8 @@ export type KnowledgeRepo = {
   file_count: number;
   // Server-set: marks the embedded platform vault (url == builtin://vault).
   // Use isBuiltinVault() rather than substring-matching the URL — the URL
-  // scheme has changed before (builtin://vault → builtin://vault) and silently
-  // broke both the Repos-list filter and the Knowledge sync button.
+  // scheme has changed before and silently broke both the Repos-list filter
+  // and the Knowledge sync button.
   is_builtin?: boolean;
   created_at: string;
   updated_at: string;
@@ -47,24 +47,28 @@ export type KnowledgeRepo = {
 
 // isBuiltinVault is the single source of truth for "is this the built-in
 // platform vault row?". Prefers the server's is_builtin flag; falls back to
-// the builtin:// URL scheme (and the legacy builtin://vault form) so it still
-// works against an older manager that doesn't send the flag yet.
+// the builtin:// URL scheme so it still works against an older manager that
+// doesn't send the flag yet.
 export function isBuiltinVault(repo: Pick<KnowledgeRepo, 'url' | 'is_builtin'>): boolean {
   if (repo.is_builtin) return true;
   const u = (repo.url ?? '').trim();
-  return u.startsWith('builtin://') || u.includes('builtin://vault');
+  return u.startsWith('builtin://');
 }
 
 export type SearchHit = { doc: KnowledgeDoc; score: number };
 
 export type PathRow = { path: string; count: number };
 
+// listDocs lists docs. Pass an explicit `limit` for any full-list view:
+// the backend defaults to 200 and silently drops the rest, so a tree
+// that renders "全部文档" would quietly lose everything past the 200th doc.
 export function listDocs(params?: {
   source_type?: 'manual' | 'repo';
   repo_id?: number;
   path?: string;
   path_prefix?: string;
   tag?: string;
+  limit?: number;
 }) {
   const q = new URLSearchParams();
   if (params?.source_type) q.set('source_type', params.source_type);
@@ -72,6 +76,7 @@ export function listDocs(params?: {
   if (params?.path) q.set('path', params.path);
   if (params?.path_prefix) q.set('path_prefix', params.path_prefix);
   if (params?.tag) q.set('tag', params.tag);
+  if (params?.limit != null) q.set('limit', String(params.limit));
   const qs = q.toString();
   return request<{ items: KnowledgeDoc[]; total: number }>(
     'GET',
@@ -143,13 +148,14 @@ export function syncRepo(id: number) {
   return request<KnowledgeRepo>('POST', `/knowledge/repos/${id}/sync`, {});
 }
 
-// syncVault refreshes the platform vault in qdrant (ADR-029): a live clone of
-// the public github vault, falling back to the embedded snapshot when github
-// is unreachable. The vault is NOT a repo row (never appears in the Repos
-// list), so it has its own endpoint. `source` reports which path ran:
-// "cloud" (github reachable) or "embedded" (offline fallback).
+// syncVault re-seeds the platform vault in qdrant (ADR-029) from the
+// snapshot embedded in the manager binary. There is no cloud clone: the
+// OPSKEEPER_BUILTIN_VAULT_URL path pointed at a placeholder git URL that
+// never existed, so every sync "succeeded" with a green banner while
+// silently indexing nothing new. The vault is not a repo row (never
+// appears in the Repos list), so it has its own endpoint.
 export function syncVault() {
-  return request<{ file_count: number; source: 'cloud' | 'embedded'; synced_at: string }>(
+  return request<{ file_count: number; source: 'embedded'; synced_at: string }>(
     'POST',
     '/knowledge/vault/sync',
     {},
@@ -157,8 +163,9 @@ export function syncVault() {
 }
 
 // uploadDoc ingests one org file (ADR-028) into the 组织知识库 tree
-// (source_type=upload). multipart; phase-1 accepts .md / .txt. The request
-// helper sets JSON headers, so we hit fetch directly with FormData here.
+// (source_type=upload). multipart; accepts .md / .txt / .pdf / .docx
+// (pdf & docx are parsed to plain text server-side; other types 400).
+// The request helper sets JSON headers, so we hit fetch directly with FormData here.
 export async function uploadDoc(
   file: File,
   opts?: { title?: string; path?: string; tags?: string[] },

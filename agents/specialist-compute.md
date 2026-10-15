@@ -1,5 +1,6 @@
 ---
 name: specialist-compute
+avatar: 🖥️
 description: 计算专家——CPU / 内存 / load / 进程调度 / 上下文切换 / OOM / NUMA / 内核参数
 when_to_use: |
   当任务围绕"计算资源是不是不够 / 谁在吃 CPU 内存"时由 coordinator 派给我：

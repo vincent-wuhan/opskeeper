@@ -5,17 +5,26 @@ import { CommandPalette } from './CommandPalette';
 import { AgentSidePanel } from './AgentSidePanel';
 import { useUi } from '@/store/ui';
 import { useIncidentBadge } from '@/store/incidentBadge';
+import { useApprovalBadge } from '@/store/approvalBadge';
 import { tr as trInline } from '@/i18n/locale';
 
 export function Layout() {
   // Start polling the unack'd incident counter on first authenticated mount;
   // useAuth gates RequireAuth before Layout, so we can assume there is a
   // token here. Stops on unmount (logout flips back to /login).
+  // The pending-approval counter rides the same mount window — it has its
+  // own admin gate inside the store, so starting it for every role is safe.
   useEffect(() => {
     const start = useIncidentBadge.getState().start;
     const stop = useIncidentBadge.getState().stop;
+    const startApprovals = useApprovalBadge.getState().start;
+    const stopApprovals = useApprovalBadge.getState().stop;
     start();
-    return () => stop();
+    startApprovals();
+    return () => {
+      stop();
+      stopApprovals();
+    };
   }, []);
 
   const paletteOpen = useUi((s) => s.paletteOpen);

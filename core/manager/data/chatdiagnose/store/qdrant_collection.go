@@ -13,14 +13,16 @@ import (
 )
 
 // QdrantCollection 是 incident_pattern collection 的启动期生命周期包装。
+// Client 是向量存储端口（qdrantx.Store），既可以是外部 qdrant，也可以是
+// 内嵌后端。
 type QdrantCollection struct {
-	Client *qdrantx.Client
+	Client qdrantx.Store
 	Name   string
 	Dim    int
 }
 
 // NewQdrantCollection 构造 collection wrapper。dim 来自 Embedder.Dim()。
-func NewQdrantCollection(c *qdrantx.Client, dim int) *QdrantCollection {
+func NewQdrantCollection(c qdrantx.Store, dim int) *QdrantCollection {
 	return &QdrantCollection{Client: c, Name: "incident_pattern", Dim: dim}
 }
 

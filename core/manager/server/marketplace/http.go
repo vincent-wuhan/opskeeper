@@ -6,6 +6,7 @@
 //   - GET /v1/marketplace/installed any auth user
 //   - DELETE /v1/marketplace/installed/{pack_id} admin
 //   - GET /v1/marketplace/registries any auth user
+//   - GET /v1/marketplace/catalog any auth user
 package marketplace
 
 import (
@@ -16,10 +17,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	bizmp "github.com/vincent-wuhan/opskeeper/core/manager/biz/marketplace"
-	model "github.com/vincent-wuhan/opskeeper/core/manager/model/marketplace"
 	"github.com/vincent-wuhan/opskeeper/core/base/pkg/errs"
 	"github.com/vincent-wuhan/opskeeper/core/base/pkg/tenantctx"
+	"github.com/vincent-wuhan/opskeeper/core/floor/pluginmanifest"
+	bizmp "github.com/vincent-wuhan/opskeeper/core/manager/biz/marketplace"
+	model "github.com/vincent-wuhan/opskeeper/core/manager/model/marketplace"
 )
 
 // Service is the narrow surface the handler depends on. *bizmp.Usecase
@@ -30,6 +32,15 @@ type Service interface {
 	Uninstall(ctx context.Context, caller bizmp.Caller, packID string) error
 	SetBindings(ctx context.Context, caller bizmp.Caller, packID string, bindings map[string]string) error
 	Registries(ctx context.Context, caller bizmp.Caller) bizmp.AllowedRegistries
+	// Catalog indexes the packages this tenant can install. It is part of
+	// the handler's dependency rather than something the handler builds,
+	// because the install root is the usecase's to know.
+	//
+	// The compatibility question is deliberately absent here: it belongs
+	// to core/domains/service/plugin, which projects the decision across
+	// the real fleet. Two answers to "can this fleet take that package"
+	// would be two places for them to disagree.
+	Catalog(ctx context.Context, caller bizmp.Caller) ([]pluginmanifest.Entry, error)
 }
 
 // Handler bundles the marketplace routes.
@@ -67,6 +78,32 @@ func (h *Handler) Register(r chi.Router) {
 	r.Delete("/v1/marketplace/installed/{pack_id}", h.uninstall)
 	r.Put("/v1/marketplace/installed/{pack_id}/bindings", h.setBindings)
 	r.Get("/v1/marketplace/registries", h.registries)
+	r.Get("/v1/marketplace/catalog", h.catalog)
+}
+
+type catalogResp struct {
+	Items []pluginmanifest.Entry `json:"items"`
+	Total int                    `json:"total"`
+}
+
+// catalog serves the index: what is on offer, and what each package says
+// about itself.
+//
+// It answers with an empty list rather than an error when the tenant has
+// installed nothing, so the SPA can render "nothing offered yet" without
+// having to tell that apart from a failure it cannot act on.
+func (h *Handler) catalog(w http.ResponseWriter, r *http.Request) {
+	caller, ok := callerFromRequest(r)
+	if !ok {
+		writeErr(w, errs.ErrUnauthorized)
+		return
+	}
+	items, err := h.svc.Catalog(r.Context(), caller)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, catalogResp{Items: items, Total: len(items)})
 }
 
 type listResp struct {

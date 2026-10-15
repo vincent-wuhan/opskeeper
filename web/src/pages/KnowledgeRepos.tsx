@@ -15,6 +15,7 @@ import {
 import { cn } from '@/lib/cn';
 import { fullDateTime } from '@/lib/format';
 import { Modal } from '@/components/Modal';
+import { useConfirm } from '@/components/ui';
 import {
   createRepo,
   createSSHIdentity,
@@ -149,8 +150,8 @@ export default function KnowledgeReposPage() {
             <h1 className="mt-1 text-base font-semibold text-zinc-100">{tr('代码仓库', 'Code repos')}</h1>
             <p className="mt-0.5 text-xs text-zinc-500">
               {tr(
-                '添加的 git 仓库 · sync 后 .md / .yaml / .json 文件会进知识库供 LLM 检索',
-                'Added git repos · after sync, .md / .yaml / .json files enter the knowledge base for LLM retrieval',
+                '添加的 git 仓库 · sync 后 .md / .txt / .rst 文件会进知识库供 LLM 检索',
+                'Added git repos · after sync, .md / .txt / .rst files enter the knowledge base for LLM retrieval',
               )}
             </p>
           </div>
@@ -249,7 +250,7 @@ function RepoCard({
 }) {
   const { tr } = useI18n();
   return (
-    <section className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+    <section className="surface-card rounded-rk-lg p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="truncate font-mono text-sm text-zinc-100" title={repo.url}>
@@ -399,7 +400,7 @@ function RepoCreator({ onClose, onCreated }: { onClose: () => void; onCreated: (
           />
         </label>
         <div className="rounded-md border border-zinc-800 bg-zinc-950/40 px-3 py-2 text-[11px] text-zinc-500">
-          {tr('仅索引：', 'Indexed only: ')}<span className="font-mono">.md / .txt / .rst / .yaml / .yml / .toml / .json</span>
+          {tr('仅索引：', 'Indexed only: ')}<span className="font-mono">.md / .txt / .rst</span>
           {tr('；忽略 ', '; ignored: ')}<span className="font-mono">.git / vendor / node_modules / dist / build</span>
           {tr('。单文件 ≤256KiB；单仓库 ≤2000 文件。', '. Per-file ≤256 KiB; per-repo ≤2000 files.')}
         </div>
@@ -464,7 +465,7 @@ function DeleteRepoDialog({ repo, onClose, onDone }: { repo: KnowledgeRepo; onCl
 
 // SSHIdentitiesCard — phase 1. Manages stored SSH private
 // keys + the hosts they auth against. Lives in this page so all git
-// auth config (HTTPS PAT card above + SSH keys here) is one stop.
+// auth config (the repo form above + SSH keys here) is one stop.
 function SSHIdentitiesCard() {
   const { tr } = useI18n();
   const [open, setOpen] = useState(false);
@@ -490,8 +491,15 @@ function SSHIdentitiesCard() {
     if (open) void refresh();
   }, [open, refresh]);
 
+  const confirm = useConfirm();
   const onDelete = async (id: number) => {
-    if (!window.confirm(tr('删除该 SSH 凭证？后续指向其 hosts 的仓库会同步失败。', 'Delete this SSH identity? Subsequent syncs to its hosts will fail.'))) return;
+    const ok = await confirm({
+      title: tr('删除 SSH 凭证', 'Delete SSH identity'),
+      message: tr('删除该 SSH 凭证？后续指向其 hosts 的仓库会同步失败。', 'Delete this SSH identity? Subsequent syncs to its hosts will fail.'),
+      confirmLabel: tr('删除', 'Delete'),
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteSSHIdentity(id);
       await refresh();
@@ -501,7 +509,7 @@ function SSHIdentitiesCard() {
   };
 
   return (
-    <section className="mb-4 rounded-xl border border-zinc-800 bg-zinc-900/40">
+    <section className="mb-4 surface-card rounded-rk-lg">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

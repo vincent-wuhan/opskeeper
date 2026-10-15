@@ -42,23 +42,15 @@ import (
 // stays out of the application log. Callers that want query logs should wrap
 // with db.Session(&gorm.Session{Logger: ...}) at call sites.
 func Open(cfg config.DBConfig, log *slog.Logger) (*gorm.DB, error) {
-	switch cfg.Dialect {
-	case "mysql":
-		return openMySQL(cfg.DSN, cfg.Pool, log)
-	case "", "sqlite":
-		// A zero-value DBConfig carries neither dialect nor path. Rather
-		// than fail on the empty string, fall back to the same default
-		// config.Load() applies so both paths converge on one database.
-		path := cfg.Path
-		if path == "" {
-			path = config.DefaultSQLitePath
-		}
-		return openSQLite(path, cfg.Pool, log)
-	case "postgres", "postgresql", "pg":
-		return openPostgres(cfg.DSN, cfg.Pool, log)
-	default:
+	// Dispatch through the dialect registry (see dialect_registry.go) rather
+	// than a switch, so a backend a package registers is openable without an
+	// edit here. The empty-dialect → sqlite fallback is a property of the
+	// sqlite factory now, not of this dispatch.
+	f, ok := resolveDialect(cfg)
+	if !ok {
 		return nil, fmt.Errorf("dbx: unsupported dialect %q", cfg.Dialect)
 	}
+	return f(cfg, log)
 }
 
 // openMySQL opens a MySQL connection via gorm and verifies reachability

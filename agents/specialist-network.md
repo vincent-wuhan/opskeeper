@@ -1,5 +1,6 @@
 ---
 name: specialist-network
+avatar: 🌐
 description: 网络问题专家——OVS / netfilter / netns / conntrack / bpftool / ip 路由 / 防火墙 / 网卡
 when_to_use: |
   当任务涉及网络层诊断时由 coordinator 派给我：

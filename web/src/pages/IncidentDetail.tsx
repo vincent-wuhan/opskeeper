@@ -3,7 +3,6 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  AlertTriangle,
   Bell,
   BellOff,
   Bot,
@@ -21,6 +20,8 @@ import {
   X,
 } from 'lucide-react';
 import { Modal } from '@/components/Modal';
+import { IncidentStatusBadge as StatusBadge, SeverityBadge } from '@/components/ui';
+import { IncidentGroupChat } from '@/components/incidents/IncidentGroupChat';
 import { cn } from '@/lib/cn';
 import { openObservabilityUrl, buildExploreUrl } from '@/lib/drilldown';
 import { relativeTime } from '@/lib/format';
@@ -37,8 +38,6 @@ import {
   silenceIncident,
   type Incident,
   type IncidentEvent,
-  type IncidentSeverity,
-  type IncidentStatus,
   type InvestigationReport,
   type InvestigationStatus,
 } from '@/api/alerts';
@@ -77,6 +76,9 @@ export default function IncidentDetailPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [action, setAction] = useState<ActionKind | null>(null);
+  // Incident detail defaults to the group-chat view; the original timeline
+  // page lives behind the "详情 / Details" segment.
+  const [segment, setSegment] = useState<'chat' | 'detail'>('chat');
 
   const fetchAll = useCallback(
     async (silent = false) => {
@@ -147,15 +149,54 @@ export default function IncidentDetailPage() {
           {loading && !incident ? (
             <div className="flex h-60 items-center justify-center text-sm text-zinc-500">{tr('加载中…', 'Loading…')}</div>
           ) : incident ? (
-            <div className="space-y-6 px-6 py-6">
-              <InvestigationReportPanel incidentId={incident.id} />
-              <AIInitialDiagnosisPanel incident={incident} events={events} />
-              <AgentTimelinePanel incidentId={incident.id} />
-              <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
-                <Timeline events={events} />
-                <Sidebar2 incident={incident} />
+            <>
+              <div
+                role="tablist"
+                aria-label={tr('事件视图', 'Incident view')}
+                onKeyDown={(e) => {
+                  if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+                  e.preventDefault();
+                  const next = segment === 'chat' ? 'detail' : 'chat';
+                  setSegment(next);
+                  e.currentTarget.querySelector<HTMLButtonElement>(`#incident-tab-${next}`)?.focus();
+                }}
+                className="mx-6 mt-6 mb-4 flex w-fit gap-1 rounded-rk-md bg-zinc-900/60 p-1"
+              >
+                {([['chat', '群聊', 'Group chat'], ['detail', '详情', 'Details']] as const).map(([id, zh, en]) => (
+                  <button
+                    key={id}
+                    id={`incident-tab-${id}`}
+                    role="tab"
+                    type="button"
+                    aria-selected={segment === id}
+                    aria-controls={`incident-panel-${id}`}
+                    tabIndex={segment === id ? 0 : -1}
+                    onClick={() => setSegment(id)}
+                    className={cn(
+                      'rounded-full px-3 py-1.5 text-xs',
+                      segment === id ? 'bg-zinc-100 text-zinc-900' : 'text-zinc-400 hover:text-zinc-200',
+                    )}
+                  >
+                    {tr(zh, en)}
+                  </button>
+                ))}
               </div>
-            </div>
+              {segment === 'chat' ? (
+                <div id="incident-panel-chat" role="tabpanel" aria-labelledby="incident-tab-chat" className="px-6 pb-6">
+                  <IncidentGroupChat incidentId={incident.id} />
+                </div>
+              ) : (
+                <div id="incident-panel-detail" role="tabpanel" aria-labelledby="incident-tab-detail" className="space-y-6 px-6 py-6">
+                  <InvestigationReportPanel incidentId={incident.id} />
+                  <AIInitialDiagnosisPanel incident={incident} events={events} />
+                  <AgentTimelinePanel incidentId={incident.id} />
+                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_320px]">
+                    <Timeline events={events} />
+                    <Sidebar2 incident={incident} />
+                  </div>
+                </div>
+              )}
+            </>
           ) : (
             !err && (
               <div className="flex h-60 items-center justify-center text-sm text-zinc-500">{tr('未找到 incident', 'Incident not found')}</div>
@@ -889,13 +930,13 @@ function Timeline({ events }: { events: IncidentEvent[] }) {
   const { tr } = useI18n();
   if (events.length === 0) {
     return (
-      <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/40 p-6 text-sm text-zinc-500">
+      <div className="surface-card rounded-rk-lg p-6 text-sm text-zinc-500">
         {tr('暂无事件记录', 'No event records')}
       </div>
     );
   }
   return (
-    <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/40">
+    <div className="surface-card rounded-rk-lg">
       <div className="border-b border-zinc-800/60 px-4 py-2.5 text-[11px] uppercase tracking-wider text-zinc-500">
         {tr(`时间线 · ${events.length}`, `Timeline · ${events.length}`)}
       </div>
@@ -951,7 +992,7 @@ function Sidebar2({ incident }: { incident: Incident }) {
   const labelKeys = Object.keys(labels).sort();
   return (
     <aside className="space-y-4">
-      <section className="rounded-xl border border-zinc-800/60 bg-zinc-900/40">
+      <section className="surface-card rounded-rk-lg">
         <div className="border-b border-zinc-800/60 px-4 py-2.5 text-[11px] uppercase tracking-wider text-zinc-500">
           Labels
         </div>
@@ -972,7 +1013,7 @@ function Sidebar2({ incident }: { incident: Incident }) {
       </section>
 
       {incident.runbook_url && (
-        <section className="rounded-xl border border-zinc-800/60 bg-zinc-900/40 px-4 py-3">
+        <section className="surface-card rounded-rk-lg px-4 py-3">
           <div className="text-[11px] uppercase tracking-wider text-zinc-500">{tr('说明 / Runbook', 'Notes / Runbook')}</div>
           {/^https?:\/\//i.test(incident.runbook_url.trim()) ? (
             <a
@@ -992,7 +1033,7 @@ function Sidebar2({ incident }: { incident: Incident }) {
       )}
 
       {incident.dedupe_key && (
-        <section className="rounded-xl border border-zinc-800/60 bg-zinc-900/40 px-4 py-3">
+        <section className="surface-card rounded-rk-lg px-4 py-3">
           <div className="text-[11px] uppercase tracking-wider text-zinc-500">Dedupe key</div>
           <div className="mt-1 break-all font-mono text-[11px] text-zinc-400">{incident.dedupe_key}</div>
         </section>
@@ -1030,7 +1071,7 @@ function ImpactPanel({ deviceID }: { deviceID: number }) {
   }, [deviceID]);
   if (nodeID === undefined) {
     return (
-      <section className="rounded-xl border border-zinc-800/60 bg-zinc-900/40 px-4 py-3">
+      <section className="surface-card rounded-rk-lg px-4 py-3">
         <div className="text-[11px] uppercase tracking-wider text-zinc-500">{tr('影响面', 'Impact')}</div>
         <div className="mt-2 text-xs text-zinc-500">{tr('解析中…', 'Resolving…')}</div>
       </section>
@@ -1038,7 +1079,7 @@ function ImpactPanel({ deviceID }: { deviceID: number }) {
   }
   if (nodeID === null) return null;
   return (
-    <section className="rounded-xl border border-zinc-800/60 bg-zinc-900/40 px-4 py-3">
+    <section className="surface-card rounded-rk-lg px-4 py-3">
       <div className="mb-2 text-[11px] uppercase tracking-wider text-zinc-500">
         {tr('影响面（拓扑邻居）', 'Impact (Topology neighbours)')}
       </div>
@@ -1311,43 +1352,10 @@ function isTraceIncident(incident: Incident): boolean {
   return /^trace_(latency|error_rate)/.test(incident.rule_key ?? '');
 }
 
-function SeverityBadge({ severity }: { severity: IncidentSeverity }) {
-  const styles =
-    severity === 'critical'
-      ? 'bg-red-500/15 text-red-300 ring-red-500/40'
-      : severity === 'warning'
-      ? 'bg-amber-500/10 text-amber-300 ring-amber-500/30'
-      : 'bg-zinc-800 text-zinc-300 ring-zinc-700';
-  return (
-    <span className={cn('inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset', styles)}>
-      {severity === 'critical' ? <Siren size={11} /> : <AlertTriangle size={11} />}
-      {severity}
-    </span>
-  );
-}
+// SeverityBadge / StatusBadge moved to components/ui/IncidentBadges — the
+// alerts list had byte-identical copies, so the two surfaces could (and
+// did) drift on how they labelled the same state.
 
-function StatusBadge({ status }: { status: IncidentStatus }) {
-  const styles =
-    status === 'open'
-      ? 'bg-red-500/10 text-red-300 ring-red-500/30'
-      : status === 'acknowledged'
-      ? 'bg-blue-500/10 text-blue-300 ring-blue-500/30'
-      : status === 'silenced'
-      ? 'bg-zinc-700 text-zinc-300 ring-zinc-600'
-      : 'bg-emerald-500/10 text-emerald-300 ring-emerald-500/30';
-  return (
-    <span className={cn('inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium ring-1 ring-inset', styles)}>
-      {status === 'resolved' ? (
-        <CheckCircle2 size={11} />
-      ) : status === 'silenced' ? (
-        <Pause size={11} />
-      ) : (
-        <span className="h-1.5 w-1.5 rounded-full bg-current" />
-      )}
-      {status}
-    </span>
-  );
-}
 
 function EventTypeBadge({ type }: { type: string }) {
   const styles = eventTypeStyles(type);

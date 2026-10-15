@@ -14,13 +14,13 @@ type Props = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const VARIANT_CLASS: Record<Variant, string> = {
   primary:
-    'bg-accent text-accent-fg hover:bg-accent/90 disabled:opacity-50',
+    'bg-accent text-accent-fg hover:bg-accent/90 disabled:opacity-50 rounded-full',
   ghost:
-    'border border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 disabled:opacity-40',
+    'border border-zinc-700 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 disabled:opacity-40 rounded-lg',
   danger:
-    'bg-red-500 text-white hover:bg-red-600 disabled:opacity-50',
+    'bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 rounded-lg',
   subtle:
-    'bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50',
+    'bg-zinc-100 text-zinc-900 hover:bg-white disabled:opacity-50 rounded-lg',
 };
 
 export const Button = forwardRef<HTMLButtonElement, Props>(function Button(
@@ -32,7 +32,7 @@ export const Button = forwardRef<HTMLButtonElement, Props>(function Button(
       ref={ref}
       type={type}
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
+        'inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium transition-colors',
         VARIANT_CLASS[variant],
         className,
       )}

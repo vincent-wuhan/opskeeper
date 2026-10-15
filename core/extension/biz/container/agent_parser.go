@@ -90,6 +90,7 @@ func retainUnknownAgentFields(raw map[string]any) map[string]any {
 		"max_turns":         {},
 		"model":             {},
 		"critical_reminder": {},
+		"avatar":            {},
 		"initial_prompt":    {},
 		"background":        {},
 		"omit_claude_md":    {},

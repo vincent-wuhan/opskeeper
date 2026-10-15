@@ -4,12 +4,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/go-chi/chi/v5"
@@ -17,6 +19,7 @@ import (
 
 	"github.com/vincent-wuhan/opskeeper/core/floor/config"
 	"github.com/vincent-wuhan/opskeeper/core/floor/httpserver"
+	"github.com/vincent-wuhan/opskeeper/core/floor/kernel"
 	"github.com/vincent-wuhan/opskeeper/core/floor/logger"
 	"github.com/vincent-wuhan/opskeeper/core/floor/prom"
 	"github.com/vincent-wuhan/opskeeper/core/floor/tunnel"
@@ -25,6 +28,7 @@ import (
 	edgebiz "github.com/vincent-wuhan/opskeeper/core/edge/biz"
 	edgecollector "github.com/vincent-wuhan/opskeeper/core/edge/collector"
 	edgehostfiles "github.com/vincent-wuhan/opskeeper/core/edge/host_files"
+	edgepluginhost "github.com/vincent-wuhan/opskeeper/core/edge/pluginhost"
 	edgeplugins "github.com/vincent-wuhan/opskeeper/core/edge/plugins"
 	edgeplugincustommetrics "github.com/vincent-wuhan/opskeeper/core/edge/plugins/custommetrics"
 	edgeplugindatabasemetrics "github.com/vincent-wuhan/opskeeper/core/edge/plugins/databasemetrics"
@@ -36,6 +40,7 @@ import (
 	edgerestartservice "github.com/vincent-wuhan/opskeeper/core/edge/restart_service"
 	edgesvc "github.com/vincent-wuhan/opskeeper/core/edge/service"
 	edgewebshell "github.com/vincent-wuhan/opskeeper/core/edge/webshell"
+	"github.com/vincent-wuhan/opskeeper/core/floor/pluginmanifest"
 
 	// Builtin skill init() blocks register Executors with the shared
 	// core/floor/skill registry. The edge-side dispatcher
@@ -261,11 +266,57 @@ func main() {
 		agent.SetPluginInstaller(store)
 	}
 
+	// The node's plugin host is built before the metrics router so the
+	// capability endpoint can be registered on it before the router starts
+	// serving: chi routes are registered once, and a route added after the
+	// server is up is a data race, not a late feature.
+	//
+	// The admission policy is the deployment profile, not a constant here: a
+	// profile states the ceiling, the blast radius and the granted scopes
+	// together with the package set they compose. An unknown profile name
+	// yields the zero policy, which refuses everything — a node that cannot
+	// name its own policy hosts nothing rather than hosting everything.
+	edgeProfile := pluginmanifest.ProfileName(envOr("OPSKEEPER_EDGE_PROFILE", string(edgepluginhost.DefaultProfile)))
+	edgePluginPolicy, edgePolicyErr := edgepluginhost.EdgePolicyFor(edgeProfile)
+	if edgePolicyErr != nil {
+		log.Error("edge plugin policy",
+			slog.String("profile", string(edgeProfile)), slog.Any("err", edgePolicyErr))
+	}
+	edgeSupervisorSink := &deferredCollectorSink{}
+	edgePluginHost := edgepluginhost.New(
+		envOr("OPSKEEPER_EDGE_PLUGINS_DIR", ""), edgePluginPolicy, edgeSupervisorSink,
+		log.With(slog.String("comp", "pluginhost")))
+
 	// Local /metrics listener for debugging.
 	metricsMux := chi.NewRouter()
 	metricsMux.Handle("/metrics", prom.Handler(reg))
 	metricsMux.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
+	})
+	// The node's capability inventory: which packages this node admitted and
+	// what each registered. Local-only (this listener is not proxied through
+	// nginx), and it renders implementation types, never values.
+	metricsMux.Get("/v1/plugin-capabilities", func(w http.ResponseWriter, _ *http.Request) {
+		inv := edgePluginHost.Inventory()
+		if inv.Plugins == nil {
+			inv.Plugins = []string{}
+		}
+		if inv.Entries == nil {
+			inv.Entries = []kernel.InventoryEntry{}
+		}
+		if inv.KindCounts == nil {
+			inv.KindCounts = map[string]int{}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		// The same document shape the control plane serves, so an operator
+		// reading either endpoint reads one vocabulary.
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"target":      inv.Target,
+			"plugins":     inv.Plugins,
+			"kind_counts": inv.KindCounts,
+			"entries":     inv.Entries,
+			"total":       len(inv.Entries),
+		})
 	})
 	metricsServer := httpserver.New(edgeMetricsAddr, metricsMux, log.With(slog.String("listener", "metrics")))
 
@@ -339,6 +390,43 @@ func main() {
 	for _, p := range registered {
 		supervisor.Register(p)
 	}
+	// Collectors a package contributes from here on reach the supervisor
+	// through the deferred sink the plugin host was built with.
+	edgeSupervisorSink.set(supervisor)
+
+	// The node's plugin host: load any edge-targeted collector packages from
+	// the configured directory. The first-party collectors above are the
+	// preinstalled set; this is how a deployment adds a collector without
+	// rebuilding the node binary — a package whose spec.targets include edge
+	// is admitted through the same gate a tool package passes, and its
+	// collector is registered with the supervisor the same way.
+	//
+	// The directory is optional and env-gated: a node with no third-party
+	// collector packages has none, and a missing directory is not an error.
+	if dir := envOr("OPSKEEPER_EDGE_PLUGINS_DIR", ""); dir != "" {
+		if edgePolicyErr != nil {
+			// already logged above; the host's zero policy refuses every
+			// package, which is the fail-closed reading of a node that
+			// cannot name its own policy.
+		} else if _, statErr := os.Stat(dir); statErr == nil {
+			rep, loadErr := edgePluginHost.Load(context.Background())
+			if loadErr != nil {
+				log.Error("edge plugin load", slog.String("dir", dir), slog.Any("err", loadErr))
+			} else if len(rep.Activated) > 0 || len(rep.Refused) > 0 {
+				log.Info("edge plugins loaded",
+					slog.String("dir", dir),
+					slog.String("profile", string(edgeProfile)),
+					slog.Any("activated", rep.Activated),
+					slog.Any("skipped", rep.Skipped),
+					slog.Any("no_activator", rep.NoActivator),
+					slog.Int("refused", len(rep.Refused)),
+				)
+			}
+		} else {
+			log.Warn("edge plugin directory does not exist", slog.String("dir", dir))
+		}
+	}
+
 	// Ship per-plugin health on every heartbeat so the manager / UI can
 	// see which plugins are running vs. crashed (and why) instead of
 	// discovering empty telemetry days later. Set after the supervisor
@@ -465,6 +553,31 @@ func buildCollector(ctx context.Context, cfg *config.EdgeConfig, log *slog.Logge
 }
 
 // envOr reads an env var, returning def when unset/empty.
+// deferredCollectorSink forwards collector registrations to the supervisor
+// once it exists. The plugin host is built before the supervisor because the
+// capability endpoint has to be registered on the metrics router before the
+// router serves; the sink is what breaks that ordering without either
+// component learning about the other.
+type deferredCollectorSink struct {
+	mu  sync.Mutex
+	sup edgepluginhost.CollectorSink
+}
+
+func (s *deferredCollectorSink) set(sup edgepluginhost.CollectorSink) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sup = sup
+}
+
+func (s *deferredCollectorSink) Register(p edgeplugins.Plugin) {
+	s.mu.Lock()
+	sup := s.sup
+	s.mu.Unlock()
+	if sup != nil {
+		sup.Register(p)
+	}
+}
+
 func envOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v

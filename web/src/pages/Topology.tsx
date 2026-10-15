@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Network, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Modal } from '@/components/Modal';
-import { Button, Card, EmptyState, PageHeader } from '@/components/ui';
+import { Button, Card, EmptyState, PageHeader, useConfirm } from '@/components/ui';
 import { TopologyGraph } from '@/components/topology/Graph';
 import { ApiError } from '@/api/client';
 import { useAuth } from '@/store/auth';
@@ -400,18 +400,30 @@ function NodeDetailDrawer({
     fetchNeighbors();
   }, [fetchNeighbors]);
 
+  const confirm = useConfirm();
   const handleDeleteNode = async () => {
-    if (!window.confirm(tr(
-      `确认删除节点 "${node.name}"？请先确保已无关系引用。`,
-      `Delete node "${node.name}"? Make sure no relations reference it first.`,
-    ))) return;
+    const ok = await confirm({
+      title: tr('删除节点', 'Delete node'),
+      message: tr(
+        `确认删除节点 "${node.name}"？请先确保已无关系引用。`,
+        `Delete node "${node.name}"? Make sure no relations reference it first.`,
+      ),
+      confirmLabel: tr('删除', 'Delete'),
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(true);
     try {
       await deleteNode(node.id);
       onChanged();
       onClose();
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : (e as Error).message);
+      await confirm({
+        title: tr('删除失败', 'Delete failed'),
+        message: e instanceof ApiError ? e.message : (e as Error).message,
+        alertOnly: true,
+        danger: true,
+      });
     } finally {
       setBusy(false);
     }
@@ -523,16 +535,28 @@ function NeighborRow({
   onDeleted: () => void;
 }) {
   const { tr } = useI18n();
+  const confirm = useConfirm();
   const outgoing = rel.src_id === centerID;
   const arrow = outgoing ? '→' : '←';
   const otherID = outgoing ? rel.dst_id : rel.src_id;
   const handleDelete = async () => {
-    if (!window.confirm(tr('删除这条关系？', 'Delete this relation?'))) return;
+    const ok = await confirm({
+      title: tr('删除关系', 'Delete relation'),
+      message: tr('删除这条关系？', 'Delete this relation?'),
+      confirmLabel: tr('删除', 'Delete'),
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteRelation(rel.id);
       onDeleted();
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : (e as Error).message);
+      await confirm({
+        title: tr('删除失败', 'Delete failed'),
+        message: e instanceof ApiError ? e.message : (e as Error).message,
+        alertOnly: true,
+        danger: true,
+      });
     }
   };
   return (
@@ -946,16 +970,28 @@ function NodeTypesPanel({ isAdmin }: { isAdmin: boolean }) {
     fetch();
   }, [fetch]);
 
+  const confirm = useConfirm();
   const handleDelete = async (nt: NodeType) => {
-    if (!window.confirm(tr(
-      `确认删除自定义类型 "${nt.name}"？需先把该类型下所有节点删完。`,
-      `Delete custom type "${nt.name}"? Delete all its nodes first.`,
-    ))) return;
+    const ok = await confirm({
+      title: tr('删除自定义类型', 'Delete custom type'),
+      message: tr(
+        `确认删除自定义类型 "${nt.name}"？需先把该类型下所有节点删完。`,
+        `Delete custom type "${nt.name}"? Delete all its nodes first.`,
+      ),
+      confirmLabel: tr('删除', 'Delete'),
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteNodeType(nt.name);
       fetch();
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : (e as Error).message);
+      await confirm({
+        title: tr('删除失败', 'Delete failed'),
+        message: e instanceof ApiError ? e.message : (e as Error).message,
+        alertOnly: true,
+        danger: true,
+      });
     }
   };
 
@@ -1246,13 +1282,25 @@ function RelationTypeCard({
   onChanged: () => void;
 }) {
   const { tr, locale } = useI18n();
+  const confirm = useConfirm();
   const handleDelete = async () => {
-    if (!window.confirm(tr(`确认删除自定义关系类型 "${rt.name}"？`, `Delete custom relation type "${rt.name}"?`))) return;
+    const ok = await confirm({
+      title: tr('删除自定义关系类型', 'Delete custom relation type'),
+      message: tr(`确认删除自定义关系类型 "${rt.name}"？`, `Delete custom relation type "${rt.name}"?`),
+      confirmLabel: tr('删除', 'Delete'),
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await deleteRelationType(rt.name);
       onChanged();
     } catch (e) {
-      alert(e instanceof ApiError ? e.message : (e as Error).message);
+      await confirm({
+        title: tr('删除失败', 'Delete failed'),
+        message: e instanceof ApiError ? e.message : (e as Error).message,
+        alertOnly: true,
+        danger: true,
+      });
     }
   };
   return (
