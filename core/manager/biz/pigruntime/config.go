@@ -23,6 +23,7 @@ type Config struct {
 	ProviderOverride bool
 	HostWrite        bool
 	DirectCredential bool
+	LaunchArguments  []string
 }
 
 // ErrDisabled 表示 PiG 未显式启用。
