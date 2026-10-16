@@ -83,6 +83,56 @@ export interface DeploymentResponse {
   generated_at: string;
 }
 
-export function getVersionDeployment() {
-  return request<DeploymentResponse>('GET', '/version/deployment');
+export type DeploymentResponsePayload = Partial<DeploymentResponse> & {
+  plugin?: PluginManifest | null;
+  skills?: SkillVersion[] | null;
+  health?: HealthSummary | null;
+  dependencies?: DeployDependency[] | null;
+  recovery_example?: RecoveryOperation | null;
+};
+
+function text(value: string | null | undefined, fallback = '—') {
+  return value || fallback;
+}
+
+function list<T>(value: T[] | null | undefined) {
+  return Array.isArray(value) ? value : [];
+}
+
+export function normalizeDeploymentResponse(payload: DeploymentResponsePayload): DeploymentResponse {
+  const recovery = payload.recovery_example;
+  return {
+    manager_version: text(payload.manager_version),
+    go_version: text(payload.go_version),
+    os_arch: text(payload.os_arch),
+    build_at: payload.build_at || undefined,
+    plugin: payload.plugin ?? {
+      id: 'unknown',
+      name: 'Unknown plugin',
+      version: 'unknown',
+    },
+    skills: list(payload.skills),
+    health: payload.health ?? { overall: 'unknown' },
+    dependencies: list(payload.dependencies),
+    recovery_example: recovery ?? {
+      incident_id: 'unknown',
+      title: 'No worked recovery example',
+      fault_family: 'unknown',
+      phases_observed: 0,
+      phases_expected: 0,
+      recovery_signal: false,
+      closed: false,
+      duration_sec: 0,
+      audit_kinds: [],
+      evidence: {},
+      phases: [],
+    },
+    generated_at: text(payload.generated_at, ''),
+  };
+}
+
+export async function getVersionDeployment() {
+  return normalizeDeploymentResponse(
+    await request<DeploymentResponsePayload>('GET', '/version/deployment'),
+  );
 }
