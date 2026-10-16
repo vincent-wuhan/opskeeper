@@ -73,7 +73,7 @@
 |---|---|---|
 | 审计端口抽出、解开反向依赖 | 完成 | 声明边已切 34 / 34 |
 | 多集群联邦 | 完成 | `core/floor/federation`（4 MiB 上限、摘要先验后解包、签名 gate）、`core/floor/tunnel/federation.go` 的 `cluster.hello` / `cluster.policy` / `cluster.state` |
-| **manager 本体拆分** | **未开始** | 未搬 **1027 个 Go 文件 / 259928 行**（口径就是台账第 15 条闸门跑的那两条命令；`scripts/ledgercheck` 现在**同时**核对本文档这一句，见 8.2） |
+| **manager 本体拆分** | **未开始** | 未搬 **1034 个 Go 文件 / 260725 行**（口径就是台账第 15 条闸门跑的那两条命令；`scripts/ledgercheck` 现在**同时**核对本文档这一句，见 8.2） |
 
 ---
 
