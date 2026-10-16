@@ -324,15 +324,20 @@ import (
 // 与发布快照契约。驱动实现、runtime API 与治理网关接线尚未落地，
 // 因此端口方法、语义构造器与配置校验入口
 // 当前只由契约测试调用；这是首切片的暂时读数，不是长期豁免。
+//
+// 910 → 912 / 601 / 311：§2.1/§2.5 交付首个隔离进程驱动与 deterministic
+// fake-PiG 夹具。`ProcessDriver` 构造和工件摘要入口仍只有测试调用；
+// runtime API 与治理网关接线完成前，这仍是暂时读数。生命周期行为
+// 已由 fake-PiG 集成测试约束，后续接线必须删除这批豁免。
 // 883 → 907 / 600 / 307：本增量来自运行时管理 §2.1 首切片。该切片刻意先交付
 // 持久化领域模型与 API 契约；仓储、runtime API 与 worker 接线将在后续切片落地，
 // 因此当前生产调用图无法到达这批符号。相关行为均由领域测试覆盖，形成
 // test-only 增量；`+1` dead 是新域暴露给后续调用方的哨兵错误。后续接线完成后，
 // 删除通道应优先把这些符号转入真实生产调用边。
 const (
-	unreachableBudget    = 910
-	deadSymbolBudget     = 600
-	testOnlySymbolBudget = 310
+	unreachableBudget    = 912
+	deadSymbolBudget     = 601
+	testOnlySymbolBudget = 311
 )
 
 // TestTheUnreachableSymbolCountNeverGrows is the gate decision 199 declined to

@@ -9,11 +9,11 @@
 
 ## 2. PiG Runtime Adapter
 
-- [ ] 2.1 Implement a PiG runtime driver that starts, probes, streams events, cancels, and terminates an isolated PiG process.
+- [x] 2.1 Implement a PiG runtime driver that starts, probes, streams events, cancels, and terminates an isolated PiG process.
 - [ ] 2.2 Normalize PiG registration and lifecycle observations into OpsKeeper runtime health and task events.
 - [ ] 2.3 Add capability admission that reconciles declared, observed, and allowlisted tools before exposing them to a role.
 - [ ] 2.4 Enforce no ambient extension discovery, no provider override, no host write, and no direct production credential access in the first slice.
-- [ ] 2.5 Add deterministic fake-PiG integration fixtures for launch, registration, heartbeat, progress, cancellation, crash, and completion.
+- [x] 2.5 Add deterministic fake-PiG integration fixtures for launch, registration, heartbeat, progress, cancellation, crash, and completion.
 
 ## 3. Governed Tool Gateway Integration
 
