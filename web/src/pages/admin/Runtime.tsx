@@ -242,7 +242,13 @@ function DependenciesCard({ deps }: { deps: DeployDependency[] }) {
           </tr>
         </thead>
         <tbody>
-          {deps.map((d) => (
+          {deps.length === 0 ? (
+            <tr>
+              <td colSpan={4} className="py-4 text-center text-zinc-500">
+                {tr('暂无部署依赖数据', 'No deployment dependencies')}
+              </td>
+            </tr>
+          ) : deps.map((d) => (
             <tr key={d.name} className="border-t border-zinc-800/60">
               <td className="py-1.5 font-mono">{d.name}</td>
               <td className="py-1.5">
@@ -314,7 +320,13 @@ function RecoveryExampleCard({ rec }: { rec: RecoveryOperation }) {
           </tr>
         </thead>
         <tbody>
-          {(rec.phases || []).map((p: TimelinePhaseLite) => (
+          {(rec.phases || []).length === 0 ? (
+            <tr>
+              <td colSpan={5} className="py-4 text-center text-zinc-500">
+                {tr('暂无恢复阶段数据', 'No recovery phases')}
+              </td>
+            </tr>
+          ) : (rec.phases || []).map((p: TimelinePhaseLite) => (
             <tr key={p.phase} className="border-t border-zinc-800/60">
               <td className="py-1.5 font-mono">
                 <span className="inline-flex items-center gap-1">
@@ -344,6 +356,7 @@ function RecoveryExampleCard({ rec }: { rec: RecoveryOperation }) {
 }
 
 function SkillsCard({ skills }: { skills: SkillVersion[] }) {
+  const { tr } = useI18n();
   return (
     <Card className="mb-4">
       <div className="flex items-center gap-2 mb-2">
@@ -352,7 +365,11 @@ function SkillsCard({ skills }: { skills: SkillVersion[] }) {
         <span className="ml-auto border-b border-zinc-800/60 bg-zinc-950/40 text-left text-[11px] uppercase tracking-wider text-zinc-500">skill_meta.yaml</span>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
-        {skills.map((s) => (
+        {skills.length === 0 ? (
+          <div className="px-2 py-4 rounded border border-zinc-800/60 bg-zinc-900/40 text-xs text-zinc-500">
+            {tr('暂无 Worker Skills 数据', 'No worker skills')}
+          </div>
+        ) : skills.map((s) => (
           <div key={s.id} className="flex items-center gap-2 px-2 py-1 rounded border border-zinc-800/60 bg-zinc-900/40">
             <span className="font-mono text-xs">{s.id}</span>
             <span className="ml-auto font-mono text-[11px] text-zinc-400">{s.version || '—'}</span>
