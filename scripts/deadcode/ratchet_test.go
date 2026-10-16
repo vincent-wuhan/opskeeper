@@ -320,15 +320,19 @@ import (
 // "one more message" from "the tool result returned to the model". Both live
 // in non-test files because external e2e packages must import them, and both
 // are therefore test-only by this walk's definition.
+// 907 → 910 / 600 / 310：PiG Runtime Adapter 首切片新增通用端口、语义映射
+// 与发布快照契约。驱动实现、runtime API 与治理网关接线尚未落地，
+// 因此端口方法、语义构造器与配置校验入口
+// 当前只由契约测试调用；这是首切片的暂时读数，不是长期豁免。
 // 883 → 907 / 600 / 307：本增量来自运行时管理 §2.1 首切片。该切片刻意先交付
 // 持久化领域模型与 API 契约；仓储、runtime API 与 worker 接线将在后续切片落地，
 // 因此当前生产调用图无法到达这批符号。相关行为均由领域测试覆盖，形成
 // test-only 增量；`+1` dead 是新域暴露给后续调用方的哨兵错误。后续接线完成后，
 // 删除通道应优先把这些符号转入真实生产调用边。
 const (
-	unreachableBudget    = 907
+	unreachableBudget    = 910
 	deadSymbolBudget     = 600
-	testOnlySymbolBudget = 307
+	testOnlySymbolBudget = 310
 )
 
 // TestTheUnreachableSymbolCountNeverGrows is the gate decision 199 declined to

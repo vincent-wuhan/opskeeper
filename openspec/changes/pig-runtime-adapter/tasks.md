@@ -2,10 +2,10 @@
 
 ## 1. Architecture and Contracts
 
-- [ ] 1.1 Define the `AgentRuntimeAdapter` port, runtime descriptor, lifecycle event, health, cancellation, capability, and terminal-result contracts.
-- [ ] 1.2 Map the adapter port to ChatRuntime and AgentTeams semantics without changing their current behavior.
-- [ ] 1.3 Define PiG release identity, compatibility, capability manifest, sandbox profile, and immutable execution-snapshot records.
-- [ ] 1.4 Add configuration for an opt-in, pinned PiG executable or Piglet artifact with ambient discovery disabled.
+- [x] 1.1 Define the `AgentRuntimeAdapter` port, runtime descriptor, lifecycle event, health, cancellation, capability, and terminal-result contracts.
+- [x] 1.2 Map the adapter port to ChatRuntime and AgentTeams semantics without changing their current behavior.
+- [x] 1.3 Define PiG release identity, compatibility, capability manifest, sandbox profile, and immutable execution-snapshot records.
+- [x] 1.4 Add configuration for an opt-in, pinned PiG executable or Piglet artifact with ambient discovery disabled.
 
 ## 2. PiG Runtime Adapter
 
