@@ -5,10 +5,8 @@ import (
 	"testing"
 )
 
-// TestValidTransitions_Table pins the allowed-state-machine edges.
-// Mirrors task_state.go ValidTransitions; if this fails it means the
-// state machine lost a path. Adding a new transition MUST update both
-// the table and ValidTransitions.
+// TestValidTransitions_Table 固定允许的状态机边，镜像 task_state.go 的
+// ValidTransitions；新增迁移必须同时更新两处。
 func TestValidTransitions_Table(t *testing.T) {
 	must := []struct {
 		from, to TaskState
@@ -36,14 +34,13 @@ func TestValidTransitions_Table(t *testing.T) {
 	}
 }
 
-// TestValidTransitions_Forbidden pins the explicitly-banned paths.
-// Spec design.md §Durable task model says no back-edges from terminal
-// states, and no skipping intermediate phases.
+// TestValidTransitions_Forbidden 固定显式禁止路径：终态不能回退，
+// 也不能跳过中间阶段。
 func TestValidTransitions_Forbidden(t *testing.T) {
 	banned := []struct {
 		from, to TaskState
 	}{
-		// Terminal states have no outgoing edges.
+		// 终态没有出边。
 		{TaskStateSucceeded, TaskStateRunning},
 		{TaskStateSucceeded, TaskStateFailed},
 		{TaskStateSucceeded, TaskStateCancelled},
@@ -52,7 +49,7 @@ func TestValidTransitions_Forbidden(t *testing.T) {
 		{TaskStateFailed, TaskStateClaimed},
 		{TaskStateCancelled, TaskStateRunning},
 		{TaskStateCancelled, TaskStateAdmitted},
-		// Skipping intermediate phases.
+		// 跳过中间阶段必须禁止。
 		{TaskStateQueued, TaskStateClaimed},
 		{TaskStateQueued, TaskStateRunning},
 		{TaskStateQueued, TaskStateSucceeded},
@@ -60,12 +57,12 @@ func TestValidTransitions_Forbidden(t *testing.T) {
 		{TaskStateAdmitted, TaskStateRunning},
 		{TaskStateClaimed, TaskStateRunning},
 		{TaskStatePreparing, TaskStateSucceeded},
-		// Reverse direction (no back-edges).
+		// 反向迁移必须禁止，不允许回退边。
 		{TaskStateAdmitted, TaskStateQueued},
 		{TaskStateClaimed, TaskStateAdmitted},
 		{TaskStatePreparing, TaskStateClaimed},
 		{TaskStateRunning, TaskStatePreparing},
-		// Unknown state.
+		// 未知状态必须拒绝。
 		{TaskState("unknown"), TaskStateRunning},
 		{TaskState(""), TaskStateRunning},
 	}
@@ -126,9 +123,7 @@ func TestNormalize(t *testing.T) {
 	}
 }
 
-// TestValidTransitions_Coverage guards against accidentally leaving a
-// non-terminal state with no outbound edges; such a state would trap
-// tasks with no escape.
+// TestValidTransitions_Coverage 防止非终态意外没有出边；否则任务会被困住。
 func TestValidTransitions_Coverage(t *testing.T) {
 	for _, s := range AllTaskStates {
 		edges := ValidTransitions[s]

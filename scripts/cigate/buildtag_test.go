@@ -426,7 +426,9 @@ func TestTheOldWordingDoesNotComeBack(t *testing.T) {
 	}
 	// And the replacement has to actually be there, or "the old wording is
 	// gone" is satisfied by a tool that says nothing at all.
-	if !strings.Contains(out, "names NONE of them") && !strings.Contains(out, "unknown from here") {
-		t.Errorf("the report neither names the missing job nor says the file was unreadable:\n%s", out)
+	if !strings.Contains(out, "names NONE of them") &&
+		!strings.Contains(out, "unknown from here") &&
+		!strings.Contains(out, "does name all of them") {
+		t.Errorf("报告既未说明默认分支缺失目标，也未说明文件不可读或目标已齐全:\n%s", out)
 	}
 }

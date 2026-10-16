@@ -2,83 +2,65 @@ package runtimemgmt
 
 import "time"
 
-// Checkpoint is one durable resume pointer recorded by the worker.
-// A task can hold many checkpoints (one per attempt, plus optional
-// intra-attempt progress checkpoints). The latest one for the active
-// (task_id, attempt_number) pair is the resume target; older
-// checkpoints are kept for replay / audit.
+// Checkpoint 是 Worker 记录的持久化恢复指针。一个任务可有多个检查点，
+// 包括每次尝试至少一个以及尝试内进度检查点。当前 (task_id,
+// attempt_number) 的最新记录是恢复目标；旧记录保留用于重放与审计。
 //
-// Spec scenario "Worker restarts after checkpoint" relies on this:
-// on restart, the worker reads the latest Checkpoint row for its
-// claim and resumes from PayloadRef/ResumeHint instead of starting
-// over. Mutating workers MUST also compare
-// IdempotencyContract.Fingerprint to confirm the resume target
-// matches the original side-effect surface.
+// 规格场景“检查点后 Worker 重启”依赖该记录：重启后 Worker 读取当前认领
+// 的最新 Checkpoint，从 PayloadRef / ResumeHint 续跑而不是重跑。变更型
+// Worker 还必须比对 IdempotencyContract.Fingerprint，确认恢复目标与原副作用
+// 面一致。
 type Checkpoint struct {
-	// ID is an auto-incremented row id. The natural lookup is
-	// (TaskID, AttemptNumber, Sequence), but a surrogate id keeps
-	// the checkpoint rows append-only-friendly and easy to garbage
-	// collect via DELETE on the storage layer once a new attempt
-	// supersedes them.
+	// ID 是自增行 ID。自然查询键是 (TaskID, AttemptNumber, Sequence)，
+	// 代理主键让记录保持追加友好，也便于存储层在新尝试替代后按 DELETE
+	// 回收。
 	ID int64 `gorm:"primaryKey;autoIncrement"`
 
-	// TaskID is the owning task.
+	// TaskID 是所属任务。
 	TaskID string `gorm:"index;size:64;not null"`
 
 	TenantID string `gorm:"index;size:64;not null"`
 
-	// AttemptNumber ties the checkpoint to one AttemptRecord. 1-based
-	// so attempt 0 (the initial queued row) is unambiguous.
+	// AttemptNumber 关联一次 AttemptRecord；从 1 开始，避免与初始排队
+	// 阶段的第 0 次尝试混淆。
 	AttemptNumber int `gorm:"not null;default:1"`
 
-	// Sequence numbers checkpoints inside one attempt: 1 for the
-	// first checkpoint of the attempt, then monotonic. AutoIncrement
-	// per (TaskID, AttemptNumber).
+	// Sequence 是同一尝试内检查点序号：首个为 1，之后单调递增；
+	// 由 (TaskID, AttemptNumber) 维护自增。
 	Sequence int `gorm:"not null;default:1"`
 
-	// Generation mirrors Claim.Generation at write time. Recovery
-	// skips checkpoints whose generation is behind the current
-	// claim's generation (stale-lease → new claimer → old
-	// checkpoint from a different runtime).
+	// Generation 记录写入时 Claim.Generation。恢复流程跳过落后于当前
+	// 认领代际的检查点，避免旧运行时的记录被新认领者误用。
 	Generation int64 `gorm:"not null;default:0"`
 
-	// Phase is the optional worker-supplied phase label
-	// ("collecting_evidence", "writing_result"). Free-form short
-	// string for diagnostics, not part of the resume contract.
+	// Phase 是 Worker 可选阶段标签，例如 collecting_evidence、
+	// writing_result；仅用于诊断，不属于恢复契约。
 	Phase string `gorm:"size:64;not null;default:''"`
 
-	// ResumeHint is the worker-supplied opaque cursor the next
-	// claim reads first ("evidence_id=42", "page_token=..."). The
-	// orchestrator passes it through verbatim; storage stays opaque
-	// to the control plane.
+	// ResumeHint 是 Worker 提供的不透明游标，例如 evidence_id=42、
+	// page_token=...。编排器原样透传，控制面不解释其内容。
 	ResumeHint string `gorm:"type:text"`
 
-	// PayloadRef points to the durable payload (workspace artefact,
-	// OSS key, or DB row id) that backs the resume. The runtime
-	// owns the semantics of this ref; the control plane only
-	// persists it.
+	// PayloadRef 指向支撑恢复的持久化载荷，例如工作区产物、OSS key 或
+	// 数据库行 ID。引用语义由运行时持有，控制面只持久化字符串。
 	PayloadRef string `gorm:"size:255;not null;default:''"`
 
-	// RecordedAt is wall-clock when the worker wrote this row.
+	// RecordedAt 是 Worker 写入记录的墙钟时间。
 	RecordedAt time.Time `gorm:"index;not null"`
 
-	// RecordedBy mirrors Claim.ClaimedBy at write time, so post-
-	// mortem queries can show which runtime produced a checkpoint
-	// without joining the Claim row.
+	// RecordedBy 冗余写入时 Claim.ClaimedBy，事后查询无需关联 Claim
+	// 即可判断检查点来源运行时。
 	RecordedBy string `gorm:"size:128;not null;default:''"`
 }
 
-// TableName pins the schema name. Migrations MUST keep this exact
-// name; the orchestrator reads by (task_id, attempt_number, sequence).
+// TableName 固定表名。迁移必须保持不变；编排器按
+// (task_id, attempt_number, sequence) 读取。
 func (Checkpoint) TableName() string { return "runtimemgmt_checkpoints" }
 
-// ResumeFor returns the latest checkpoint row for (TaskID,
-// AttemptNumber) ordered by Sequence desc. The result is the resume
-// target for the next worker; nil means no resume pointer yet.
+// ResumeFor 返回按 Sequence 降序得到的最新检查点；nil 表示尚无恢复指针。
 //
-// NOTE: callers pass a slice of Checkpoint for that task/attempt and
-// the function returns the best one without scanning the storage
-// layer; the actual repository implementation owns the SQL.
+// 注意：调用方传入该任务与尝试的 Checkpoint 切片，本函数只选择最佳记录，
+// 不扫描存储层；实际 SQL 由仓储实现负责。
 func ResumeFor(checkpoints []Checkpoint) *Checkpoint {
 	var best *Checkpoint
 	for i := range checkpoints {
@@ -93,9 +75,8 @@ func ResumeFor(checkpoints []Checkpoint) *Checkpoint {
 	return best
 }
 
-// IsForCurrentClaim reports whether the checkpoint's generation
-// matches the live Claim.Generation. Stale-claim recovery uses this
-// to skip checkpoints written by the prior claimer.
+// IsForCurrentClaim 判断检查点代际是否匹配当前 Claim.Generation。
+// 陈旧认领恢复用它跳过前认领者写入的检查点。
 func (c Checkpoint) IsForCurrentClaim(claimGeneration int64) bool {
 	return c.Generation == claimGeneration && c.Generation != 0
 }

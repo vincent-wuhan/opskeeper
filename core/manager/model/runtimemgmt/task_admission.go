@@ -2,64 +2,49 @@ package runtimemgmt
 
 import "time"
 
-// AdmissionDecision is the slot-before-claim admission snapshot. It is
-// recorded at queue->admitted time so that even after admission limits
-// shift, recovery can answer "what capacity was this task allowed
-// under?" without re-running the policy.
+// AdmissionDecision 是认领前槽位准入快照，在 queued -> admitted 时记录。
+// 即使后续准入上限变化，恢复流程也能回答“该任务当时依据什么容量获准”，
+// 无需重新执行策略。
 //
-// The decision itself is computed by §2.2 (admission service) and
-// passed to the persistence layer; this file is just the durable
-// shape. Spec scenario "No capacity is available" maps to
-// Reason="no_capacity", Outcome=AdmissionOutcomeRejected.
+// 决策由 §2.2 准入服务计算后传入持久化层；本文件只定义持久化形状。
+// 规格场景“无可用容量”映射 Reason=no_capacity、Outcome=Rejected。
 type AdmissionDecision struct {
-	// TaskID is the owning durable task; one row per task.
-	// Composite primary key with TenantID is implicit via the table
-	// naming, but TenantID is stored for filter clarity.
+	// TaskID 是所属持久化任务；每个任务一条记录。表命名隐含与 TenantID
+	// 的组合主键语义，显式保存 TenantID 便于过滤。
 	TaskID string `gorm:"primaryKey;size:64"`
 
 	TenantID string `gorm:"index;size:64;not null"`
 
-	// Outcome is one of AdmissionOutcomeAdmitted or
-	// AdmissionOutcomeRejected.
+	// Outcome 只能是 AdmissionOutcomeAdmitted 或 AdmissionOutcomeRejected。
 	Outcome AdmissionOutcome `gorm:"size:16;not null;index"`
 
-	// Reason is a short human-readable explanation; one of
-	// AdmissionReasonNoCapacity, AdmissionReasonRuntimeNotReady,
-	// AdmissionReasonQuotaExceeded,
-	// AdmissionReasonSafetyNotAllowed, AdmissionReasonPolicyDenied
-	// or "" when admitted.
+	// Reason 是简短原因，准入成功为空；拒绝时必须是 no_capacity、
+	// runtime_not_ready、quota_exceeded、safety_not_allowed 或 policy_denied。
 	Reason string `gorm:"size:64;not null;default:''"`
 
-	// ServerLimit is the global Manager-side concurrency cap that
-	// was active at admission time. Persisted for audit / diff.
+	// ServerLimit 是准入时 Manager 全局并发上限，持久化用于审计与差异分析。
 	ServerLimit int `gorm:"not null;default:0"`
 
-	// RuntimeLimit is the runtime-reported free-slot / capacity cap
-	// that was active at admission time. Persisted alongside
-	// ServerLimit; the smaller of the two was the effective gate.
+	// RuntimeLimit 是准入时运行时上报的空闲槽位或容量上限，与 ServerLimit
+	// 一起保存；二者较小值是实际闸门。
 	RuntimeLimit int `gorm:"not null;default:0"`
 
-	// RuntimeSelector is the desired-runtime expression recorded at
-	// admission. The actual RuntimeID is filled on claim, not here.
-	// Free-form for v1; expected to be a label-selector expression
-	// in later slices.
+	// RuntimeSelector 是准入时记录的期望运行时表达式。实际 RuntimeID
+	// 在认领时写入，不在此处。v1 为自由文本，后续切片预计收敛为标签选择器。
 	RuntimeSelector string `gorm:"size:128;not null;default:''"`
 
-	// DecidedAt is the wall-clock admission timestamp. Indexed so
-	// backlog sweeps can target the oldest unadmitted rows first.
+	// DecidedAt 是准入决策墙钟时间；建立索引便于积压清扫优先处理最旧记录。
 	DecidedAt time.Time `gorm:"index;not null"`
 
-	// DecidedBy is "scheduler.v1" for the v1 admission service, or
-	// "operator:<user_id>" for an override. Operators can override
-	// out of capacity; the audit keeps both reasons.
+	// DecidedBy 是决策者：v1 准入服务为 scheduler.v1，人工覆盖为
+	// operator:<user_id>。操作员可突破容量限制，审计保留两种原因。
 	DecidedBy string `gorm:"size:64;not null;default:scheduler.v1"`
 }
 
-// TableName pins the schema name. Migrations MUST keep this exact
-// name; the orchestrator reads by task_id.
+// TableName 固定表名。迁移必须保持不变；编排器按 task_id 读取。
 func (AdmissionDecision) TableName() string { return "runtimemgmt_admission_decisions" }
 
-// AdmissionOutcome enumerates the admit/reject states.
+// AdmissionOutcome 枚举准入与拒绝状态。
 type AdmissionOutcome string
 
 const (
@@ -67,8 +52,7 @@ const (
 	AdmissionOutcomeRejected AdmissionOutcome = "rejected"
 )
 
-// AdmissionReason constants. Rejection reasons are listed here so
-// callers and dashboards can switch on them without parsing strings.
+// AdmissionReason 常量。显式列出拒绝原因，调用方与 Dashboard 无需解析字符串。
 const (
 	AdmissionReasonOK               = ""
 	AdmissionReasonNoCapacity       = "no_capacity"
@@ -78,8 +62,7 @@ const (
 	AdmissionReasonPolicyDenied     = "policy_denied"
 )
 
-// Validate confirms the decision is internally consistent. The
-// admission service runs this check before persisting.
+// Validate 校验决策内部一致性；准入服务在持久化前执行。
 func (a AdmissionDecision) Validate() error {
 	switch a.Outcome {
 	case AdmissionOutcomeAdmitted:

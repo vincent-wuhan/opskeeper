@@ -5,9 +5,8 @@ import (
 	"time"
 )
 
-// TestResumeFor_PicksHighestSequence pins the resume-target rule:
-// the checkpoint with the highest Sequence for the (task, attempt)
-// is the resume target, regardless of RecordedAt ordering.
+// TestResumeFor_PicksHighestSequence 固定恢复目标规则：同一任务与尝试中
+// Sequence 最大的检查点为恢复目标，与 RecordedAt 顺序无关。
 func TestResumeFor_PicksHighestSequence(t *testing.T) {
 	now := time.Now().UTC()
 	checkpoints := []Checkpoint{
@@ -33,8 +32,7 @@ func TestResumeFor_Empty(t *testing.T) {
 	}
 }
 
-// TestResumeFor_SkipNil is a defensive guard for repositories that
-// occasionally hand back nil checkpointer rows.
+// TestResumeFor_SkipNil 是防御性测试，覆盖仓储偶发返回 nil 检查点的情况。
 func TestResumeFor_SkipNil(t *testing.T) {
 	now := time.Now().UTC()
 	checkpoints := []*Checkpoint{
@@ -45,9 +43,8 @@ func TestResumeFor_SkipNil(t *testing.T) {
 	flat := make([]Checkpoint, 0, len(checkpoints))
 	for _, p := range checkpoints {
 		if p == nil {
-			// ResumeFor's contract doesn't include nil entries but
-			// this test pins the behaviour so a future repo
-			// refactor doesn't surprise callers.
+			// ResumeFor 契约不包含 nil，但固定该行为可避免未来仓储重构
+			// 让调用方意外失败。
 			continue
 		}
 		flat = append(flat, *p)
@@ -58,10 +55,8 @@ func TestResumeFor_SkipNil(t *testing.T) {
 	}
 }
 
-// TestCheckpoint_IsForCurrentClaim covers the stale-claim filter.
-// generation=0 is reserved as "no claim yet" and MUST always report
-// false so the orchestrator never treats a pre-claim checkpoint as
-// authoritative.
+// TestCheckpoint_IsForCurrentClaim 覆盖陈旧认领过滤。generation=0
+// 保留为尚未认领，必须返回 false，避免认领前检查点被视为权威。
 func TestCheckpoint_IsForCurrentClaim(t *testing.T) {
 	c := Checkpoint{Generation: 4}
 	if !c.IsForCurrentClaim(4) {

@@ -2,114 +2,91 @@ package runtimemgmt
 
 import "time"
 
-// TaskResult is the terminal record of one task. There is at most
-// one row per (TaskID, AttemptNumber); the row for the LAST attempt
-// wins for Dashboard. The SanitizerStatus field is REQUIRED for
-// persistence: a terminal result must declare whether output was
-// sanitized, skipped (with rationale), or unclassified-by-error.
+// TaskResult 是任务终态记录。每个 (TaskID, AttemptNumber) 最多一条；
+// Dashboard 展示最后一次尝试。持久化必须填写 SanitizerStatus，
+// 明确输出已脱敏、因理由跳过，还是因错误无法分类。
 //
-// Spec scenarios "Task reaches terminal state" and "Credential-bearing
-// output is persisted" both reference this row.
+// 规格场景“任务进入终态”和“持久化含凭据输出”都依赖该记录。
 type TaskResult struct {
-	// TaskID + AttemptNumber composite primary key. The current
-	// attempt's row is the dashboard surface; older attempts'
-	// results remain queryable for replay.
+	// TaskID 与 AttemptNumber 组成组合主键。当前尝试结果用于展示，
+	// 历史尝试结果仍可查询用于重放。
 	TaskID        string `gorm:"primaryKey;size:64"`
 	AttemptNumber int    `gorm:"primaryKey"`
 
 	TenantID string `gorm:"index;size:64;not null"`
 
-	// Status mirrors the eventual task state (succeeded / failed /
-	// cancelled). Stored on the result so readers can answer
-	// "what happened?" without joining the task row.
+	// Status 复制最终任务状态 succeeded、failed 或 cancelled；
+	// 读取方无需关联任务记录即可知道结果。
 	Status TaskState `gorm:"size:16;not null;index"`
 
-	// EndedAt is the wall-clock completion timestamp.
+	// EndedAt 是完成时的墙钟时间。
 	EndedAt time.Time `gorm:"index;not null"`
 
-	// FailureClass is empty on success; otherwise it carries the
-	// same taxonomy AttemptRecord.FailureClass. Duplicated so a
-	// terminal-failure inspector only needs to read this row.
+	// FailureClass 成功时为空，否则与 AttemptRecord.FailureClass 相同；
+	// 冗余保存后，终态失败检查器只需读取本记录。
 	FailureClass FailureClass `gorm:"size:32;not null;default:''"`
 
-	// ErrorMessage is the human-readable error string on terminal
-	// failure. Empty on success. Sanitized before persistence
-	// (SanitizerStatus below).
+	// ErrorMessage 是终态失败的可读错误信息，成功时为空；
+	// 持久化前必须按 SanitizerStatus 脱敏。
 	ErrorMessage string `gorm:"type:text"`
 
-	// OutputRef points to the durable output payload (OSS key,
-	// workspace row, evidence id). Free-form; the runtime owns the
-	// semantics. Empty when the task produced no output.
+	// OutputRef 指向持久化输出载荷，例如 OSS key、工作区记录或证据 ID。
+	// v1 为自由文本，语义由运行时持有；无输出时为空。
 	OutputRef string `gorm:"size:255;not null;default:''"`
 
-	// OutputSize is the byte-size of OutputRef. Zero is valid (no
-	// output). Stored explicitly so auditors can estimate evidence
-	// size without re-fetching the ref.
+	// OutputSize 是输出载荷字节数；零表示无输出。显式保存，
+	// 审计者无需重新拉取引用即可估算证据规模。
 	OutputSize int64 `gorm:"not null;default:0"`
 
-	// SanitizerStatus is the classifier verdict for the Result /
-	// ErrorMessage / OutputRef. Required at write time.
+	// SanitizerStatus 是结果、错误信息与输出引用的脱敏裁决，写入时必填。
 	SanitizerStatus SanitizerStatus `gorm:"size:16;not null"`
 
-	// SanitizerNotes is optional human-readable rationale for a
-	// skip / partial verdict. Required to be non-empty when
-	// SanitizerStatus = SanitizerStatusSkipped so auditors know
-	// why the chain broke. Sanitized itself before persistence.
+	// SanitizerNotes 是跳过或部分脱敏的可选理由；状态为 skipped 时必填，
+	// 让审计者知道链路为何中断。字段自身持久化前也需脱敏。
 	SanitizerNotes string `gorm:"type:text"`
 
-	// OutputDigest is the sha256 of the output payload (or empty
-	// string when there is no output). Used by replay tools to
-	// detect "same task, different bytes" without downloading.
+	// OutputDigest 是输出载荷 SHA-256，无输出时为空；重放工具无需下载
+	// 即可发现同一任务出现不同字节。
 	OutputDigest string `gorm:"size:64;not null;default:''"`
 
-	// CompletedBy is the runtime that wrote the result. Mirrors
-	// Claim.ClaimedBy at write time.
+	// CompletedBy 是写入结果的运行时，等于写入时 Claim.ClaimedBy。
 	CompletedBy string `gorm:"size:128;not null;default:''"`
 
-	// PodIdempotencyFingerprint is the IdempotencyContract fingerprint
-	// the attempt was working against. Copied at write time so a
-	// post-mortem can verify the result was produced under the
-	// correct side-effect contract even after the original contract
-	// row has been GC'd.
+	// PodIdempotencyFingerprint 是本次尝试使用的幂等契约指纹。写入时复制，
+	// 即使原契约记录之后被回收，事后分析仍可验证结果产生于正确副作用契约。
 	PodIdempotencyFingerprint string `gorm:"size:64;not null;default:''"`
 }
 
-// TableName pins the schema name. Migrations MUST keep this exact
-// name; the orchestrator reads by (task_id, attempt_number).
+// TableName 固定表名。迁移必须保持不变；编排器按
+// (task_id, attempt_number) 读取。
 func (TaskResult) TableName() string { return "runtimemgmt_task_results" }
 
-// SanitizerStatus is the closed taxonomy for the result-output
-// redaction gate. The control plane refuses to persist a TaskResult
-// whose SanitizerStatus is empty or otherwise unrecognised; this is
-// the security boundary that prevents raw credential material
-// entering evidence / telemetry / UI.
+// SanitizerStatus 是结果输出脱敏闸门的闭集分类。控制面拒绝持久化
+// 状态为空或未识别的 TaskResult，防止原始凭据进入证据、遥测或 UI。
 type SanitizerStatus string
 
 const (
-	// SanitizerStatusApplied means the worker (or the sanitizer
-	// middleware) ran the redaction pipeline before persistence.
+	// SanitizerStatusApplied 表示 Worker 或脱敏中间件在持久化前已执行
+	// 脱敏流水线。
 	SanitizerStatusApplied SanitizerStatus = "applied"
 
-	// SanitizerStatusSkipped means no sanitization was performed;
-	// SanitizerNotes MUST explain why. Whitelisted scenarios
-	// (read-only / non-credential output) document their notes.
+	// SanitizerStatusSkipped 表示未执行脱敏；SanitizerNotes 必须说明理由。
+	// 只读或不含凭据等白名单场景需记录说明。
 	SanitizerStatusSkipped SanitizerStatus = "skipped"
 
-	// SanitizerStatusFailed means the sanitizer pipeline errored;
-	// the task is considered insecure and the orchestrator blocks
-	// persistence until the worker re-runs sanitization or the
-	// operator overrides via audit.
+	// SanitizerStatusFailed 表示脱敏流水线错误；任务视为不安全，
+	// Worker 重跑脱敏或操作员经审计覆盖前，编排器阻止持久化。
 	SanitizerStatusFailed SanitizerStatus = "failed"
 )
 
-// SanitizerStatusValues is the closed enumeration.
+// SanitizerStatusValues 是闭集枚举。
 var SanitizerStatusValues = []SanitizerStatus{
 	SanitizerStatusApplied,
 	SanitizerStatusSkipped,
 	SanitizerStatusFailed,
 }
 
-// IsSanitizerStatus reports whether s is a recognized status.
+// IsSanitizerStatus 判断 s 是否为已识别状态。
 func IsSanitizerStatus(s SanitizerStatus) bool {
 	for _, v := range SanitizerStatusValues {
 		if v == s {
@@ -119,8 +96,7 @@ func IsSanitizerStatus(s SanitizerStatus) bool {
 	return false
 }
 
-// Validate confirms the TaskResult is internally consistent. The
-// failure API runs this before persisting.
+// Validate 校验 TaskResult 内部一致性；失败 API 在持久化前执行。
 func (r TaskResult) Validate() error {
 	if r.TaskID == "" {
 		return ErrResultNotReady

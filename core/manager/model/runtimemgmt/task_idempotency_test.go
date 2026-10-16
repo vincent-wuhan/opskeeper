@@ -7,10 +7,9 @@ import (
 	"time"
 )
 
-// TestNewIdempotencyContract_OK covers the canonical mutating case:
-// the fingerprint of a contract is the SHA-256 of
-// (payloadDigest | targetSystem | scope) — same input MUST produce
-// the same fingerprint and the field set MUST round-trip via Matches.
+// TestNewIdempotencyContract_OK 覆盖标准变更型场景：契约指纹是
+// (payloadDigest | targetSystem | scope) 的 SHA-256；相同输入必须得到相同
+// 指纹，字段组合也必须通过 Matches 往返。
 func TestNewIdempotencyContract_OK(t *testing.T) {
 	now := time.Date(2026, 10, 16, 1, 0, 0, 0, time.UTC)
 	c, err := NewIdempotencyContract(
@@ -37,8 +36,8 @@ func TestNewIdempotencyContract_OK(t *testing.T) {
 	}
 }
 
-// TestNewIdempotencyContract_SameInputSameFingerprint pins the
-// determinism requirement: retries MUST hash-compare cleanly.
+// TestNewIdempotencyContract_SameInputSameFingerprint 固定确定性要求：
+// 重试必须能干净比较哈希。
 func TestNewIdempotencyContract_SameInputSameFingerprint(t *testing.T) {
 	a, err := NewIdempotencyContract("t", "tenant", "p", "sys", "scope", "", "p", time.Now())
 	if err != nil {
@@ -53,9 +52,8 @@ func TestNewIdempotencyContract_SameInputSameFingerprint(t *testing.T) {
 	}
 }
 
-// TestNewIdempotencyContract_DiffInputDiffFingerprint guards against
-// "scope collision" — two requests with the same payload digest but
-// different target system or scope MUST hash-mismatch.
+// TestNewIdempotencyContract_DiffInputDiffFingerprint 防止范围冲突：
+// 载荷摘要相同但目标系统或范围不同，指纹必须不匹配。
 func TestNewIdempotencyContract_DiffInputDiffFingerprint(t *testing.T) {
 	a, _ := NewIdempotencyContract("t", "tenant", "p", "sys-a", "scope", "", "p", time.Now())
 	b, _ := NewIdempotencyContract("t", "tenant", "p", "sys-b", "scope", "", "p", time.Now())
@@ -68,10 +66,9 @@ func TestNewIdempotencyContract_DiffInputDiffFingerprint(t *testing.T) {
 	}
 }
 
-// TestNewIdempotencyContract_RejectsEmpty covers the required-field
-// gate. Every one of (task_id, tenant_id, payload digest, target
-// system, scope) is mandatory; empty values produce
-// ErrIdempotencyRequired, not a zero-fingerprint row.
+// TestNewIdempotencyContract_RejectsEmpty 覆盖必填字段闸门。
+// task_id、tenant_id、载荷摘要、目标系统与范围均必填；空值返回
+// ErrIdempotencyRequired，而不是生成空指纹记录。
 func TestNewIdempotencyContract_RejectsEmpty(t *testing.T) {
 	cases := []struct {
 		name, taskID, tenantID, payload, sys, scope string
@@ -92,9 +89,8 @@ func TestNewIdempotencyContract_RejectsEmpty(t *testing.T) {
 	}
 }
 
-// TestMatches_Baseline covers the simple equality plus the empty-
-// path negative branch. Pinned here so a future refactor cannot
-// turn Matches() into identity-by-coincidence.
+// TestMatches_Baseline 覆盖相等与空值负例，防止未来重构让 Matches
+// 出现巧合相等。
 func TestMatches_Baseline(t *testing.T) {
 	c := IdempotencyContract{Fingerprint: "abc"}
 	if c.Matches("") {
@@ -108,7 +104,7 @@ func TestMatches_Baseline(t *testing.T) {
 	}
 }
 
-// TestComputePayloadDigest pins canonical hashing for the Task row.
+// TestComputePayloadDigest 固定 Task 记录的标准哈希行为。
 func TestComputePayloadDigest(t *testing.T) {
 	if got := ComputePayloadDigest(nil); len(got) != 64 {
 		t.Errorf("nil digest = %q, want 64-hex chars", got)
@@ -123,9 +119,8 @@ func TestComputePayloadDigest(t *testing.T) {
 	}
 }
 
-// TestNewTaskID is the smoke test for the UUID generator. It does not
-// fix any particular format other than "non-empty, length 36"; Go's
-// uuid package is well-tested on its own.
+// TestNewTaskID 是 UUID 生成器冒烟测试；除非空且长度 36 外不固定格式，
+// Go uuid 包自身已有完整测试。
 func TestNewTaskID(t *testing.T) {
 	a := NewTaskID()
 	b := NewTaskID()

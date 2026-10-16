@@ -8,69 +8,57 @@ import (
 	"github.com/google/uuid"
 )
 
-// IdempotencyContract is the pre-claim fingerprint that authorises
-// automatic retry of a mutating task. Persisted BEFORE the first claim,
-// it lets recovery detect "did this exact side-effect already ship?"
-// without consulting the external system on restart.
+// IdempotencyContract 是授权变更型任务自动重试的认领前指纹。它必须在
+// 首次认领前持久化，让恢复流程无需重启后询问外部系统即可判断该副作用
+// 是否已经发生。
 //
-// Required by spec requirement "Mutating tasks declare idempotency
-// before automatic retry". The fingerprint covers (task identity,
-// payload digest, target system, scope) so two different requests that
-// look the same against one row still resolve as one attempt.
+// 该契约来自规格要求“变更型任务自动重试前必须声明幂等”。指纹覆盖任务
+// 身份、载荷摘要、目标系统与范围，使两个请求在同一记录上看似相同，
+// 仍可解析为一次尝试。
 //
-// Read-only and disposable-preview tasks MAY also carry a contract,
-// but it is optional — the safety class is the binding rule.
+// 只读与一次性预览任务可以携带契约，但不强制；安全级别才是约束规则。
 type IdempotencyContract struct {
-	// TaskID is the owning durable task row. Indexed; one row per
-	// task (the contract is set at admission and is immutable after
-	// the first claim).
+	// TaskID 是所属持久化任务；每个任务一条记录。契约在准入时设置，
+	// 首次认领后不可变。
 	TaskID string `gorm:"primaryKey;size:64"`
 
-	// TenantID is the owning tenant; queries MUST filter on it.
+	// TenantID 是所属租户；查询必须按它过滤。
 	TenantID string `gorm:"index;size:64;not null"`
 
-	// Fingerprint is the SHA-256 hex digest of the serialized
-	// contract body (PayloadDigest + TargetSystem + Scope). 64 hex
-	// chars; the orchestrator recomputes on retry to detect drift.
+	// Fingerprint 是契约体（PayloadDigest + TargetSystem + Scope）
+	// 序列化后的 SHA-256 十六进制摘要；重试时编排器重新计算以检测漂移。
 	Fingerprint string `gorm:"size:64;not null"`
 
-	// PayloadDigest identifies the producer-supplied payload bytes.
-	// Hex SHA-256; 64 chars.
+	// PayloadDigest 标识生产者提供的载荷字节，是 64 位十六进制 SHA-256。
 	PayloadDigest string `gorm:"size:64;not null"`
 
-	// TargetSystem names the destination system (e.g. "preview-pg",
-	// "pg:primary", "shell:agent"). The fingerprint binds scope to
-	// system so a request to a different scope hash-mismatches.
+	// TargetSystem 表示目标系统，例如 preview-pg、pg:primary、shell:agent。
+	// 指纹将范围绑定到系统，范围变化会导致摘要不匹配。
 	TargetSystem string `gorm:"size:64;not null"`
 
-	// Scope binds the request to a narrow target identity (table,
-	// resource id, command). Same string appears in the fingerprint.
+	// Scope 将请求绑定到精确目标身份，例如表、资源 ID 或命令；
+	// 相同字符串参与指纹计算。
 	Scope string `gorm:"size:128;not null"`
 
-	// ExternalRequestID is an optional producer-supplied id
-	// (transaction id, alert fingerprint). Useful for human-side
-	// correlation but not part of the fingerprint.
+	// ExternalRequestID 是生产者可选外部请求 ID，例如事务 ID或告警指纹；
+	// 便于人工关联，但不参与指纹。
 	ExternalRequestID string `gorm:"size:128"`
 
-	// IssuedAt is when the producer committed this contract. Pure
-	// wall-clock; the orchestrator does not interpret it as a
-	// retry budget.
+	// IssuedAt 是生产者提交契约的时间；仅为墙钟时间，不作为重试预算解释。
 	IssuedAt time.Time `gorm:"index;not null"`
 
-	// IssuedBy names the producer (agent/chat/automation). Free-form
-	// short string, audit-only.
+	// IssuedBy 表示生产者来源，例如 agent、chat、automation；
+	// 自由短字符串，仅用于审计。
 	IssuedBy string `gorm:"size:64;not null;default:''"`
 }
 
-// TableName pins the schema name. Migrations MUST keep this exact
-// name; the orchestrator's auto-retry gate matches on (task_id,
-// fingerprint).
+// TableName 固定表名。迁移必须保持不变；自动重试闸门按
+// (task_id, fingerprint) 匹配。
 func (IdempotencyContract) TableName() string { return "runtimemgmt_idempotency_contracts" }
 
-// NewIdempotencyContract builds and fingerprints a contract. The
-// returned Fingerprint is sha256(payloadDigest || "|" || targetSystem
-// || "|" || scope); callers MUST persist the same value verbatim
-// (no normalization) so retries hash-compare cleanly.
+// NewIdempotencyContract 构建并计算契约指纹，算法为
+// sha256(payloadDigest + "|" + targetSystem + "|" + scope)。
+// 调用方必须原样持久化返回值，不做规范化，保证重试可直接比较。
 func NewIdempotencyContract(
 	taskID, tenantID, payloadDigest, targetSystem, scope, externalRequestID, issuedBy string,
 	issuedAt time.Time,
@@ -92,10 +80,8 @@ func NewIdempotencyContract(
 	}, nil
 }
 
-// Matches reports whether the contract's persisted fingerprint equals
-// the recomputed one. It does NOT recompute; the orchestrator re-hashes
-// and compares so a contract row that was edited out-of-band is
-// detected as a hash mismatch.
+// Matches 判断已保存指纹是否等于重算值。本函数不重算；编排器重新哈希后
+// 调用比较，可发现契约记录被旁路修改。
 func (c IdempotencyContract) Matches(recomputed string) bool {
 	if c.Fingerprint == "" || recomputed == "" {
 		return false
@@ -103,17 +89,15 @@ func (c IdempotencyContract) Matches(recomputed string) bool {
 	return c.Fingerprint == recomputed
 }
 
-// RecomputeFingerprint is the canonical hasher used by retriers and
-// tests. Split out so tests can pin ordering without copy/pasting the
-// concatenation.
+// RecomputeFingerprint 是重试器与测试共用的标准哈希函数；
+// 独立函数便于测试固定拼接顺序。
 func RecomputeFingerprint(payloadDigest, targetSystem, scope string) string {
 	sum := sha256.Sum256([]byte(payloadDigest + "|" + targetSystem + "|" + scope))
 	return hex.EncodeToString(sum[:])
 }
 
-// NewTaskID is the canonical durable task identifier generator. UUID
-// v4 strings round-trip across languages and the Manager-side and
-// Edge-side invocations can both mint without coordination.
+// NewTaskID 是标准持久化任务 ID 生成器。UUID v4 可跨语言往返，
+// Manager 与 Edge 调用方无需协调即可生成。
 func NewTaskID() string {
 	return uuid.NewString()
 }

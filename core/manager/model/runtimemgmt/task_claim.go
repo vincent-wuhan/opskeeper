@@ -2,61 +2,47 @@ package runtimemgmt
 
 import "time"
 
-// Claim is the durable runtime-claim record. There is at most one
-// active claim per task; replaced claims keep their history in the
-// RecoveryLog table (sibling model in a later slice). The
-// Claim.Generation counter advances every time the orchestrator hands
-// the task to a new claimer; runtime checks it on every
-// checkpoint/progress/result call to detect a stale-lease recovery
-// that already promoted someone else.
+// Claim 是运行时认领的持久化记录。每个任务最多一条活动认领；被替换
+// 认领的历史由后续切片的 RecoveryLog 表保存。Claim.Generation 在编排器
+// 每次移交给新认领者时递增；运行时在检查点、进度与结果调用中校验，
 //
-// Spec scenario "Worker restarts after checkpoint" relies on
-// Generation + ClaimedBy semantics: a worker recovering from a
-// checkpoint MUST observe the same (Generation, ClaimedBy) pair that
-// produced the checkpoint; otherwise it sees ErrClaimLost instead of
-// duplicating side effects.
+// 规格场景“检查点后 Worker 重启”依赖 Generation 与 ClaimedBy 语义：
+// 从检查点恢复的 Worker 必须观察到与检查点一致的配对，否则得到
+// ErrClaimLost，而不是重复副作用。
 type Claim struct {
-	// TaskID is the owning durable task; one row per task.
+	// TaskID 是所属持久化任务；每个任务一条记录。
 	TaskID string `gorm:"primaryKey;size:64"`
 
 	TenantID string `gorm:"index;size:64;not null"`
 
-	// Generation is incremented every time a new claim supersedes
-	// the prior one (stale-lease, manual takeover, node restart
-	// that promoted a backup). The runtime's checkpoint / progress
-	// / result calls MUST echo the value they observed at claim
-	// time; the orchestrator rejects on mismatch.
+	// Generation 在新认领替换旧认领时递增，例如租约过期、人工接管、
+	// 节点重启后备份提升。运行时必须在检查点、进度、结果调用中回传
+	// 认领时观察到的值；不一致则由编排器拒绝。
 	Generation int64 `gorm:"not null;default:0"`
 
-	// ClaimedBy is the runtime identity string ("runtime:edge:abc",
-	// "runtime:worker:harness:42", etc.) that owns the current
-	// generation. Indexed so dashboards can drill by runtime.
+	// ClaimedBy 是持有当前代际的运行时身份，例如 runtime:edge:abc、
+	// runtime:worker:harness:42；建立索引便于 Dashboard 按运行时下钻。
 	ClaimedBy string `gorm:"size:128;not null;index"`
 
-	// ClaimedAt is the wall-clock time the runtime accepted the
-	// claim. Distinguishes "when did generation N start" from the
-	// prepare-lease deadline, which is claimed_at + prepare_lease.
+	// ClaimedAt 是运行时接受认领的墙钟时间，用于区分第 N 代开始时间与
+	// claimed_at + prepare_lease 得出的准备租约期限。
 	ClaimedAt time.Time `gorm:"index;not null"`
 
-	// LeasedUntil is the rolling liveness-lease deadline. The
-	// runtime must renew / checkpoint before this time or the
-	// orchestrator can safely expire the claim and recover.
+	// LeasedUntil 是滚动存活租约期限。运行时必须在此之前续约或写检查点；
+	// 否则编排器可安全使认领过期并恢复。
 	LeasedUntil time.Time `gorm:"index;not null"`
 
-	// OwnerLeaseID is the most recent lease extension token. The
-	// orchestrator writes a new token every time it advances
-	// LeasedUntil; the runtime echoes it on its next checkpoint.
-	// Empty before the first renewal.
+	// OwnerLeaseID 是最近一次租约延长令牌。编排器每次推进 LeasedUntil
+	// 都写新令牌，运行时在下一检查点回传；首次续约前为空。
 	OwnerLeaseID string `gorm:"size:64;not null;default:''"`
 }
 
-// TableName pins the schema name. Migrations MUST keep this exact
-// name; the orchestrator's claim/lease state machine reads by task_id.
+// TableName 固定表名。迁移必须保持不变；编排器认领与租约状态机按
+// task_id 读取。
 func (Claim) TableName() string { return "runtimemgmt_claims" }
 
-// IsStale reports whether the claim's lease is past its deadline at
-// "now". A stale claim may be safely recovered (advanced) by the
-// orchestrator's stale-lease sweeper.
+// IsStale 判断 now 时租约是否超过期限。陈旧租约可由编排器清扫器安全
+// 推进并恢复。
 func (c Claim) IsStale(now time.Time) bool {
 	if c.LeasedUntil.IsZero() {
 		return true
@@ -64,10 +50,9 @@ func (c Claim) IsStale(now time.Time) bool {
 	return !now.Before(c.LeasedUntil)
 }
 
-// BelongsToRuntime reports whether candidate (the runtime id echoed
-// back by an arriving checkpoint/progress/result call) matches the
-// claim. The runtime identity comparison is exact: a re-registration
-// or recovery promotes a new generation rather than reuse this one.
+// BelongsToRuntime 判断到达的检查点、进度或结果调用回传的 candidate
+// 是否匹配当前认领。运行时身份必须精确相等；重新注册或恢复应推进新
+// 代际，而不是复用当前认领。
 func (c Claim) BelongsToRuntime(candidate string) bool {
 	if c.ClaimedBy == "" || candidate == "" {
 		return false
@@ -75,14 +60,11 @@ func (c Claim) BelongsToRuntime(candidate string) bool {
 	return c.ClaimedBy == candidate
 }
 
-// AdvanceTo is the recovery-time helper. It returns a new Claim with
-// Generation+1, ClaimedBy=nextRuntime, ClaimedAt=now, LeasedUntil
-// reset by the caller, and OwnerLeaseID blanked. The pre-existing
-// row is preserved in the recovery log (a separate table added in a
-// later slice); this helper only computes the replacement record.
+// AdvanceTo 是恢复时辅助函数，返回 Generation 加一、ClaimedBy 为
+// nextRuntime、ClaimedAt 为 now、LeasedUntil 由调用方重置、OwnerLeaseID
+// 清空的新 Claim。旧记录进入后续切片新增的恢复日志；这里只计算替换记录。
 //
-// The orchestrator MUST persist the recovery log entry in the same
-// transaction as the Claim write.
+// 编排器必须在同一事务内写恢复日志与 Claim。
 func (c Claim) AdvanceTo(nextRuntime string, now time.Time, newLeasedUntil time.Time) Claim {
 	return Claim{
 		TaskID:       c.TaskID,

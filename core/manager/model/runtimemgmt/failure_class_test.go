@@ -5,9 +5,8 @@ import (
 	"testing"
 )
 
-// TestFailureClass_Validate covers the closed-taxonomy gate. Only
-// FailureClassValues members validate; empty / unknown / typo values
-// surface ErrFailureClassInvalid.
+// TestFailureClass_Validate 覆盖闭集分类校验：只有 FailureClassValues
+// 成员通过；空值、未知值或拼写错误都返回 ErrFailureClassInvalid。
 func TestFailureClass_Validate(t *testing.T) {
 	for _, v := range FailureClassValues {
 		if err := v.Validate(); err != nil {
@@ -24,15 +23,14 @@ func TestFailureClass_Validate(t *testing.T) {
 	}
 }
 
-// TestFailureClass_IsRetryable covers the auto-retry gate. The
-// matrix is:
+// TestFailureClass_IsRetryable 覆盖自动重试闸门，矩阵如下：
 //
 //	class\Safety               read_only  disposable  mutating
 //	no_idempotency_contract       false      false       false
-//	lease_expired                  true       true        true (idempotency required upstream)
-//	runtime_lost                   true       true        true (idempotency required upstream)
+//	lease_expired                  true       true        true（上游仍要求幂等）
+//	runtime_lost                   true       true        true（上游仍要求幂等）
 //	admission_denied              false      false       false
-//	workspace_unavailable          true       false       false (read-only may re-acquire)
+//	workspace_unavailable          true       false       false（只读可重新获取）
 //	credential_denied             false      false       false
 //	plugin_incompatible           false      false       false
 //	side_effect_duplicate         false      false       false
@@ -42,7 +40,7 @@ func TestFailureClass_Validate(t *testing.T) {
 func TestFailureClass_IsRetryable(t *testing.T) {
 	cases := []struct {
 		class FailureClass
-		// expected per safety: readOnly, disposable, mutating
+		// 期望值按安全级别排列：readOnly、disposable、mutating。
 		readOnly   bool
 		disposable bool
 		mutating   bool
@@ -70,15 +68,14 @@ func TestFailureClass_IsRetryable(t *testing.T) {
 			t.Errorf("%s.IsRetryable(mutating) = %v, want %v", c.class, got, c.mutating)
 		}
 	}
-	// Unknown class defaults to false.
+	// 未知分类默认不可重试。
 	bad := FailureClass("not_a_class")
 	if bad.IsRetryable(TaskSafetyReadOnly) {
 		t.Errorf("unknown class should default to not retryable")
 	}
 }
 
-// TestIsFailureClass pins the membership check (mirrors IsTaskSafety
-// pattern).
+// TestIsFailureClass 固定成员校验，模式与 IsTaskSafety 一致。
 func TestIsFailureClass(t *testing.T) {
 	for _, v := range FailureClassValues {
 		if !IsFailureClass(v) {
@@ -93,9 +90,8 @@ func TestIsFailureClass(t *testing.T) {
 	}
 }
 
-// TestTaskSafety_RequiresIdempotencyContract pins the safety→
-// idempotency gate: only Mutating tasks require the contract; the
-// others MAY carry one but it is not a precondition for retry.
+// TestTaskSafety_RequiresIdempotencyContract 固定安全级别到幂等契约的
+// 闸门：只有变更型任务必须携带契约；其他任务可以携带，但不是重试前置。
 func TestTaskSafety_RequiresIdempotencyContract(t *testing.T) {
 	cases := []struct {
 		safety TaskSafety

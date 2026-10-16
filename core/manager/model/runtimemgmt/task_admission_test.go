@@ -6,9 +6,8 @@ import (
 	"time"
 )
 
-// TestAdmissionDecision_Admitted_OK covers the spec scenario
-// "No capacity is available" reverse: when admission passes, the
-// Outcome is "admitted" and the Reason MUST be empty.
+// TestAdmissionDecision_Admitted_OK 覆盖“无可用容量”的反向场景：
+// 准入通过时 Outcome 必须是 admitted，Reason 必须为空。
 func TestAdmissionDecision_Admitted_OK(t *testing.T) {
 	now := time.Date(2026, 10, 16, 1, 0, 0, 0, time.UTC)
 	a := AdmissionDecision{
@@ -26,7 +25,7 @@ func TestAdmissionDecision_Admitted_OK(t *testing.T) {
 	}
 }
 
-// TestAdmissionDecision_Rejected covers all rejection reasons.
+// TestAdmissionDecision_Rejected 覆盖所有拒绝原因。
 func TestAdmissionDecision_Rejected(t *testing.T) {
 	now := time.Now().UTC()
 	reasons := []string{
@@ -50,9 +49,8 @@ func TestAdmissionDecision_Rejected(t *testing.T) {
 	}
 }
 
-// TestAdmissionDecision_RejectedWithEmptyReason verifies the gate:
-// rejection reasons MUST come from the closed list. Random strings
-// or empty Reason produce ErrNoCapacity (no usable admit).
+// TestAdmissionDecision_RejectedWithEmptyReason 验证拒绝原因必须来自
+// 闭集；随机字符串或空 Reason 返回 ErrNoCapacity，不得被当作可用准入。
 func TestAdmissionDecision_RejectedWithEmptyReason(t *testing.T) {
 	a := AdmissionDecision{
 		TaskID: "task-1", TenantID: "t",
@@ -68,8 +66,8 @@ func TestAdmissionDecision_RejectedWithEmptyReason(t *testing.T) {
 	}
 }
 
-// TestAdmissionDecision_AdmittedWithReason covers the inverse gate:
-// if the Outcome is admitted, the Reason MUST be empty.
+// TestAdmissionDecision_AdmittedWithReason 覆盖反向闸门：
+// Outcome 为 admitted 时 Reason 必须为空。
 func TestAdmissionDecision_AdmittedWithReason(t *testing.T) {
 	a := AdmissionDecision{
 		TaskID: "task-1", TenantID: "t",
@@ -81,9 +79,8 @@ func TestAdmissionDecision_AdmittedWithReason(t *testing.T) {
 	}
 }
 
-// TestAdmissionDecision_UnknownOutcome covers the catch-all rejection
-// for unmapped outcomes — pinned so the orchestrator never silently
-// accepts a malformed decision.
+// TestAdmissionDecision_UnknownOutcome 覆盖未知 Outcome 的兜底拒绝，
+// 防止编排器静默接受畸形决策。
 func TestAdmissionDecision_UnknownOutcome(t *testing.T) {
 	a := AdmissionDecision{
 		TaskID: "task-1", TenantID: "t",

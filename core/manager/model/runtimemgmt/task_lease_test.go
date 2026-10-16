@@ -6,9 +6,8 @@ import (
 	"time"
 )
 
-// TestNewPrepareDeadline covers the prepare-window construction. A
-// zero or negative TTL MUST produce a zero deadline so callers can
-// opt out of a prepare window for read-only tasks.
+// TestNewPrepareDeadline 覆盖准备窗口构造。TTL 为零或负数必须得到零值，
+// 让只读任务可以显式跳过准备窗口。
 func TestNewPrepareDeadline(t *testing.T) {
 	now := time.Date(2026, 10, 16, 1, 0, 0, 0, time.UTC)
 	if got := NewPrepareDeadline(now, 0); !got.IsZero() {
@@ -41,11 +40,9 @@ func TestNewLivenessDeadline(t *testing.T) {
 	}
 }
 
-// TestLease_HasPrepare_Liveness covers the "deadline not assigned
-// yet" semantics. A lease row exists from claim time, but the
-// deadlines only become meaningful once the runtime has started the
-// phase. Treat zero deadline as "not actionable" so callers do not
-// accidentally expire a not-yet-started lease.
+// TestLease_HasPrepare_Liveness 覆盖期限尚未分配的语义。租约记录在认领时
+// 已存在，但期限只有在运行时进入阶段后才有意义；零值表示不可操作，
+// 防止调用方误使未开始租约过期。
 func TestLease_HasPrepare_Liveness(t *testing.T) {
 	l := Lease{}
 	if l.HasPrepare() {
@@ -62,9 +59,8 @@ func TestLease_HasPrepare_Liveness(t *testing.T) {
 	}
 }
 
-// TestLease_Expired covers expired detection. Note: a zero deadline
-// MUST NOT report expired (caller must check HasPrepare/HasLiveness
-// first to disambiguate).
+// TestLease_Expired 覆盖过期检测。零期限不得报告过期；调用方必须先用
+// HasPrepare / HasLiveness 区分状态。
 func TestLease_Expired(t *testing.T) {
 	now := time.Date(2026, 10, 16, 1, 0, 0, 0, time.UTC)
 	l := Lease{}
@@ -84,8 +80,8 @@ func TestLease_Expired(t *testing.T) {
 	}
 }
 
-// TestLease_ExtendLiveness covers the rolling-lease happy path:
-// deadline moves forward by ttl, Extensions++ and ExtendedAt set.
+// TestLease_ExtendLiveness 覆盖滚动租约正常路径：期限按 ttl 前移、
+// Extensions 递增并设置 ExtendedAt。
 func TestLease_ExtendLiveness(t *testing.T) {
 	now := time.Date(2026, 10, 16, 1, 0, 0, 0, time.UTC)
 	l := Lease{LivenessDeadline: now.Add(time.Minute)}
@@ -104,9 +100,8 @@ func TestLease_ExtendLiveness(t *testing.T) {
 	}
 }
 
-// TestLease_ExtendLiveness_RejectExpired covers the safety branch:
-// attempting to extend an expired lease MUST return ErrLeaseExpired
-// rather than silently revive the row.
+// TestLease_ExtendLiveness_RejectExpired 覆盖安全分支：扩展已过期租约
+// 必须返回 ErrLeaseExpired，而不是静默复活记录。
 func TestLease_ExtendLiveness_RejectExpired(t *testing.T) {
 	now := time.Date(2026, 10, 16, 1, 0, 0, 0, time.UTC)
 	l := Lease{LivenessDeadline: now.Add(-time.Minute)}
@@ -115,8 +110,7 @@ func TestLease_ExtendLiveness_RejectExpired(t *testing.T) {
 	}
 }
 
-// TestLease_ExtendLiveness_RejectInvalid covers ttl<=0 and zero-deadline
-// rejection paths.
+// TestLease_ExtendLiveness_RejectInvalid 覆盖 ttl <= 0 与零期限拒绝路径。
 func TestLease_ExtendLiveness_RejectInvalid(t *testing.T) {
 	now := time.Date(2026, 10, 16, 1, 0, 0, 0, time.UTC)
 	l := Lease{LivenessDeadline: now.Add(time.Minute)}

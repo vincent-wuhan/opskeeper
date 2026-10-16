@@ -115,5 +115,5 @@ apps  = agentteams, cluster, control, dataguard,
         demo, edgeauth, federation, federationchild, federationlink, flow, grafana,
         higress, iam, imbridge, integration, llmgw, llmpig, logs, marketplace,
         metric, migrate, migrator, nodeagent, nodefleet, observability,
-        pkg, plugin, pluginimport, prometheus, promwrite, scheduler, secret,
+        pkg, plugin, pluginimport, prometheus, promwrite, runtimemgmt, scheduler, secret,
         systemhealth, systemupgrade, traces, version, webshell

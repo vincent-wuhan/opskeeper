@@ -5,9 +5,8 @@ import (
 	"time"
 )
 
-// TestAttemptRecord_HasRetryBudget covers the retry-budget gate.
-// MaxAttempts <= 0 means "no budget" (orchestrator safety default).
-// Otherwise budget is exhausted when AttemptNumber >= MaxAttempts.
+// TestAttemptRecord_HasRetryBudget 覆盖重试预算闸门。MaxAttempts <= 0
+// 表示无预算；否则 AttemptNumber >= MaxAttempts 即耗尽。
 func TestAttemptRecord_HasRetryBudget(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -32,8 +31,8 @@ func TestAttemptRecord_HasRetryBudget(t *testing.T) {
 	}
 }
 
-// TestAttemptRecord_FailureClassOf pins the helper: only failed
-// attempts surface a FailureClass; everything else returns empty.
+// TestAttemptRecord_FailureClassOf 固定辅助函数行为：只有失败尝试返回
+// FailureClass，其余结果为空。
 func TestAttemptRecord_FailureClassOf(t *testing.T) {
 	a := AttemptRecord{Outcome: AttemptOutcomeFailed, FailureClass: FailureClassLeaseExpired}
 	if got := a.FailureClassOf(); got != FailureClassLeaseExpired {
@@ -54,8 +53,8 @@ func TestAttemptRecord_FailureClassOf(t *testing.T) {
 	}
 }
 
-// TestAttemptRecord_Elapsed covers the duration helper. Returns zero
-// for in-flight attempts and the actual span for ended ones.
+// TestAttemptRecord_Elapsed 覆盖耗时辅助函数：执行中返回零，
+// 已结束返回实际时间差。
 func TestAttemptRecord_Elapsed(t *testing.T) {
 	now := time.Date(2026, 10, 16, 1, 0, 0, 0, time.UTC)
 	start := now

@@ -7,10 +7,8 @@ import (
 	"time"
 )
 
-// TestNewTask_OK pins the canonical producer-side construction.
-// All required identifiers and the initial State=queued are set,
-// the timestamp is stamped from "now" (UTC), and the payload
-// digest matches ComputePayloadDigest.
+// TestNewTask_OK 固定生产者侧标准构造：必填标识与初始 queued 状态写入，
+// 时间取 now 的 UTC 值，载荷摘要等于 ComputePayloadDigest。
 func TestNewTask_OK(t *testing.T) {
 	now := time.Date(2026, 10, 16, 1, 0, 0, 0, time.UTC)
 	payload := []byte(`{"k":"v"}`)
@@ -36,9 +34,8 @@ func TestNewTask_OK(t *testing.T) {
 	}
 }
 
-// TestNewTask_ZeroNowDefaultsToCurrent pins the convenience path:
-// passing time.Time{} falls back to time.Now().UTC() so callers do
-// not have to always carry a clock.
+// TestNewTask_ZeroNowDefaultsToCurrent 固定便捷路径：传入 time.Time{}
+// 时回退到 time.Now().UTC()，调用方不必始终携带时钟。
 func TestNewTask_ZeroNowDefaultsToCurrent(t *testing.T) {
 	before := time.Now().UTC().Add(-time.Second)
 	task, err := NewTask(
@@ -54,8 +51,8 @@ func TestNewTask_ZeroNowDefaultsToCurrent(t *testing.T) {
 	}
 }
 
-// TestNewTask_RejectsEmpty covers the producer-path guard: missing
-// tenant or kind MUST fail before the row is constructed.
+// TestNewTask_RejectsEmpty 覆盖生产者路径守卫：缺少租户或类型时，
+// 必须在构造记录前失败。
 func TestNewTask_RejectsEmpty(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -77,7 +74,7 @@ func TestNewTask_RejectsEmpty(t *testing.T) {
 	}
 }
 
-// TestTask_CanTransition_Allowed covers the happy-path transitions.
+// TestTask_CanTransition_Allowed 覆盖允许的正常迁移路径。
 func TestTask_CanTransition_Allowed(t *testing.T) {
 	now := time.Now().UTC()
 	cases := []struct {
@@ -112,9 +109,8 @@ func TestTask_CanTransition_Allowed(t *testing.T) {
 	}
 }
 
-// TestTask_CanTransition_Forbidden pins the explicit-no paths. A
-// rejected transition MUST surface an Err* sentinel so callers can
-// branch with errors.Is.
+// TestTask_CanTransition_Forbidden 固定显式拒绝路径：被拒绝迁移必须返回
+// Err* 哨兵，调用方可使用 errors.Is 分支。
 func TestTask_CanTransition_Forbidden(t *testing.T) {
 	now := time.Now().UTC()
 	cases := []struct {
@@ -142,10 +138,8 @@ func TestTask_CanTransition_Forbidden(t *testing.T) {
 	}
 }
 
-// TestTask_JSON_RoundTrip pins the persistence-shape contract:
-// all exported fields MUST survive JSON encode/decode so the API /
-// Dashboard / repair-preview runners can interop without bespoke
-// converters.
+// TestTask_JSON_RoundTrip 固定持久化形状契约：所有导出字段必须经 JSON
+// 编解码保持不变，让 API、Dashboard 与修复预览运行器无需专用转换器互通。
 func TestTask_JSON_RoundTrip(t *testing.T) {
 	now := time.Date(2026, 10, 16, 1, 0, 0, 0, time.UTC)
 	in := Task{
@@ -192,9 +186,8 @@ func TestTask_JSON_RoundTrip(t *testing.T) {
 	}
 }
 
-// TestTask_GORM_TableName is the persistence-naming smoke test.
-// Renaming the table without updating the orchestrator's read paths
-// is a silent bug; this guard catches that.
+// TestTask_GORM_TableName 是持久化命名冒烟测试；未同步编排器读取路径的
+// 表名变更会造成静默缺陷，本守卫负责拦截。
 func TestTask_GORM_TableName(t *testing.T) {
 	if got := (Task{}).TableName(); got != "runtimemgmt_tasks" {
 		t.Errorf("Task.TableName() = %q, want runtimemgmt_tasks", got)

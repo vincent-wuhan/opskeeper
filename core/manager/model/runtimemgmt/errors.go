@@ -1,83 +1,64 @@
-// Package runtimemgmt holds the durable persistence entities for the
-// runtime management control plane (OpenSpec change `runtime-management-gap`,
-// §2 Durable Task Lifecycle).
+// Package runtimemgmt 保存运行时管理控制面的持久化实体，对应
+// OpenSpec 变更 `runtime-management-gap` 的 §2「Durable Task Lifecycle」。
 //
-// §2.1 enumerates nine domain concepts that together form the durable
-// task row plus its supporting contracts:
+// §2.1 列出组成持久化任务记录及其配套契约的十个领域概念：
 //
-//	Task                — the central durable record (task.go)
-//	TaskState           — task state machine (task_state.go)
-//	IdempotencyContract — fingerprint committed before the first claim (task_idempotency.go)
-//	AdmissionDecision   — slot-before-claim admission snapshot (task_admission.go)
-//	Claim               — runtime claim generation + ownership (task_claim.go)
-//	Lease               — prepare-lease and liveness-lease deadlines (task_lease.go)
-//	Checkpoint          — resume pointer + payload reference (task_checkpoint.go)
-//	AttemptRecord       — append of one attempted execution (task_attempt.go)
-//	FailureClass        — terminal-failure taxonomy (failure_class.go)
-//	TaskResult          — terminal result + sanitizer status (task_result.go)
+//	Task                — 中央持久化记录（task.go）
+//	TaskState           — 任务状态机（task_state.go）
+//	IdempotencyContract — 首次认领前提交的指纹（task_idempotency.go）
+//	AdmissionDecision   — 认领前槽位准入快照（task_admission.go）
+//	Claim               — 运行时认领代际与所有权（task_claim.go）
+//	Lease               — 准备租约与存活租约期限（task_lease.go）
+//	Checkpoint          — 恢复指针与载荷引用（task_checkpoint.go）
+//	AttemptRecord       — 单次执行尝试的追加记录（task_attempt.go）
+//	FailureClass        — 终态失败分类（failure_class.go）
+//	TaskResult          — 终态结果与脱敏状态（task_result.go）
 //
-// The package is strictly additive: a new `runtimemgmt_*` table family
-// and matching Go types. It does NOT mutate or supersede the existing
-// chat_task_executions / approvals / loop_event_log tables; the
-// orchestrator keeps those for the seven-phase incident loop, and the
-// runtime control plane only consults them via already-public APIs.
+// 本包严格增量交付：只新增 `runtimemgmt_*` 表族和匹配的 Go 类型，
+// 不修改、不替代既有 chat_task_executions、approvals、loop_event_log。
+// 七阶段事件循环仍由编排器持有，运行时控制面只通过既有公开 API 查询。
 //
-// Multi-tenant: every Task, Claim, Lease, Checkpoint, AttemptRecord
-// and TaskResult row carries TenantID; queries MUST filter by tenant.
-// The (tenant_id, task_id) and (tenant_id, runtime_id) composite
-// indexes support tenant-scoped ops.
+// 多租户约束：Task、Claim、Lease、Checkpoint、AttemptRecord 与
+// TaskResult 均携带 TenantID，查询必须按租户过滤。
+// (tenant_id, task_id) 与 (tenant_id, runtime_id) 复合索引用于租户内操作。
 package runtimemgmt
 
 import "errors"
 
-// Sentinel errors used across the package. They are exported so
-// callers (admission, claim, lease recovery) can branch on them with
-// errors.Is and so tests can pin behaviour without string compares.
+// 包级哨兵错误。导出后，准入、认领、租约恢复等调用方可使用 errors.Is
+// 分支处理，测试也能避免依赖错误字符串。
 var (
-	// ErrInvalidTransition is returned when a requested task state
-	// transition is not in ValidTransitions; callers MUST treat this as
-	// a permanent decision (no auto-retry).
+	// ErrInvalidTransition 表示请求的任务状态迁移不在 ValidTransitions；
+	// 调用方必须视为永久失败，不得自动重试。
 	ErrInvalidTransition = errors.New("runtimemgmt: invalid task state transition")
 
-	// ErrUnknownState is returned when an unrecognized state value is
-	// encountered (e.g. an unmapped legacy state read from storage).
+	// ErrUnknownState 表示遇到未识别状态，例如存储中的未映射历史状态。
 	ErrUnknownState = errors.New("runtimemgmt: unknown task state")
 
-	// ErrIdempotencyRequired is returned by Claim / Start when the
-	// runtime marks the task as mutating but no idempotency contract
-	// fingerprint has been persisted. See spec requirement
-	// "Mutating tasks declare idempotency before automatic retry".
+	// ErrIdempotencyRequired 表示变更型任务在 Claim / Start 前尚未持久化
+	// 幂等契约指纹，对应规格要求“变更型任务自动重试前必须声明幂等”。
 	ErrIdempotencyRequired = errors.New("runtimemgmt: mutating task requires idempotency contract")
 
-	// ErrLeaseExpired is returned when a lease deadline has elapsed
-	// before the next renew / checkpoint / result call.
+	// ErrLeaseExpired 表示在续约、检查点或结果调用前租约已经到期。
 	ErrLeaseExpired = errors.New("runtimemgmt: lease expired")
 
-	// ErrNoCapacity is returned by AdmissionDecision when the server
-	// concurrency cap or runtime-reported free-slot cap is exhausted.
-	// Maps to scenario "No capacity is available" in spec.md.
+	// ErrNoCapacity 表示服务端并发上限或运行时上报空闲槽位耗尽，
+	// 对应 spec.md 的“无可用容量”场景。
 	ErrNoCapacity = errors.New("runtimemgmt: no capacity for slot-before-claim admission")
 
-	// ErrClaimLost is returned when the task's claim generation has
-	// advanced past the caller's view (a new claim took over after a
-	// stale-lease recovery).
+	// ErrClaimLost 表示任务认领代际已超过调用方视图；租约恢复后新认领者接管。
 	ErrClaimLost = errors.New("runtimemgmt: claim generation has advanced")
 
-	// ErrTerminalState is returned when a non-terminal mutator
-	// (checkpoint, progress, lease renewal) targets a row that already
-	// reached a terminal state.
+	// ErrTerminalState 表示检查点、进度、租约续期等非终态写入命中已终态任务。
 	ErrTerminalState = errors.New("runtimemgmt: task already in a terminal state")
 
-	// ErrResultNotReady is returned when a caller asks for the
-	// terminal result before the task reached a terminal state.
+	// ErrResultNotReady 表示任务尚未进入终态就请求终态结果。
 	ErrResultNotReady = errors.New("runtimemgmt: task result not ready")
 
-	// ErrSanitizerMissing is returned when terminal result is being
-	// persisted without a sanitizer status decision (either sanitized
-	// or explicitly marked sanitized_skipped with rationale).
+	// ErrSanitizerMissing 表示持久化终态结果前缺少脱敏决策；
+	// 必须已脱敏，或显式记录 sanitized_skipped 及理由。
 	ErrSanitizerMissing = errors.New("runtimemgmt: terminal result requires sanitizer status decision")
 
-	// ErrFailureClassInvalid is returned when a failure class value is
-	// not part of the FailureClass* taxonomy.
+	// ErrFailureClassInvalid 表示失败分类不在 FailureClass* 闭集内。
 	ErrFailureClassInvalid = errors.New("runtimemgmt: failure class is not in the taxonomy")
 )

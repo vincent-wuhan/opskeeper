@@ -7,10 +7,8 @@ import (
 	"time"
 )
 
-// TestTaskResult_Validate covers the result-persistence gate. A
-// terminal result is required; the sanitizer status must be set;
-// failed results require a recognized FailureClass; a "skipped"
-// sanitizer MUST carry rationale.
+// TestTaskResult_Validate 覆盖结果持久化闸门：必须有终态结果与脱敏状态；
+// 失败结果必须有已识别 FailureClass；跳过脱敏时必须携带理由。
 func TestTaskResult_Validate(t *testing.T) {
 	now := time.Now().UTC()
 	good := TaskResult{
@@ -23,11 +21,8 @@ func TestTaskResult_Validate(t *testing.T) {
 		t.Errorf("succeeded OK: %v", err)
 	}
 
-	// Required status terminals. Failed additionally requires a
-	// recognized FailureClass — checked separately below as a
-	// negative test; for the canonical terminals each row carries
-	// the sanitiser status, and the failed row also carries a valid
-	// FailureClass.
+	// 必填终态。失败的额外分类要求在下方负例单独检查；这里每个标准终态
+	// 都带脱敏状态，失败行也带有效分类。
 	cases := []TaskResult{
 		{TaskID: "t", Status: TaskStateSucceeded, SanitizerStatus: SanitizerStatusApplied},
 		{TaskID: "t", Status: TaskStateFailed, SanitizerStatus: SanitizerStatusApplied, FailureClass: FailureClassWorkerError},
@@ -38,27 +33,27 @@ func TestTaskResult_Validate(t *testing.T) {
 			t.Errorf("terminal %s should validate: %v", r.Status, err)
 		}
 	}
-	// Non-terminal status rejected.
+	// 非终态必须拒绝。
 	nt := TaskResult{TaskID: "t", Status: TaskStateRunning, SanitizerStatus: SanitizerStatusApplied}
 	if err := nt.Validate(); !errors.Is(err, ErrResultNotReady) {
 		t.Errorf("non-terminal err = %v, want ErrResultNotReady", err)
 	}
-	// Empty sanitizer rejected.
+	// 空脱敏状态必须拒绝。
 	noSan := TaskResult{TaskID: "t", Status: TaskStateSucceeded}
 	if err := noSan.Validate(); !errors.Is(err, ErrSanitizerMissing) {
 		t.Errorf("no sanitizer err = %v, want ErrSanitizerMissing", err)
 	}
-	// Unknown sanitizer rejected.
+	// 未知脱敏状态必须拒绝。
 	unkSan := TaskResult{TaskID: "t", Status: TaskStateSucceeded, SanitizerStatus: SanitizerStatus("unclassified")}
 	if err := unkSan.Validate(); !errors.Is(err, ErrSanitizerMissing) {
 		t.Errorf("unknown sanitizer err = %v, want ErrSanitizerMissing", err)
 	}
-	// Skipped without notes rejected.
+	// 跳过脱敏但没有理由必须拒绝。
 	skip := TaskResult{TaskID: "t", Status: TaskStateSucceeded, SanitizerStatus: SanitizerStatusSkipped}
 	if err := skip.Validate(); !errors.Is(err, ErrSanitizerMissing) {
 		t.Errorf("skipped without notes err = %v, want ErrSanitizerMissing", err)
 	}
-	// Skipped with notes OK.
+	// 跳过脱敏且携带理由可通过。
 	skipOk := TaskResult{
 		TaskID: "t", Status: TaskStateSucceeded,
 		SanitizerStatus: SanitizerStatusSkipped,
@@ -67,7 +62,7 @@ func TestTaskResult_Validate(t *testing.T) {
 	if err := skipOk.Validate(); err != nil {
 		t.Errorf("skipped+notes should validate: %v", err)
 	}
-	// Failed without a failure class rejected.
+	// 失败但缺少失败分类必须拒绝。
 	failedNoClass := TaskResult{
 		TaskID: "t", Status: TaskStateFailed,
 		SanitizerStatus: SanitizerStatusApplied,
@@ -75,7 +70,7 @@ func TestTaskResult_Validate(t *testing.T) {
 	if err := failedNoClass.Validate(); !errors.Is(err, ErrFailureClassInvalid) {
 		t.Errorf("failed w/o class err = %v, want ErrFailureClassInvalid", err)
 	}
-	// Failed with bogus failure class rejected.
+	// 失败但使用伪分类必须拒绝。
 	failedBadClass := TaskResult{
 		TaskID: "t", Status: TaskStateFailed,
 		SanitizerStatus: SanitizerStatusApplied,
@@ -84,7 +79,7 @@ func TestTaskResult_Validate(t *testing.T) {
 	if err := failedBadClass.Validate(); !errors.Is(err, ErrFailureClassInvalid) {
 		t.Errorf("failed w/ bogus class err = %v, want ErrFailureClassInvalid", err)
 	}
-	// Empty TaskID always rejected (defence in depth).
+	// 空 TaskID 始终拒绝，作为纵深防御。
 	empty := TaskResult{Status: TaskStateSucceeded, SanitizerStatus: SanitizerStatusApplied}
 	if err := empty.Validate(); !errors.Is(err, ErrResultNotReady) {
 		t.Errorf("empty task id err = %v, want ErrResultNotReady", err)
@@ -105,11 +100,9 @@ func TestIsSanitizerStatus(t *testing.T) {
 	}
 }
 
-// TestTaskResult_JSON_RoundTrip is the serialization smoke test.
-// All public-field values MUST survive a JSON encode/decode cycle.
-// Pinned here so that the eventual API/Dashboard client sees the
-// same identifiers, sanitizer verdicts, and failure classes the
-// orchestrator wrote.
+// TestTaskResult_JSON_RoundTrip 是序列化冒烟测试：所有公开字段必须经过
+// JSON 编解码保持不变，保证 API 与 Dashboard 看到与编排器一致的标识、
+// 脱敏裁决和失败分类。
 func TestTaskResult_JSON_RoundTrip(t *testing.T) {
 	now := time.Date(2026, 10, 16, 1, 0, 0, 0, time.UTC)
 	in := TaskResult{
