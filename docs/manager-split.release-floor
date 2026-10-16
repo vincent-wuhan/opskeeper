@@ -210,6 +210,7 @@ independent = aiops, audit, chatdiagnose, cluster, demo, edgeauth, federation, f
         llmgw, llmpig, logs, marketplace, mcp, metric, monitor, nodeagent,
         hitl,
         plugin, pluginimport, prometheus, promwrite, report,
+        runtimemgmt,
         nodefleet,
         scheduler, secret, setting, skill, systemhealth, systemupgrade,
         topology, traces, version, webshell,
