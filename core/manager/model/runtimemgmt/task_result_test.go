@@ -23,11 +23,19 @@ func TestTaskResult_Validate(t *testing.T) {
 		t.Errorf("succeeded OK: %v", err)
 	}
 
-	// Required status terminals.
-	for _, status := range []TaskState{TaskStateSucceeded, TaskStateFailed, TaskStateCancelled} {
-		r := TaskResult{TaskID: "t", SanitizerStatus: SanitizerStatusApplied, Status: status}
+	// Required status terminals. Failed additionally requires a
+	// recognized FailureClass — checked separately below as a
+	// negative test; for the canonical terminals each row carries
+	// the sanitiser status, and the failed row also carries a valid
+	// FailureClass.
+	cases := []TaskResult{
+		{TaskID: "t", Status: TaskStateSucceeded, SanitizerStatus: SanitizerStatusApplied},
+		{TaskID: "t", Status: TaskStateFailed, SanitizerStatus: SanitizerStatusApplied, FailureClass: FailureClassWorkerError},
+		{TaskID: "t", Status: TaskStateCancelled, SanitizerStatus: SanitizerStatusApplied},
+	}
+	for _, r := range cases {
 		if err := r.Validate(); err != nil {
-			t.Errorf("terminal %s should validate: %v", status, err)
+			t.Errorf("terminal %s should validate: %v", r.Status, err)
 		}
 	}
 	// Non-terminal status rejected.

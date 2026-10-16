@@ -1,8 +1,8 @@
 package runtimemgmt
 
 import (
+	"crypto/sha256"
 	"encoding/hex"
-	"hash/sha256"
 	"time"
 
 	"github.com/google/uuid"
