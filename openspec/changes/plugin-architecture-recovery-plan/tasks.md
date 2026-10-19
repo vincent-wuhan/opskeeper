@@ -39,7 +39,8 @@
 
 - [x] 4.1 建立旧 release 业务板块到六个扩展点的映射表：工作台、观测、事件、修复、审批、知识、协同（含智能体协同与团队协同）、企业集成、资产与拓扑（第九板块）。
   - 产出：`business-domain-mapping.md`（基线 `release-v2026.09.20-patch.2` 对比 `main@86dff884`）；五个待评审问题已于 2026-10-19 评审并落结论（该文档 §7）。
-- [ ] 4.2 盘点当前编译内能力，标记保留在 core、迁移为插件、暂缓迁移和淘汰四类。
+- [x] 4.2 盘点当前编译内能力，标记保留在 core、迁移为插件、暂缓迁移和淘汰四类。
+  - 产出：`capability-classification.md`（2026-10-19 用户确认接受四分类；demo 淘汰待线上确认无依赖后移除）。
 - [ ] 4.3 为第一批 `datasource` 候选制定插件包方案，优先 VictoriaMetrics、Elasticsearch 或 OpenSearch。
 - [ ] 4.4 为第一批 `adapter` 候选制定插件包方案，优先 Kubernetes、云资源、ITSM、CMDB 或 Git。
 - [ ] 4.5 为 `notifier` 候选补齐插件化方案，覆盖飞书、钉钉、Slack、PagerDuty 或 Webhook 的差异化能力。
