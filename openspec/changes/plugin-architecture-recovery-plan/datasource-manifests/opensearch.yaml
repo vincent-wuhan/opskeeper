@@ -22,7 +22,7 @@ kind: Plugin
 metadata:
   name: opskeeper-datasource-opensearch
   version: 0.1.0
-  vendor: opskeeper
+  vendor: opensearch-project
   homepage: https://github.com/vincent-wuhan/opskeeper
 spec:
   targets: [manager]
@@ -38,9 +38,15 @@ spec:
   # The host injects credentials for exactly these scopes. A scope not
   # listed here is never handed to the package, so it cannot reach a
   # credential it did not ask for — and asking is the reviewable act.
+  #
+  # Note: log search is captured under the observability scope; `log.read`
+  # is not part of the first-party `domain.Scope` constant set and is not
+  # granted by `ManagerPolicy()`, so declaring it here would cause the
+  # admission gate to refuse the manifest. Log reading is therefore
+  # covered by `observability.read` to match what the first-party Loki
+  # package actually asks for (see `datasource.go` `manifestFor`).
   required_scopes:
     - observability.read
-    - log.read
 
   audit:
     emits: true

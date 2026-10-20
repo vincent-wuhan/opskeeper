@@ -21,7 +21,7 @@ kind: Plugin
 metadata:
   name: opskeeper-datasource-victoriametrics
   version: 0.1.0
-  vendor: opskeeper
+  vendor: victoriametrics
   homepage: https://github.com/vincent-wuhan/opskeeper
 spec:
   targets: [manager]

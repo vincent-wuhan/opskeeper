@@ -42,9 +42,15 @@
 1. 实现 `toolcore.PromQuerier` / `LogQuerier` / `TraceQuerier`（按其信号）之一；
 2. 实现 `kernel.Contributor` 接口（`PluginName()` + `Register(kernel.Registrar)`）；
 3. 通过 `kernel.Host.Activate(ctx, manifest, contributor)` 注入；信号名（`prom` / `loki` / `tempo`）由 manifest 与 `Register` 调用一致决定；
-4. 信号级互斥由 `Activate` 内部"后注册覆盖"的现行语义决定（沿用一方 Prom/Logs/Traces 的覆盖模型）。
+4. **信号级互斥的真实机制**：`core/floor/kernel/registry.go:68` 对同名 `(Kind, signal)` 二次 `Register` 返回 `ErrDuplicate`（fail-closed），不存在覆盖语义。互斥在装配层落实：部署期由配置（如 `datasource.prom.backend` / `datasource.logs.backend`）决定**只构造并只 `Activate` 一份客户端**——一方或第三方，二选一。同一个进程内同时激活两份会启动报错而不是覆盖。
 
-> 关键不变量：`Activate` 是注册唯一入口；不引入并行注册表，不开 `core/manager/biz/aiops/datasource/datasource.go` 之外的"快速通道"。
+> 关键不变量：`Activate` 是注册唯一入口；不引入并行注册表，不开 `core/manager/biz/aiops/datasource/datasource.go` 之外的"快速通道"；同信号双注册在装配期必须由配置排除。
+
+### 2.3 Manifest 准入校验（`required_scopes` ⊆ `ManagerPolicy.GrantedScopes`）
+每个 manifest 加载时按 `kernel.Policy.Check(manifest)` 校验：`manifest.Spec.RequiredScopes` 必须是 `ManagerPolicy().GrantedScopes`（当前为 `observability.read / db.read / alert.read / topology.read`）的**子集**，缺一即拒。未知 scope 同样按 fail-closed 处理（`core/domain/plugin.go:88` `Scopes.Satisfies`）。因此：
+- `log.read` 等未在 `domain.Scope` 常量集（`core/domain/plugin.go:60-73`）声明的 scope 不能写进 manifest；强行写即拒。
+- 第三方候选凡需新 scope，必须先扩 `ManagerPolicy.GrantedScopes`——但扩 policy 触碰"不动 `datasource.go`"红线，需用户单独决策，本任务不做。
+- 本方案三个候选 manifest 的 `required_scopes` 全部严格收敛到 `observability.read`（同时含 `db.read` / `alert.read` 等可选子集由 §3.2 / §4.2 / §5.2 列出）。
 
 ### 2.3 能力清单（每个候选必须给出）
 | 能力项 | 说明 |
@@ -66,12 +72,13 @@
 详见 `datasource-manifests/victoriametrics.yaml`。要点：
 
 - **包名**：`opskeeper-datasource-victoriametrics`
-- **精确版本**：`1.0.0`（首发首版）
+- **精确版本**：`0.1.0`（首发首版；与 manifests 一致）
+- **vendor**：`victoriametrics`（上游项目名；非 OpsKeeper 一方，与"第三方候选"语义对齐）
 - **scope / 安全级别 / 兼容范围**：
   - `targets: [manager]`（与一方 Prom 同位）
   - `safety_level: L1`（只读）
   - `capabilities: [read]`
-  - `required_scopes: [observability.read]`
+  - `required_scopes: [observability.read]`（严格 ⊆ `ManagerPolicy.GrantedScopes`，见 §2.3）
   - `install.min_pig_version: "0.4.0"`（与主仓 PiG 基线对齐，见 `plugins/pig-ops/opskeeper-sre-observability/pig-ops.yaml`）
   - `install.min_edge_version: "0.8.0"`（与主仓 Edge 基线对齐）
   - 信号复用：`prom`（与一方 Prom 同名，沿用 `core/manager/biz/aiops/datasource/datasource.go` 中 `NameProm`）
@@ -82,7 +89,7 @@
 
 ### 3.3 注册方式
 - 复用 `Activate(ctx, manifest, VictoriaMetrics{Q: vmClient})`，信号名取 `NameProm`（= `"prom"`）。
-- 与一方 Prom 二选一：manifest `install.strategy=replaceable`，部署期由配置 `datasource.prom.backend: "victoriametrics" | "prometheus"` 决定激活哪一份（同一信号后注册覆盖）。
+- 与一方 Prom **配置期单激活二选一**：装配层根据 `datasource.prom.backend: "victoriametrics" | "prometheus"` 决定构造并激活哪一份客户端；同一个进程内同时激活两份会因 `ErrDuplicate` 启动报错（见 §2.2），不存在"后注册覆盖"。
 - 启动编排沿用 `datasource.Activate`；本任务不在 `main.go` 加分支。
 
 ### 3.4 与 `opskeeper-sre-observability` 的协同
@@ -102,14 +109,18 @@
 | Failure | 网络中断 / 401 / 5xx / 超时 | 错误码映射正确、不吞错 |
 
 ### 3.7 回滚方案
-- **回滚粒度**：包级别（`opskeeper-datasource-victoriametrics`）。
-- **回滚路径**：从 plugin marketplace 卸载该包 → 重启 Manager → `Set{}.Prom()` 回到一方 Prom 客户端。
+- **回滚粒度**：包级别（`opskeeper-datasource-victoriametrics`）+ 配置回切。
+- **回滚因果链（精确版）**：VM 包卸载 ≠ 一方 Prom 自动接回。完整步骤如下——
+  1. 卸载前把 `datasource.prom.backend` 配置切回 `prometheus`（这是 VM 客户端存在的同义条件）；
+  2. 从 plugin marketplace 卸载 `opskeeper-datasource-victoriametrics`；
+  3. 重启 Manager：一方面装配层不再构造 VM 客户端，另一方面 `datasource.Activate` 走 `Backends.Prom != nil` 分支，构造一方 Prom 客户端并 `Activate` 到 `prom` 信号；
+  4. 卸载 + 配置切回 + 重启完成后，`Set{}.Prom()` 才回到一方 Prom 客户端；如果仅卸载不切配置，`Set{}.Prom()` 会因装配层不再构造任何 Prom 客户端而解析为 `nil`，`query_promql` 工具按既定降级语义（无后端 → 不注册工具）消失。
 - **回滚文档要点**：
   1. 卸载前确认 `datasource.prom.backend` 已切回 `prometheus`；
-  2. 卸载后跑 `make plugin-guard` 与 `make module-check`；
+  2. 卸载后跑 `make pi-plugin-guard` 与 `make module-check`（修正：原文 `plugin-guard` 笔误，正确目标名以 Makefile 为准）；
   3. 验证 `runtime view` 的 datasource 面板只剩 `prom`（一方）；
   4. 验证 `query_promql` 工具在历史回放用例上仍正常。
-- **回滚不变量**：VM 包卸载不会破坏一方 Prom；不修改 `datasource.go` 主流程。
+- **回滚不变量**：VM 包卸载不会破坏一方 Prom（前提是配置已切回）；不修改 `datasource.go` 主流程。
 
 ---
 
@@ -124,22 +135,23 @@
 详见 `datasource-manifests/elasticsearch.yaml`。要点：
 
 - **包名**：`opskeeper-datasource-elasticsearch`
-- **精确版本**：`1.0.0`
+- **精确版本**：`0.1.0`（与 manifests 一致）
+- **vendor**：`elastic`（上游公司名；非 OpsKeeper 一方）
 - **scope / 安全级别 / 兼容范围**：
   - `targets: [manager]`
   - `safety_level: L1`
   - `capabilities: [read]`
-  - `required_scopes: [observability.read, log.read]`
+  - `required_scopes: [observability.read]`（修正：原 `log.read` 不在 `domain.Scope` 常量集中且未授予 `ManagerPolicy`，会触发准入拒绝；按 §2.3 收敛到 `observability.read`，日志读取属观测语义）
   - `install.min_pig_version: "0.4.0"`
   - `install.min_edge_version: "0.8.0"`
   - 信号复用：`loki`（与一方 Loki 同名，沿用 `datasource.go` 中 `NameLoki`）
 - **能力声明**：贡献 `loki`；贡献体 `Elasticsearch{Q: esLogQuerier}` 实现 `toolcore.LogQuerier`。
 - **协议映射**：将 LogQL（filter 表达式）翻译到 ES Query DSL `bool.filter`；时间范围 → `range`；label → `term`/`keyword`。
-- **凭据**：`es.basic.username/password`、`es.api_key`、`es.tls.ca`，作用域限于 `observability.read + log.read`。
+- **凭据**：`es.basic.username/password`、`es.api_key`、`es.tls.ca`，作用域限于 `observability.read`。
 
 ### 4.3 注册方式
 - `Activate(ctx, manifest, Elasticsearch{Q: esClient})`，信号名取 `NameLoki`（= `"loki"`）。
-- 与一方 Loki 二选一：同 §3.3 的 replace 语义；配置键 `datasource.logs.backend: "elasticsearch" | "loki"`。
+- 与一方 Loki **配置期单激活二选一**：同 §3.3 的语义；配置键 `datasource.logs.backend: "elasticsearch" | "loki"`。同进程双激活会触发 `ErrDuplicate`。
 - **LogQL 翻译层**：`core/base/pkg/logquery` 已是 Loki 客户端的入口；ES 插件**不**改 `logquery` 包，而是新增一个 `core/base/pkg/esquery` 子包提供 ES 客户端（仅在 ES 包内部引用，宿主不直接 import）。
 
 ### 4.4 与 `opskeeper-sre-observability` 的协同
@@ -161,9 +173,10 @@
 | Cross-signal | 与一方 Loki 同 fixture 同查询 | 行为差异文档化（LogQL 子集功能差异） |
 
 ### 4.7 回滚方案
-- 卸载 `opskeeper-datasource-elasticsearch`，配置切回 `loki`，重启。
+- 卸载 `opskeeper-datasource-elasticsearch`、配置切回 `loki`、重启 Manager（因果链同 §3.7 精确版）。
 - 验证 `query_logql` 工具在原 LogQL 用例上仍通过。
 - 不动 `logquery` 包；不破坏 Loki 路径。
+- 卸载后跑 `make pi-plugin-guard` 与 `make module-check` 校验。
 
 ---
 
@@ -177,12 +190,13 @@
 详见 `datasource-manifests/opensearch.yaml`。要点：
 
 - **包名**：`opskeeper-datasource-opensearch`
-- **精确版本**：`1.0.0`
+- **精确版本**：`0.1.0`（与 manifests 一致）
+- **vendor**：`opensearch-project`（上游项目名；非 OpsKeeper 一方）
 - **scope / 安全级别 / 兼容范围**：
   - `targets: [manager]`
   - `safety_level: L1`
   - `capabilities: [read]`
-  - `required_scopes: [observability.read, log.read]`
+  - `required_scopes: [observability.read]`（同 §4.2 修正理由：日志读取属观测语义；避免 `log.read` 触发准入拒绝）
   - `install.min_pig_version: "0.4.0"`
   - `install.min_edge_version: "0.8.0"`
   - 信号复用：`loki`（与一方 Loki 同名，沿用 `datasource.go` 中 `NameLoki`）
@@ -193,8 +207,8 @@
   - 显式声明不支持 painless 脚本化（v1 范围）。
 
 ### 5.3 注册方式
-- 同 §4.3，但客户端走 OpenSearch 的 `_search` 端点（与 ES 形态相同但 hostname 不同）。
-- 配置键 `datasource.logs.backend: "opensearch" | "elasticsearch" | "loki"`。
+- 同 §4.3，配置期单激活二选一或三选一；客户端走 OpenSearch 的 `_search` 端点（与 ES 形态相同但 hostname 不同）。
+- 配置键 `datasource.logs.backend: "opensearch" | "elasticsearch" | "loki"`。同进程双激活会触发 `ErrDuplicate`。
 
 ### 5.4 与 §4 ES 的代码复用边界
 - ES 与 OS 包**不共享 Go 代码**；manifest 与测试可参考，但实现各自独立。
@@ -209,7 +223,7 @@
 | Cross-compat | ES DSL 子集 vs OpenSearch DSL | 文档化已知差异（如 `_doc` API） |
 
 ### 5.6 回滚方案
-- 同 §4.7，但配置键多一项 `opensearch`；卸载后切回 `loki` 或 `elasticsearch`。
+- 同 §4.7（精确因果链同 §3.7），配置键多一项 `opensearch`；卸载后切回 `loki` 或 `elasticsearch`。
 
 ---
 
@@ -244,7 +258,7 @@ plugins/opskeeper-datasource-victoriametrics/
 - 用户须单独开 change；本任务不直接合入。
 - 落地前需补：
   1. 真实 VM / ES / OS 集群的 staging fixture；
-  2. CI 接入 `make plugin-guard`、`make module-check`、`go test ./scripts/ledgercheck`；
+  2. CI 接入 `make pi-plugin-guard`、`make module-check`、`go test ./scripts/ledgercheck`；
   3. 在 Runtime 页面增加 datasource 第三方后端可视化（与 1.2/1.3 串联）。
 
 ---
@@ -264,7 +278,7 @@ plugins/opskeeper-datasource-victoriametrics/
 | **签名** | 经 `core/floor/pluginmanifest/signing.go` 通道，签名文件随 manifest 一同分发 |
 | **回滚文档** | 含"卸载前/卸载后/不变量"三段；与 §3.7/§4.7/§5.6 一致 |
 | **灰度** | 灰度由 `install.strategy=canary` 控制；先 `canary` 再 `rolling`，最后 `replace` |
-| **闸门命令** | `make plugin-guard && make module-check && go test ./scripts/ledgercheck` 全过 |
+| **闸门命令** | `make pi-plugin-guard && make module-check && go test ./scripts/ledgercheck` 全过（修正：原文 `plugin-guard` 笔误，以 Makefile 为准） |
 
 ---
 
