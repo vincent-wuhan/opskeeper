@@ -1,0 +1,57 @@
+# pig-ops.yaml — OpsKeeper governance manifest for the VictoriaMetrics
+# datasource package.
+#
+# This is the third-party counterpart to the first-party `prom` datasource
+# (registered as `opskeeper-datasource-prom` in
+# `core/manager/biz/aiops/datasource/datasource.go`). It speaks the same
+# `toolcore.PromQuerier` surface — that is what lets `query_promql` and
+# the rest of `opskeeper-sre-observability` keep working unchanged — and
+# differs from Prometheus only in the upstream it talks to.
+#
+# The signals under it are documented to match `datasource.go`: a single
+# `prom` entry whose name is reused from the first-party package. Replacing
+# Prometheus with VictoriaMetrics is a configuration change at activation
+# time, not a new signal.
+#
+# Scope: read-only metric series behind a Prometheus-compatible HTTP API.
+# This package never writes to OpsKeeper state and never opens an
+# external write path to VictoriaMetrics.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-datasource-victoriametrics
+  version: 0.1.0
+  vendor: opskeeper
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  targets: [manager]
+
+  # L1. The package only reads metric series; no mutation paths exist
+  # in v1. The host re-derives the class from the executor it finds and
+  # refuses any call whose observed class is worse than this, so a write
+  # tool that reached this manifest would fail closed at the gate rather
+  # than run.
+  safety_level: L1
+
+  capabilities: [read]
+
+  # The host injects credentials for exactly these scopes. A scope not
+  # listed here is never handed to the package, so it cannot reach a
+  # credential it did not ask for — and asking is the reviewable act.
+  required_scopes:
+    - observability.read
+
+  audit:
+    emits: true
+    mutates: false
+
+  approval:
+    required: false
+
+  install:
+    # rolling. The package adds a Prometheus-compatible read path; the
+    # canary wave (1 in 10) is a real check against `datasource.prom.backend`
+    # before a full swap.
+    strategy: rolling
+    min_pig_version: 0.4.0
+    min_edge_version: 0.8.0

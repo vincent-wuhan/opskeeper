@@ -1,0 +1,56 @@
+# pig-ops.yaml — OpsKeeper governance manifest for the Elasticsearch
+# logs datasource package.
+#
+# This is the third-party counterpart to the first-party `loki` datasource
+# (registered as `opskeeper-datasource-loki` in
+# `core/manager/biz/aiops/datasource/datasource.go`). It speaks the same
+# `toolcore.LogQuerier` surface so `query_logql` keeps working unchanged;
+# LogQL filter expressions are translated to Elasticsearch Query DSL inside
+# the client, not inside the tool.
+#
+# The signal under it is `loki`, reused from the first-party package.
+# Swapping Loki for Elasticsearch is a configuration change at activation
+# time, not a new signal.
+#
+# Scope: read-only log search behind Elasticsearch's `_search` API. This
+# package never writes to Elasticsearch (no ingest, no ILM mutation, no
+# index create) and never writes to OpsKeeper state.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-datasource-elasticsearch
+  version: 0.1.0
+  vendor: opskeeper
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  targets: [manager]
+
+  # L1. Read-only search against an existing Elasticsearch cluster. The
+  # host re-derives the class from the executor it finds and refuses any
+  # call whose observed class is worse than this, so an ingest path that
+  # reached this manifest would fail closed at the gate rather than run.
+  safety_level: L1
+
+  capabilities: [read]
+
+  # The host injects credentials for exactly these scopes. A scope not
+  # listed here is never handed to the package, so it cannot reach a
+  # credential it did not ask for — and asking is the reviewable act.
+  required_scopes:
+    - observability.read
+    - log.read
+
+  audit:
+    emits: true
+    mutates: false
+
+  approval:
+    required: false
+
+  install:
+    # rolling. Replacing Loki with Elasticsearch changes which `_search`
+    # endpoint is queried, not the tool surface; the canary wave (1 in 10)
+    # is a real check against `datasource.logs.backend` before a full swap.
+    strategy: rolling
+    min_pig_version: 0.4.0
+    min_edge_version: 0.8.0
