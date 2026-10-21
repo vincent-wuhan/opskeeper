@@ -306,12 +306,12 @@ plugins/opskeeper-datasource-victoriametrics/
 - [x] 与 4.1 §7 评审结论一致（§8 自查表）
 - [x] 与 4.2 四分类一致（§8 自查表）
 - [x] 无越界改动（§1.3 / §6.3 明确禁止项；不动 `datasource.go` 与 `plugins/` 包结构）
-- [ ] PR 使用中文注释和中文提交说明（待提交时落实）
-- [ ] PR 描述关联 BENY-722 与 OpenSpec change `plugin-architecture-recovery-plan` 任务 4.3（待提交时落实）
+- [x] PR 使用中文注释和中文提交说明（已落实：`da7127bd` / `9933b096`）
+- [x] PR 描述关联执行任务与 OpenSpec change `plugin-architecture-recovery-plan` 任务 4.3（任务编号仅记录在 PR 描述与评论中——内部任务 ID 不得写入受开源审计的跟踪文件，见 `docs/OPEN_SOURCE_GATE.md`）
 
 ## 10. 提交与执行规范
 
 - 提交语言：本任务 PR 使用中文注释 / 中文提交说明（按计划任务 7.4）。
-- 关联：本 issue 编号 BENY-722；OpenSpec change `plugin-architecture-recovery-plan` 任务 4.3。
+- 关联：OpenSpec change `plugin-architecture-recovery-plan` 任务 4.3；执行任务编号记录在 PR 描述与评审评论中，不写入受审计文件。
 - 落盘路径：本文档落盘 `openspec/changes/plugin-architecture-recovery-plan/datasource-plugin-plan.md`；manifest 草案落盘 `openspec/changes/plugin-architecture-recovery-plan/datasource-manifests/`。
 - 实现切片建议（§6）**不**在本任务内合入；如要落地，请用户单独开 change。
