@@ -41,7 +41,8 @@
   - 产出：`business-domain-mapping.md`（基线 `release-v2026.09.20-patch.2` 对比 `main@86dff884`）；五个待评审问题已于 2026-10-19 评审并落结论（该文档 §7）。
 - [x] 4.2 盘点当前编译内能力，标记保留在 core、迁移为插件、暂缓迁移和淘汰四类。
   - 产出：`capability-classification.md`（2026-10-19 用户确认接受四分类；demo 淘汰待线上确认无依赖后移除）。
-- [ ] 4.3 为第一批 `datasource` 候选制定插件包方案，优先 VictoriaMetrics、Elasticsearch 或 OpenSearch。
+- [x] 4.3 为第一批 `datasource` 候选制定插件包方案，优先 VictoriaMetrics、Elasticsearch 或 OpenSearch。
+  - 产出：`datasource-plugin-plan.md` + `datasource-manifests/{victoriametrics,elasticsearch,opensearch}.yaml`（PR #102，2026-10-21 合并，`9f8bc820`）。经评审修订：信号复用 + 配置期单激活（ErrDuplicate fail-closed）、required_scopes 收敛到 observability.read、版本 0.1.0。实现切片仅建议，落地需另开 change。
 - [ ] 4.4 为第一批 `adapter` 候选制定插件包方案，优先 Kubernetes、云资源、ITSM、CMDB 或 Git。
 - [ ] 4.5 为 `notifier` 候选补齐插件化方案，覆盖飞书、钉钉、Slack、PagerDuty 或 Webhook 的差异化能力。
 - [ ] 4.6 为 `provider` 候选补齐模型供应商插件方案，保持凭据环境作用域和费用/速率治理。
