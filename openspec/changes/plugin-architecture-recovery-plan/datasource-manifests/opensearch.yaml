@@ -1,0 +1,64 @@
+# pig-ops.yaml — OpsKeeper governance manifest for the OpenSearch
+# logs datasource package.
+#
+# This is the third-party counterpart to the first-party `loki` datasource
+# (registered as `opskeeper-datasource-loki` in
+# `core/manager/biz/aiops/datasource/datasource.go`). It speaks the same
+# `toolcore.LogQuerier` surface so `query_logql` keeps working unchanged;
+# LogQL filter expressions are translated to OpenSearch DSL inside the
+# client, not inside the tool.
+#
+# The signal under it is `loki`, reused from the first-party package.
+# Swapping Loki for OpenSearch is a configuration change at activation
+# time, not a new signal.
+#
+# Scope: read-only log search behind OpenSearch's `_search` API (DSL 7.x
+# shape, security plugin default on). This package never writes to
+# OpenSearch (no ingest, no ISM mutation, no index create) and never
+# writes to OpsKeeper state. Painless scripting is explicitly out of
+# scope for v1.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-datasource-opensearch
+  version: 0.1.0
+  vendor: opensearch-project
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  targets: [manager]
+
+  # L1. Read-only search against an existing OpenSearch cluster. The host
+  # re-derives the class from the executor it finds and refuses any call
+  # whose observed class is worse than this, so an ingest path that
+  # reached this manifest would fail closed at the gate rather than run.
+  safety_level: L1
+
+  capabilities: [read]
+
+  # The host injects credentials for exactly these scopes. A scope not
+  # listed here is never handed to the package, so it cannot reach a
+  # credential it did not ask for — and asking is the reviewable act.
+  #
+  # Note: log search is captured under the observability scope; `log.read`
+  # is not part of the first-party `domain.Scope` constant set and is not
+  # granted by `ManagerPolicy()`, so declaring it here would cause the
+  # admission gate to refuse the manifest. Log reading is therefore
+  # covered by `observability.read` to match what the first-party Loki
+  # package actually asks for (see `datasource.go` `manifestFor`).
+  required_scopes:
+    - observability.read
+
+  audit:
+    emits: true
+    mutates: false
+
+  approval:
+    required: false
+
+  install:
+    # rolling. Replacing Loki with OpenSearch changes which `_search`
+    # endpoint is queried, not the tool surface; the canary wave (1 in 10)
+    # is a real check against `datasource.logs.backend` before a full swap.
+    strategy: rolling
+    min_pig_version: 0.4.0
+    min_edge_version: 0.8.0
