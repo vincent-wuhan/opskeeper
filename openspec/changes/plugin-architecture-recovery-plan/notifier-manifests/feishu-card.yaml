@@ -1,0 +1,71 @@
+# pig-ops.yaml — OpsKeeper governance manifest for the Feishu / Lark
+# interactive-card notifier.
+#
+# The built-in `feishu` channel posts msg_type: text. This package posts
+# msg_type: interactive instead: a header bar tinted by severity, a
+# field grid, a footnote row, and an @-mention of whoever is on call. It
+# registers under the SAME channel type, `feishu`, which is what makes the
+# two mutually exclusive rather than stackable — see notifier-plugin-plan.md
+# §3.2. Installing this package does not add a second way to reach Feishu;
+# it replaces the payload the one Feishu channel produces, and the
+# configuration key picks which of the two is active.
+#
+# Wire: POST the group-bot endpoint with
+# {msg_type: "interactive", card: {config: {wide_screen_mode: true},
+# header: {title: {tag, content}, template}, elements: [...]}, at: {...}}.
+# When a secret is configured the top-level `timestamp` + `sign` pair is
+# added exactly as the built-in channel adds it (HMAC-SHA256, base64, over
+# "<unix-seconds>\n<secret>"), so a bot with signature checking enabled
+# keeps working without reconfiguration.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-notifier-feishu-card
+  version: 0.1.0
+  vendor: opskeeper
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  targets: [manager]
+
+  # L3 for the same reason every notifier is L3 and not L1: sending a card
+  # is an outbound write to Feishu's servers, and the repository's own
+  # vocabulary puts "mutates external systems" at L3
+  # (core/domain/safety.go). See notifier-plugin-plan.md §4.2 for why the
+  # read-only ceiling a datasource gets is not reachable by reasoning here.
+  safety_level: L3
+
+  # destructive: the message object is created outside OpsKeeper's
+  # control, which is the definition of the class. It is not capped at
+  # write, because write means "mutates OpsKeeper-managed state" and this
+  # package writes none.
+  capabilities: [destructive]
+
+  # Nothing beyond the alert system. A card that later wants a metric
+  # sparkline or a device's topology adds observability.read /
+  # topology.read in a version bump, which puts the addition in a diff
+  # somebody reviews.
+  required_scopes:
+    - alert.read
+    - alert.write
+
+  audit:
+    emits: true
+    mutates: false
+
+  approval:
+    # required: false — the field gates agent tool calls, and this package
+    # declares no tools; a per-send approval gate would mean an alert
+    # cannot page anyone during the outage it is describing. No blast
+    # radius: one send reaches one group, which is the narrowest reach
+    # there is and needs no ceiling above it.
+    required: false
+
+  install:
+    # pin, same reasoning as every notifier: a canary wave means one in
+    # ten alerts is rendered by a payload nobody has looked at. Manager
+    # packages load once at boot rather than in a node wave, so this is a
+    # statement of intent that survives the arrival of a real rollout
+    # engine.
+    strategy: pin
+    min_pig_version: 0.4.0
+    min_edge_version: 0.8.0
