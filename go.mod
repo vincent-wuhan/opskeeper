@@ -20,6 +20,7 @@ require (
 	github.com/vincent-wuhan/opskeeper/core/harness v0.0.0
 	github.com/vincent-wuhan/opskeeper/core/manager v0.0.0-00010101000000-000000000000
 	github.com/vincent-wuhan/opskeeper/core/pig v0.0.0
+	github.com/vincent-wuhan/opskeeper/plugins/opskeeper-datasource-victoriametrics v0.0.0-00010101000000-000000000000
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0
 	go.opentelemetry.io/otel/trace v1.43.0
 	golang.org/x/sync v0.22.0
@@ -243,6 +244,7 @@ replace (
 	github.com/vincent-wuhan/opskeeper/core/harness => ./core/harness
 	github.com/vincent-wuhan/opskeeper/core/manager => ./core/manager
 	github.com/vincent-wuhan/opskeeper/core/pig => ./core/pig
+	github.com/vincent-wuhan/opskeeper/plugins/opskeeper-datasource-victoriametrics => ./plugins/opskeeper-datasource-victoriametrics
 	github.com/vincent-wuhan/opskeeper/sdk => ./sdk
 )
 

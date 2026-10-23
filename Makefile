@@ -565,6 +565,28 @@ integration-check: ## integration build tag 下的全部测试（默认 go test 
 	go test -tags=integration ./cmd/opskeeper/ -count=1
 	@echo "integration-check: every test behind //go:build integration has run against a real MySQL"
 
+# VictoriaMetrics 契约的集成层：真跑单机 VictoriaMetrics + 真 PromQL 模板，
+# 一方 promquery 客户端与插件 vmclient 客户端跑同一组表达式，结果按 ±0 比对。
+#
+# 跑整个包而不是一个 -run 白名单：integration-check 上方那条注释说过为什么——
+# 白名单会漏，新增的用例默认不跑，而默认不跑的东西不会变绿。
+#
+# 单独一个 target 而不是并进 integration-check，原因有两个：一是那个 target 以
+# MySQL DSN 为前置条件，把一个跟数据库无关的用例挂上去会让没有 DSN 的人把
+# 「跑不了」当成「没过」；二是它需要 docker + 拉一个 VictoriaMetrics 镜像，与已有
+# 集成层的资源画像不同，混在一起会让两个失败原因互相掩盖。
+#
+# 没有 docker 时整套跳过并明确告知，而不是 fail：这一层在本地无 docker 的机器上
+# 无法失败，硬失败只会逼人加 --tags 绕过去，那比跳过更糟。CI 里它是独立 job，
+# docker 一定在，所以那边不存在「跳过」。
+vm-integration-check: ## VictoriaMetrics 集成层（需要 docker；无 docker 则跳过）
+	@if ! docker info >/dev/null 2>&1; then \
+		echo "vm-integration-check: docker 不可用，跳过（CI 的 vm-integration job 会真跑）"; \
+		exit 0; \
+	fi
+	go test -tags=integration ./tests/integration/ -count=1
+	@echo "vm-integration-check: 一方与插件客户端在同一台真 VictoriaMetrics 上结果一致（±0）"
+
 # ----------------------------------------------------------------------------
 # lint
 # ----------------------------------------------------------------------------
@@ -975,6 +997,7 @@ PIG_MODULES := . core core/base core/domains core/edge core/extension core/fault
 	core/pig/extensions/opskeeper-sre-observability \
 	core/pig/extensions/opskeeper-sre-repair \
 	core/pig/extensions/opskeeper-sre-autonomy \
+	plugins/opskeeper-datasource-victoriametrics \
 	sdk
 
 # Deliberately not defaulted to a path on any one developer's machine. A
