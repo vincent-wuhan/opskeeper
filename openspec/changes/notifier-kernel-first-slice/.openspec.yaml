@@ -1,0 +1,7 @@
+schema: spec-driven
+created: 2026-10-23
+goal: Land the notifier kernel first slice — a per-extension-point safety
+  ceiling in the plugin host (S-1) and a channel-verdict response hook on the
+  built-in webhook senders (S-4) — without changing the closed Kind set, the
+  manifest schema, the alert dispatch main flow, or any existing Policy()
+  construction point.

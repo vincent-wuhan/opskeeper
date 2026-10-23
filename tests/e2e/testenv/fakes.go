@@ -522,13 +522,32 @@ func (f *FakeLLM) anthropicMessages(w http.ResponseWriter, r *http.Request) {
 //
 // Captures every POST so the test can assert payload shape (e.g. the
 // attachments format from core/base/pkg/notify/webhook.go). The fake
-// always returns 200 OK with body "ok", which is what real Slack does.
+// returns 200 OK with body "ok", which is what real Slack does — unless
+// a test overrides the reply (see SetReply).
 
 type FakeSlack struct {
 	server *httptest.Server
 
 	mu       sync.Mutex
 	captures []SlackCapture
+	reply    *FakeReply
+}
+
+// FakeReply overrides what the fake answers with.
+//
+// It exists because a chat channel's verdict is not the status code: a
+// DingTalk / Feishu / WeCom bot that refuses a message — bad signature,
+// rate limit, revoked bot — answers HTTP 200 with a non-zero error code
+// in the body. A fake that can only say "200 ok" cannot reproduce that
+// distinction, which is the whole thing the S-4 response hook reads.
+//
+// Additive: an unset reply keeps the default 200 "ok", so every existing
+// test sees exactly what it saw before.
+type FakeReply struct {
+	// Status is the HTTP status code; 0 means 200.
+	Status int
+	// Body is the raw response body.
+	Body string
 }
 
 type SlackCapture struct {
@@ -571,6 +590,15 @@ func (f *FakeSlack) Captures() []SlackCapture {
 	return out
 }
 
+// SetReply makes the fake answer with r instead of the default 200 "ok".
+// Pass nil to restore the default. The override applies to every
+// subsequent request until it is changed again.
+func (f *FakeSlack) SetReply(r *FakeReply) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reply = r
+}
+
 func (f *FakeSlack) handle(w http.ResponseWriter, r *http.Request) {
 	var body map[string]any
 	_ = json.NewDecoder(r.Body).Decode(&body)
@@ -581,9 +609,19 @@ func (f *FakeSlack) handle(w http.ResponseWriter, r *http.Request) {
 		Headers:  cloneHeader(r.Header),
 		Body:     body,
 	})
+	reply := f.reply
 	f.mu.Unlock()
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("ok"))
+	if reply == nil {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+		return
+	}
+	status := reply.Status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(reply.Body))
 }
 
 // ─── Fake Telegram Bot API ─────────────────────────────────────────────
