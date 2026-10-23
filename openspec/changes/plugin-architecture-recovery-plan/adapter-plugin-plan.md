@@ -247,6 +247,8 @@ cloud.read ∉ GrantedScopes  →  Satisfies() = false
 
 **结论：本候选在当前 policy 下为琥珀。** 需要决策 **D2**：`adapterPolicy().GrantedScopes` 是否增加 `cloud.read`（以及 v0.2.0 需要的 `cloud.write`）。
 
+> **D2 已裁决（2026-10-23，用户确认）：同意。** S0 同步在 scope 常量集新增 `cloud.read` 并扩展 `adapterPolicy().GrantedScopes`，本候选转绿；v0.2.0 的 `cloud.write` 届时随写操作切片一并评审。
+
 - **D2 = 同意**：前置切片 S0 同时把 scope 常量与 `adapterPolicy()` 扩展为可配置集合（§7.1 步骤 3），本候选转绿。
 - **D2 = 拒绝**：本候选**不落地**，云资产清单以宿主内模块形式提供（`core/manager/biz/device` 已有 `EdgeDeviceRepo` 契约，是更自然的落点），不占 adapter 扩展点。**这是一个完整的"不做"选项，且成本可接受**——云清单本身不需要 `Diagnose`/`Collect`/`Execute` 三段契约。
 
@@ -342,6 +344,8 @@ topology.read ∉ GrantedScopes  →  Satisfies() = false
 ```
 
 **结论：琥珀**，需要决策 **D1**：`adapterPolicy().GrantedScopes` 是否增加 `topology.read`（附带问题：是否拆分为独立的 `cmdb.read`）。
+
+> **D1 已裁决（2026-10-23，用户确认）：同意。** `adapterPolicy().GrantedScopes` 增加 `topology.read`，本候选转绿；是否拆分独立 `cmdb.read` scope 留待实现切片评审时单独定。
 
 - **D1 = 同意**：本候选转绿。
 - **D1 = 拒绝**：CMDB 同步以宿主内模块形式落在 `core/manager/biz/topology` / `core/manager/biz/device`，通过既有 repo 契约写入，不占 adapter 扩展点。代价是它只能用编译内工具暴露，失去 `spec.tools` 允许清单这道人工评审面——**这是拒绝方案的真实代价，写在这里而不是留给实现者去发现。**
