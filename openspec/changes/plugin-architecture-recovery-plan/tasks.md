@@ -43,8 +43,10 @@
   - 产出：`capability-classification.md`（2026-10-19 用户确认接受四分类；demo 淘汰待线上确认无依赖后移除）。
 - [x] 4.3 为第一批 `datasource` 候选制定插件包方案，优先 VictoriaMetrics、Elasticsearch 或 OpenSearch。
   - 产出：`datasource-plugin-plan.md` + `datasource-manifests/{victoriametrics,elasticsearch,opensearch}.yaml`（PR #102，2026-10-21 合并，`9f8bc820`）。经评审修订：信号复用 + 配置期单激活（ErrDuplicate fail-closed）、required_scopes 收敛到 observability.read、版本 0.1.0。实现切片仅建议，落地需另开 change。
-- [ ] 4.4 为第一批 `adapter` 候选制定插件包方案，优先 Kubernetes、云资源、ITSM、CMDB 或 Git。
-- [ ] 4.5 为 `notifier` 候选补齐插件化方案，覆盖飞书、钉钉、Slack、PagerDuty 或 Webhook 的差异化能力。
+- [x] 4.4 为第一批 `adapter` 候选制定插件包方案，优先 Kubernetes、云资源、ITSM、CMDB 或 Git。
+  - 产出：`adapter-plugin-plan.md` + `adapter-manifests/{karmada,alicloud,cmdb}.yaml`（PR #103，2026-10-23 合并）。关键发现：G1 读回缺口（`Sources()` 只遍历一方，注释与实现不符）。评审裁决：D1/D2 均同意（topology.read 授予、新增 cloud.read），三候选全绿；Git/ITSM 合理排除。实现切片（S0 前置宿主切片）另开 change。
+- [x] 4.5 为 `notifier` 候选补齐插件化方案，覆盖飞书、钉钉、Slack、PagerDuty 或 Webhook 的差异化能力。
+  - 产出：`notifier-plugin-plan.md` + `notifier-manifests/`（6 份草案）（PR #104，2026-10-23 合并）。关键结论：通知渠道定 L3/destructive（外部副作用）；评审裁决 Q1 接受 WithKindCeiling（S-1 独立 change）、Q2–Q6 按草案。缺口 G-1（2xx 即成功）存量修复随 S-4 同批。B1–B3 迁移切片与候选包另开 change。
 - [ ] 4.6 为 `provider` 候选补齐模型供应商插件方案，保持凭据环境作用域和费用/速率治理。
 - [ ] 4.7 为 `collector` 候选补齐边缘采集插件方案，保持进程模型、日志和资源上限可审查。
 - [ ] 4.8 补齐 observability、readonly、middleware 插件中的业务缺口，优先旧 release 已有但新架构未恢复完整的能力。
