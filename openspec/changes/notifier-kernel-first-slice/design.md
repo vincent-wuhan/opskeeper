@@ -142,7 +142,7 @@ type Policy struct {
 
 ## 6. 偏差与待确认
 
-1. **本 change 的脚手架在本地撰写。** 上游本应有 `agent/agent/5e722b292aa9`（commit `fc1d1309`）上的 `openspec/changes/notifier-kernel-first-slice/` 脚手架。本环境到 github.com:443 不通（`Failed to connect to github.com port 443`），该分支取不到，因此 proposal / design / tasks / 两份 delta spec 在本地按本 change 的实现实际写定。**若上游脚手架后来出现，以它为准，本文件需要逐条对齐。**
+1. **本 change 的脚手架在本地撰写。** 上游本应有 `agent/agent/5e722b292aa9`（commit `fc1d1309`）上的 `openspec/changes/notifier-kernel-first-slice/` 脚手架，并作为 PR 的第一个提交 merge 进来。**该分支与该 commit 在任何可达的地方都不存在**，本环境已逐一核过：GitHub 上 `git fetch` 该 ref 报 `couldn't find remote ref agent/agent/5e722b292aa9`、`gh api repos/.../commits/fc1d1309` 报 `No commit found for SHA: fc1d1309`、本地 clone 与共享 git 存储的 bare 仓库里 `git cat-file -t fc1d1309` 都报 `Not a valid object name`。因此 proposal / design / tasks / 两份 delta spec 在本地按本 change 的实现实际写定。**若上游脚手架后来出现，以它为准，本文件需要逐条对齐。**
 2. **与 `notifier-plugin-plan.md` §4.5 字面表述的偏差。** 见 §2.1：裁定为"条目生效、无条目回落全局"，并把写入方向拆成两个入口点。方案 §4.5 写的 `min` 语义与 §4.6 的草案互相矛盾，按 `min` 实现会让六个 L3 manifest 继续被拒。**这一处需要评审确认**——它是内核语义，不是实现细节。
 3. **`NotifierPolicy()` 不在本 change。** 方案 §4.6 的草案要在全局 L2 之上给 notifier L3；按 §2.1 的裁定，那是一次**放宽**，必须走放宽入口（`WithWiderKindCeiling`）。策略派生本身留在后续切片（本 change 只把内核能力做出来，不动任何既有构造点）。
 4. **`KindCeilings` 的 map 复制语义。** 两个写入入口返回**新的一份** `Policy`，接收者的 map 不会被写穿——一份被多个持有者共享的策略不会因为别人写了一个条目而变形。
