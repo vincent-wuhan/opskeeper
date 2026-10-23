@@ -1,0 +1,115 @@
+# pig-ops.yaml — OpsKeeper governance manifest for the PagerDuty
+# Events API v2 notifier package.
+#
+# This is the first channel OpsKeeper has that is not a chat sink. The
+# six built-in channels put a message in a group a human may or may not be
+# watching; this one opens an incident in an external incident-management
+# system and can wake people through that system's own escalation policy.
+# It is therefore the candidate that decides what the notifier extension
+# point's safety ceiling actually has to be, and its manifest is written
+# first for that reason.
+#
+# Wire: POST https://events.pagerduty.com/v2/enqueue with a body of
+# {routing_key, event_action, dedup_key, payload{summary, severity,
+# source, component, group, class, timestamp, links}}. The endpoint and the
+# routing key are both read from the notification-channel row, exactly as
+# the six built-ins read their endpoint and secret, so a channel row of
+# type `pagerduty` is configured through the same settings page and stored
+# in the same ConfigJSON shape.
+#
+# dedup_key is the part worth reading twice: OpsKeeper already computes a
+# pipeline:rule:label-set dedupe key for every alert it dispatches, and
+# PagerDuty's dedup_key means "these events are the same incident". Passing
+# the key through means a rule that fires 40 times an hour produces one
+# PagerDuty incident carrying 40 events instead of 40 incidents and 40
+# pages. That is the whole reason this package is worth writing.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-notifier-pagerduty
+  version: 0.1.0
+  vendor: pagerduty
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  # The control plane sends the event; a node never does. The two
+  # min_*_version fields are not consumed on the manager load path
+  # (see notifier-plugin-plan.md §4.6); they are written here so every
+  # notifier manifest in the catalogue has the same shape and a future
+  # "all fields required" check does not need a special case for manager
+  # packages.
+  targets: [manager]
+
+  # L3, and this is the honest reading of core/domain/safety.go rather
+  # than a choice made to fit a template. L2 means "mutates OpsKeeper
+  # state"; this package writes nothing into OpsKeeper — the delivery
+  # record is written by the host from its own send attempt. L3 means
+  # "mutates external systems", which is precisely what an Events API
+  # enqueue is. Lowering it to L1/L2 to look like a read-only package
+  # would be a lie a reviewer cannot check and an operator cannot rely on.
+  #
+  # What L3 buys is enforcement, not ceremony: Admit refuses this package
+  # on any host whose per-extension-point ceiling is below L3, so a
+  # control plane that never opts into paging cannot have it installed by
+  # accident.
+  safety_level: L3
+
+  # destructive, not write. ToolClass says ClassDestructive is "mutates
+  # state outside OpsKeeper's control"; this package creates an incident
+  # object inside somebody else's SaaS, which is not something a rollback
+  # here can undo. L3's ceiling is exactly destructive, so this declares
+  # the level rather than reaching past it.
+  capabilities: [destructive]
+
+  # The smallest set that lets the package render a page:
+  #   alert.read  — read the incident, rule and labels the page describes;
+  #   alert.write — the act of dispatching is an action taken on the alert
+  #                 system, which is the scope OpsKeeper already reserves
+  #                 for "something acted on an alert" (the finance
+  #                 deployment profile grants it for exactly this reason).
+  # Nothing here reaches metrics, topology or a database. A card that wants
+  # a metric snapshot adds observability.read in a version bump a reviewer
+  # sees in the diff — that is what "asking is the reviewable act" means.
+  required_scopes:
+    - alert.read
+    - alert.write
+
+  audit:
+    # The package reports each send; the host derives the ledger entry and
+    # the notification_deliveries row from its own attempt, so a package
+    # can neither forge nor suppress the record that a page went out.
+    # mutates stays false: audit-ledger writes are host-only and a
+    # manifest asking for them is refused at load.
+    emits: true
+    mutates: false
+
+  approval:
+    # false, and the reason matters: ApprovalPolicy.required gates the
+    # agent tool-call path, and this package declares no tools. Paging a
+    # human for approval before paging that human would be useless during
+    # the outage the page is about. The authorisation that does apply is
+    # host-side and already exists — creating or editing a channel is
+    # admin-only (requireAdmin in core/manager/server/alert/http.go) and
+    # is audited as channel_create / channel_update.
+    required: false
+    # single-ns, unlike the chat channels. One enqueue can traverse a
+    # whole escalation policy and reach an entire on-call team, which is
+    # a wider reach than "one group" and should read that way in a
+    # review. On the notifier path this field participates in admission
+    # comparison and catalogue display rather than in a runtime gate;
+    # naming it still gives the review a comparable literal.
+    #
+    # It asks for exactly the host ceiling and nothing more. Widening it
+    # to `namespace` is refused here on purpose: how far one page may
+    # travel is an operator decision made in policy, not a default a
+    # package author gets to write into the manifest.
+    max_blast_radius: single-ns
+
+  install:
+    # pin. The rolling/canary vocabulary assumes a request that may fail
+    # harmlessly on a tenth of the fleet; a page is not that. A canary
+    # wave here means one in ten alerts never reach anybody, which is the
+    # outage rather than a mitigation of it. Pinning also makes an upgrade
+    # an explicit, scheduled action instead of a background one.
+    strategy: pin
+    min_pig_version: 0.4.0
+    min_edge_version: 0.8.0

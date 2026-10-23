@@ -1,0 +1,65 @@
+# pig-ops.yaml — OpsKeeper governance manifest for the hardened generic
+# webhook notifier.
+#
+# The built-in `webhook` channel signs the request body with
+# X-OpsKeeper-Signature: sha256=<hex> when a secret is configured. This
+# package changes that scheme, which is why it is a separate package under
+# the same channel type rather than a patch to the built-in one: changing
+# the signature in place would break every existing receiver the moment the
+# upgrade shipped, and "default deployments behave the same after this
+# change" is worth more than avoiding a second binary.
+#
+# What changes:
+#   - the signed string becomes "<unix-seconds>.<body>", with the timestamp
+#     repeated in X-OpsKeeper-Timestamp, so a receiver can reject a replay
+#     inside a window instead of accepting a captured request forever;
+#   - the response body is parsed when it looks like {"code":..} and a
+#     non-zero code fails the send, the same reasoning as the DingTalk
+#     package and for the same reason;
+#   - connect and read timeouts are explicit rather than inherited from
+#     http.DefaultClient, so one slow receiver cannot hold the dispatch
+#     loop for as long as the router timeout tolerates.
+#
+# Receivers that do not want any of this keep the built-in package; the two
+# cannot be active at once because they register the same channel type.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-notifier-webhook-strict
+  version: 0.1.0
+  vendor: opskeeper
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  targets: [manager]
+
+  # L3: an arbitrary receiver URL makes the reach of this package the
+  # least predictable of the seven — it is an egress path an operator
+  # points at a host they chose. That argues for the external-mutation
+  # level rather than the read-only one, and it is also why this package
+  # is reviewed as an egress change rather than as a formatting change.
+  safety_level: L3
+
+  # destructive: the receiver is outside OpsKeeper's control.
+  capabilities: [destructive]
+
+  required_scopes:
+    - alert.read
+    - alert.write
+
+  audit:
+    emits: true
+    mutates: false
+
+  approval:
+    # required: false gates agent tool calls; none are declared. No blast
+    # radius: one send reaches one endpoint, and the endpoint itself is
+    # the operator's choice recorded on the channel row.
+    required: false
+
+  install:
+    # pin. This package breaks receivers written against the previous
+    # signature scheme by design, so it is switched on deliberately,
+    # channel by channel, and never rolled out as a wave.
+    strategy: pin
+    min_pig_version: 0.4.0
+    min_edge_version: 0.8.0

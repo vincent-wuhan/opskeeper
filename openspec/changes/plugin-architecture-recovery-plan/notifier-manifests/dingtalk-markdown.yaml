@@ -1,0 +1,63 @@
+# pig-ops.yaml — OpsKeeper governance manifest for the DingTalk markdown
+# notifier.
+#
+# Two changes over the built-in `dingtalk` channel, and the second one
+# matters more than the first.
+#
+# 1. msgtype: markdown instead of text, with a title, and an `at` block so
+#    a rule can page the on-call mobiles it names rather than posting into
+#    a group and hoping.
+#
+# 2. Response-body error checking. DingTalk answers HTTP 200 with a body
+#    carrying {"errcode": 0, "errmsg": "ok"}; 310000 is a bad signature,
+#    130101 is "message frequency limited", 300001 is no permission on the
+#    bot. The shared sender in core/base/pkg/notify/webhook.go treats any
+#    2xx as success, so today all three are recorded as successful
+#    deliveries — the notification_deliveries row says success, the retry
+#    worker does not retry, and the only symptom is a channel that silently
+#    stopped paging. This package parses the body and fails the send on a
+#    non-zero errcode, which turns that class of silent failure into a
+#    retryable one.
+#
+# The robot signature is unchanged: timestamp + sign as URL query
+# parameters, HMAC-SHA256 base64 over "<unix-millis>\n<secret>", so a bot
+# configured with 加签 keeps working with no reconfiguration.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-notifier-dingtalk-markdown
+  version: 0.1.0
+  vendor: opskeeper
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  targets: [manager]
+
+  # L3, like every outbound channel: this writes into DingTalk's servers
+  # on every alert. See notifier-plugin-plan.md §4.2.
+  safety_level: L3
+
+  # destructive — the message object lives outside OpsKeeper's control.
+  capabilities: [destructive]
+
+  required_scopes:
+    - alert.read
+    - alert.write
+
+  audit:
+    emits: true
+    mutates: false
+
+  approval:
+    # required: false gates agent tool calls; this package declares no
+    # tools. No radius: one send reaches one group.
+    required: false
+
+  install:
+    # pin. Beyond the page-path argument, this package changes delivery
+    # *outcomes* rather than delivery *format* — a 130101 now fails and is
+    # retried where it used to be recorded as success — so it is a change
+    # an operator schedules and watches rather than one a rollout tries
+    # first on a tenth of the fleet.
+    strategy: pin
+    min_pig_version: 0.4.0
+    min_edge_version: 0.8.0

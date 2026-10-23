@@ -1,0 +1,95 @@
+# Reference manifest — the governance manifest OpsKeeper synthesises for
+# the six built-in notification channels.
+#
+# This file is NOT a distributable plugin. The built-in channels are
+# compiled into the manager binary, so there is no pig-ops.yaml on disk to
+# load; they are admitted through the same gate a third-party package is,
+# by a manifestFor() function in the notifier wiring, in exactly the way
+# core/manager/biz/aiops/datasource/datasource.go builds manifestFor() for
+# the first-party Prometheus, Loki and Tempo backends. This file is the
+# reviewable YAML form of what that function will return, kept next to the
+# candidate manifests so a reviewer can compare the two in one diff.
+#
+# One package per channel type, six in total:
+#   opskeeper-notifier-webhook   -> type "webhook"
+#   opskeeper-notifier-slack     -> type "slack"
+#   opskeeper-notifier-feishu    -> type "feishu"
+#   opskeeper-notifier-dingtalk  -> type "dingtalk"
+#   opskeeper-notifier-wecom     -> type "wecom"
+#   opskeeper-notifier-telegram  -> type "telegram"
+#
+# The plugin name and the channel type are deliberately not the same string,
+# for the same reason datasource uses opskeeper-datasource-prom for the
+# signal "prom": a rollback is named after a package, while a lookup is by
+# signal, and collapsing the two makes the first one impossible to word.
+#
+# Every field below is identical across the six. That is the point of the
+# comparison table in notifier-plugin-plan.md §5.2: the six differ only in
+# which factory builds their Sender, and the migration moves the factory
+# without touching any field on this page.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-notifier-slack        # one per channel type, see above
+  version: 1.0.0                       # synthesised, like datasource.go
+  vendor: opskeeper
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  targets: [manager]
+
+  # L3. These six are not read-only and are not L2. L2 is defined as
+  # "mutates OpsKeeper state"; a Slack message writes nothing into
+  # OpsKeeper — the host writes the notification_deliveries row from its
+  # own send attempt. What it does is mutate an external system, which
+  # core/domain/safety.go names at L3. Declaring L1 to look harmless would
+  # be the single most consequential false statement in this file: the
+  # level is the ceiling every admission check compares against, so a
+  # package that lies about it gets admitted onto hosts that never agreed
+  # to host it.
+  safety_level: L3
+
+  # destructive, matching L3's ceiling exactly. See
+  # notifier-plugin-plan.md §4.2.
+  capabilities: [destructive]
+
+  # alert.read and alert.write, and nothing else. The two are what a
+  # notification needs: read the incident and its labels to render a
+  # message, and the authority to dispatch on the alert system. The
+  # datasource policy grants observability.read / db.read / topology.read
+  # because a query backend needs to read a store; a notifier reads no
+  # store, and inheriting that grant would be scope inflation for the
+  # sake of a familiar-looking list.
+  required_scopes:
+    - alert.read
+    - alert.write
+
+  audit:
+    # The host writes the ledger and the delivery row from its own attempt
+    # (StartDelivery / FinishDelivery in core/manager/biz/alert), so a
+    # package cannot forge the record that a page went out. mutates stays
+    # false: audit-ledger writes are host-only and are refused at load.
+    emits: true
+    mutates: false
+
+  approval:
+    # required: false gates the agent tool-call path. These packages
+    # declare no spec.tools, so no approval round trip exists for them to
+    # gate; writing true would assert a control that does not exist. The
+    # authorisation that does apply is host-side: creating or editing a
+    # notification channel is admin-only and is audited.
+    required: false
+    # No max_blast_radius. One send reaches one group; the narrowest
+    # reach a notifier can have needs no ceiling above it. PagerDuty
+    # differs here because one enqueue can traverse a whole escalation
+    # policy — see notifier-manifests/pagerduty.yaml.
+  install:
+    # pin. A notifier's install strategy is a statement about alert
+    # delivery, and "a tenth of the fleet gets the new one first" is not
+    # a strategy an alerting path can express.
+    strategy: pin
+    # Not written by manifestFor(). The synthesised manifest carries no
+    # compatibility floor because the package and the binary are the same
+    # build; a floor here would be a number that cannot drift, which is
+    # the opposite of what the field is for. The third-party manifests do
+    # write them, because there the package and the binary are genuinely
+    # two artifacts.

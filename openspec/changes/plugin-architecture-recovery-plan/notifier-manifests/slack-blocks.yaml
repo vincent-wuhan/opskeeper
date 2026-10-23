@@ -1,0 +1,55 @@
+# pig-ops.yaml — OpsKeeper governance manifest for the Slack Block Kit
+# notifier.
+#
+# The built-in `slack` channel posts the legacy `attachments` format. This
+# package posts Block Kit `blocks` instead, with the same coloured severity
+# rail preserved as a header block, structured fields as a section, and the
+# occurrence time in a context row. It registers under the SAME channel type,
+# `slack`, so the two cannot both be active — see notifier-plugin-plan.md
+# §3.2 — and a configuration key picks which one is.
+#
+# The top-level `text` stays populated. Slack renders that field in the
+# notification preview, in the mobile push, and in the email digest; a
+# package that only fills `blocks` produces a rich message whose preview is
+# empty, which is the single most common way a Block Kit integration reads
+# as broken on a phone.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-notifier-slack-blocks
+  version: 0.1.0
+  vendor: opskeeper
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  targets: [manager]
+
+  # L3. An outbound message is a write to an external system; the
+  # repository's own level definitions put that at L3 rather than at the
+  # L1 read-only ceiling a datasource receives. The full argument, and
+  # what it costs, are in notifier-plugin-plan.md §4.2.
+  safety_level: L3
+
+  # destructive: creates a message object in somebody else's workspace.
+  # write would be a misstatement — nothing is written into OpsKeeper.
+  capabilities: [destructive]
+
+  required_scopes:
+    - alert.read
+    - alert.write
+
+  audit:
+    emits: true
+    mutates: false
+
+  approval:
+    # required: false gates agent tool calls, of which this package has
+    # none. No radius: one send reaches one channel, the narrowest reach
+    # a notifier can have.
+    required: false
+
+  install:
+    # pin — a rolling wave on a page path means one in ten alerts nobody
+    # ever sees.
+    strategy: pin
+    min_pig_version: 0.4.0
+    min_edge_version: 0.8.0
