@@ -138,6 +138,34 @@ jobs:
       - name: Build and test every module on its own published tags
         run: make module-standalone-check
 
+  # VictoriaMetrics 的集成层单独一个 job，而不是并进 build-test 里那一步
+  # `make integration-check`。
+  #
+  # 拆出来的理由是失败模式不同：integration-check 以 MySQL DSN 为前置条件并跑
+  # 迁移，vm-integration-check 需要拉一个 VictoriaMetrics 镜像。合成一步之后，
+  # 「MySQL 没起来」和「VictoriaMetrics 拒了一个 PromQL 模板」会同时出现在一
+  # 份日志里，而这两个的原因没有任何共同之处。
+  #
+  # 这一层本地无 docker 时会跳过（并在输出里说明），所以这里必须是独立 job：
+  # 在 build-test 里那一步被跳过，看起来和「跑过了且全绿」没有区别。
+  vm-integration:
+    name: VictoriaMetrics contract against a real TSDB
+    runs-on: ubuntu-24.04
+    # 一个镜像拉取 + 五个模板跑两遍。冷 runner 上的镜像拉取是主要成本，
+    # 20 分钟是余量不是预期。
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Both clients agree against a real VictoriaMetrics
+        run: make vm-integration-check
+
   build-test:
     name: build + vet + test
     runs-on: ubuntu-24.04
