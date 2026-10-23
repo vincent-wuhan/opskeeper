@@ -70,6 +70,12 @@ const (
 	ScopeTopologyRO Scope = "topology.read"
 	ScopeAlertRO    Scope = "alert.read"
 	ScopeAlertWrite Scope = "alert.write"
+	// ScopeCloudRead 是云厂商开放 API 的只读权限，与 host.read 是两个
+	// 不同的 scope：host.read 由宿主注入本地/SSH 凭据，而云 API 走的是
+	// 各家 AK/SK。把云 API 读取折进 host.read 会让一次声明拿到两类
+	// 凭据，是范围洗白，因此单列一个只读 scope。写操作（云上变更）不
+	// 在此列，留在写操作切片里单独评审。
+	ScopeCloudRead Scope = "cloud.read"
 )
 
 // Scopes is a declared permission set.
