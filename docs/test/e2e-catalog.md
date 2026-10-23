@@ -106,6 +106,7 @@
 | G5 | Telegram chatID 在 secret | G2 测 telegram | sendMessage 带 chat_id | P1 | |
 | G6 | WeCom 凭证在 URL | G2 测 wecom | URL 含 key,不发 secret 头 | P2 | |
 | G7 | delivery retry worker | mock channel 返 500 | 5 次指数退避后 status=failed | P1 | |
+| G8 | 渠道在 200 里拒收 | mock 渠道回 200 + errcode≠0 | test 按钮报 accepted=false 并带上渠道错误码 | P1 | ✅ `tests/e2e/notify_errcode_test.go` |
 
 ## 域 H — Channels(双向 IM bot)
 
@@ -215,9 +216,17 @@
 
 > 已实现条目在 `tests/e2e/` 下有对应 `*_test.go`,catalog 这边的"实现"列写 ✅。
 >
-> 当前实现:**3 条**
+> 当前实现:**11 条**
 > - B1 登录链路 → `tests/e2e/auth_login_test.go`
+> - B2 JWT 过期 + refresh → `tests/e2e/auth_refresh_test.go`
+> - B3 三角色 RBAC → `tests/e2e/auth_rbac_test.go`
+> - E1 metric_raw 规则 fire → `tests/e2e/alert_evaluator_test.go`
+> - F1 自动 RCA on incident fire → `tests/e2e/rca_pipeline_test.go`
+> - G1 Channel CRUD + reveal → `tests/e2e/notify_channel_crud_test.go`
 > - G3 Slack 通知富格式 → `tests/e2e/notify_slack_test.go`
+> - G4 Feishu/DingTalk 签名 → `tests/e2e/notify_signed_test.go`
+> - G8 渠道在 200 里拒收 → `tests/e2e/notify_errcode_test.go`
+> - L1 加载内置 skill registry → `tests/e2e/skills_registry_test.go`
 > - O1 sensitive reveal 权限 → `tests/e2e/settings_reveal_test.go`
 
 详见 `tests/e2e/README.md`。

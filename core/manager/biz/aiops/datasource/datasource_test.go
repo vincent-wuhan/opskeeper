@@ -8,6 +8,7 @@ import (
 	"github.com/vincent-wuhan/opskeeper/core/base/pkg/logquery"
 	"github.com/vincent-wuhan/opskeeper/core/base/pkg/promquery"
 	"github.com/vincent-wuhan/opskeeper/core/base/pkg/tracequery"
+	"github.com/vincent-wuhan/opskeeper/core/domain"
 	"github.com/vincent-wuhan/opskeeper/core/floor/kernel"
 )
 
@@ -129,5 +130,39 @@ func TestSignalLookup(t *testing.T) {
 	}
 	if _, ok := Signal("not-a-plugin"); ok {
 		t.Fatal("an unknown plugin name must not resolve to a signal")
+	}
+}
+
+// TestManagerPolicyIsUnaffectedByPerKindCeilings 钉住 S-1 的第一条验收：
+// 既有 Policy() 构造点的源码零改动、行为逐位不变。
+//
+// per-kind ceiling 是内核新增的机制，但只有带条目的 policy 才受它影响。
+// ManagerPolicy() 不带条目，于是每个 kind 的生效 ceiling 仍是全局的 L2，
+// 准入判定与改动前逐位相同。
+func TestManagerPolicyIsUnaffectedByPerKindCeilings(t *testing.T) {
+	pol := ManagerPolicy()
+	if len(pol.KindCeilings) != 0 {
+		t.Fatalf("ManagerPolicy() carries %d per-kind ceilings; want 0 (this construction point must stay unchanged)", len(pol.KindCeilings))
+	}
+	for _, k := range kernel.Kinds() {
+		if got := pol.EffectiveSafetyCeiling(k); got != pol.MaxSafetyLevel {
+			t.Fatalf("EffectiveSafetyCeiling(%q) = %s; want %s (no entry ⇒ the global ceiling)",
+				k, got, pol.MaxSafetyLevel)
+		}
+	}
+	if got := pol.WidestSafetyCeiling(); got != pol.MaxSafetyLevel {
+		t.Fatalf("WidestSafetyCeiling() = %s; want %s", got, pol.MaxSafetyLevel)
+	}
+
+	// 准入判定也不变：仓库里真实出厂的那份 manifest 仍然过，
+	// L3 的包仍然被拒。
+	h := NewHost(nil)
+	if err := h.Admit(manifestFor(PluginProm, NameProm)); err != nil {
+		t.Fatalf("the shipped prom manifest must still be admitted: %v", err)
+	}
+	l3 := manifestFor(PluginProm, NameProm)
+	l3.Manifest.Spec.SafetyLevel = domain.SafetyL3
+	if err := h.Admit(l3); err == nil {
+		t.Fatal("an L3 package must still be refused by the L2 manager ceiling")
 	}
 }

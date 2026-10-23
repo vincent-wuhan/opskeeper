@@ -94,3 +94,32 @@ func TestAdapterPolicyAdmitsEveryFirstPartyFamily(t *testing.T) {
 		}
 	}
 }
+
+// TestAdapterPolicyIsUnaffectedByPerKindCeilings 钉住 S-1 的第一条验收：
+// 既有 Policy() 构造点的源码零改动、行为逐位不变。
+//
+// adapterPolicy() 不带 per-kind 条目，于是每个 kind 的生效 ceiling 仍是
+// 全局的 L2，准入判定与改动前逐位相同。
+func TestAdapterPolicyIsUnaffectedByPerKindCeilings(t *testing.T) {
+	pol := adapterPolicy()
+	if len(pol.KindCeilings) != 0 {
+		t.Fatalf("adapterPolicy() carries %d per-kind ceilings; want 0 (this construction point must stay unchanged)", len(pol.KindCeilings))
+	}
+	for _, k := range kernel.Kinds() {
+		if got := pol.EffectiveSafetyCeiling(k); got != pol.MaxSafetyLevel {
+			t.Fatalf("EffectiveSafetyCeiling(%q) = %s; want %s (no entry ⇒ the global ceiling)",
+				k, got, pol.MaxSafetyLevel)
+		}
+	}
+	if got := pol.WidestSafetyCeiling(); got != pol.MaxSafetyLevel {
+		t.Fatalf("WidestSafetyCeiling() = %s; want %s", got, pol.MaxSafetyLevel)
+	}
+
+	// 准入判定也不变：真实出厂的 adapter family 仍然过。
+	host := kernel.NewHost(kernel.NewRegistry(), adapterPolicy(), nil)
+	for _, src := range firstPartySources() {
+		if err := host.Admit(adapterManifest(src.Name)); err != nil {
+			t.Fatalf("first-party family %q must still be admitted: %v", src.Name, err)
+		}
+	}
+}
