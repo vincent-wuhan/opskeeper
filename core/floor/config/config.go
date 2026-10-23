@@ -234,7 +234,35 @@ type PromConfig struct {
 	// the TSDB's cert. Empty = use system roots.
 	// env: OPSKEEPER_PROM_TLS_CA_FILE; default empty.
 	TLSCAPath string
+
+	// Backend selects which implementation answers the `prom` signal:
+	// "prometheus" (default) or "victoriametrics". Both speak the same
+	// Prometheus-compatible HTTP API and normalise to the same
+	// promquery.InstantResult, so the choice changes which server answers and
+	// nothing else about the query path.
+	//
+	// It does NOT switch the write path: RemoteWriteURL, the
+	// push_prom_samples tool and the promwrite flow keep targeting
+	// Prometheus regardless of this value. And it does NOT switch every
+	// reader — only the surfaces wired through the single promQueryClient
+	// built in cmd/opskeeper/main.go follow it; the integrations probe, the
+	// metric-domain handler, the alert preview, the Monitor page proxy and
+	// the alert-rule pipeline each construct their own client and still
+	// point at first-party Prometheus. See the startup log emitted by
+	// cmd/opskeeper for the current list.
+	//
+	// env: OPSKEEPER_PROM_BACKEND; default "prometheus".
+	Backend string
 }
+
+// Prom backend identifiers. An unrecognised value is a startup failure rather
+// than a silent fallback: falling back would point the operator's queries at a
+// server they did not ask for, and the symptom would be a working dashboard
+// answering from the wrong place.
+const (
+	PromBackendPrometheus      = "prometheus"
+	PromBackendVictoriaMetrics = "victoriametrics"
+)
 
 // FrontierClientConfig drives the manager-side service-end SDK that dials
 // the upstream github.com/singchia/frontier broker. The broker itself is
@@ -691,6 +719,7 @@ func Load() (*Config, error) {
 	c.Prom.QueryURL = getEnv("OPSKEEPER_PROM_QUERY_URL", "")
 	c.Prom.TLSInsecure = getEnvBool("OPSKEEPER_PROM_TLS_INSECURE", false)
 	c.Prom.TLSCAPath = getEnv("OPSKEEPER_PROM_TLS_CA_FILE", "")
+	c.Prom.Backend = getEnv("OPSKEEPER_PROM_BACKEND", PromBackendPrometheus)
 	c.Grafana.InternalRootURL = getEnv("OPSKEEPER_GRAFANA_INTERNAL_URL", "http://grafana:3000/grafana")
 	c.Grafana.BootstrapUser = getEnv("OPSKEEPER_GRAFANA_BOOTSTRAP_USER", "admin")
 	c.Grafana.BootstrapPassword = getEnv("OPSKEEPER_GRAFANA_BOOTSTRAP_PASSWORD", "")

@@ -161,11 +161,29 @@ func TestTheGoModReplaceBlockIsNotEmpty(t *testing.T) {
 			len(modules))
 	}
 	for dir := range modules {
-		if !strings.HasPrefix(dir, "core") && !strings.HasPrefix(dir, "sdk") {
-			t.Errorf("go.mod replaces ./%s, which is neither under core/ nor sdk/. Every "+
-				"module in this repository lives in one of those two places, so a third "+
-				"location means the parse or the layout changed", dir)
+		if !strings.HasPrefix(dir, "core") && !strings.HasPrefix(dir, "sdk") &&
+			!strings.HasPrefix(dir, "plugins/") {
+			t.Errorf("go.mod replaces ./%s, which is under none of core/, sdk/ or "+
+				"plugins/. A module in a fourth place means the parse or the layout "+
+				"changed", dir)
 		}
+	}
+	// plugins/ is a third home, and it is not the same kind of home as the
+	// other two. core/ and sdk/ hold the control plane; plugins/ holds the
+	// datasource packages a deployment swaps in one at a time, which is why the
+	// VictoriaMetrics module lives there rather than beside the plugins that
+	// serve it. What is checked here is the location, not the openness: a
+	// replaced module is always one this repository also builds, and a
+	// directory that satisfies that by containing a go.mod is checked by
+	// TestTheStandaloneListCoversEveryModuleInTheTree.
+	if _, ok := modules["plugins/opskeeper-datasource-victoriametrics"]; !ok {
+		have := make([]string, 0, len(modules))
+		for dir := range modules {
+			have = append(have, dir)
+		}
+		sort.Strings(have)
+		t.Errorf("go.mod no longer replaces the VictoriaMetrics datasource module; "+
+			"the replaced set is %v", have)
 	}
 }
 
