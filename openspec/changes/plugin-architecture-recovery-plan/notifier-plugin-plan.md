@@ -559,6 +559,8 @@ cmd/opskeeper/main.go
 
 ### 17.2 待评审问题
 
+> **2026-10-23 评审裁决（用户确认）**：Q1 **接受**——`WithKindCeiling` 落地为实现切片 S-1（独立 change + 内核评审）；Q2–Q6 均按草案处理：`approval.required: false` 的两段解释进 PR 描述、`install.strategy: pin` 维持、合成一方 manifest 不写 `min_pig_version`、飞书卡片回调不进 notifier 范围、PagerDuty v1 仅 `trigger`。
+
 1. **`WithKindCeiling` 是否接受为内核改动？**（§4.5）这是本方案唯一的内核变更，也是唯一的阻塞项。
 2. **`approval.required: false` 的表述是否够清楚？** 评审者可能读成"外发通知绕过了审批"。§4.3 的两段解释（字段语义 + 真正的授权在 admin-only 的渠道配置上）建议直接进 PR 描述。
 3. **`install.strategy` 写 `pin` 而它是死字段**是否可接受？（§4.6）替代方案是照 datasources 写 `rolling`。
