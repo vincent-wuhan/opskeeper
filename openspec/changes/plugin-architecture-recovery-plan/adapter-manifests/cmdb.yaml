@@ -1,0 +1,90 @@
+# pig-ops.yaml — OpsKeeper governance manifest for the CMDB adapter package
+# (v0.1.0, read-only).
+#
+# STATUS: like the cloud draft, this one does NOT pass admission today, by
+# exactly one missing grant. See `required_scopes` below and decision D1 in
+# adapter-plugin-plan.md §6.4.
+#
+# Why a CMDB reader is an adapter. 4.1 §③ routes CMDB to the adapter
+# extension point, and §⑨ groups it with cloud resources and ITSM. The gap
+# is concrete: `grep -rl -e CMDB -e cmdb core/` returns nothing, and
+# `core/manager/biz/topology` holds only NodeRepo / RelationRepo — a
+# persistence contract with no external source behind it. In an incident,
+# "what changed here most recently" is one of the first questions asked, and
+# today the only place that answer can come from is outside this repository.
+#
+# v1 reads and does not write back. Writing a remediation result back into a
+# CMDB would put an automated action into somebody else's audit trail with
+# no symmetric undo, so it is not merely deferred — it is rejected on
+# purpose. Syncing the CI data this package reads into OpsKeeper's own
+# topology graph is a host-side job that consumes these tools; it is not
+# something the adapter does on a timer.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-adapter-cmdb
+  version: 0.1.0
+  vendor: cmdb
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  targets: [manager]
+
+  # L1, and this one is structural rather than deferred: the package has no
+  # Execute path at all. A write-back would need L2, an approval round trip,
+  # a `pod` radius and a `topology.write` scope that does not yet exist in
+  # the vocabulary (core/domain/plugin.go:60-73) — four changes for an
+  # operation nobody has asked for.
+  safety_level: L1
+
+  capabilities: [read]
+
+  tools:
+    - { name: cmdb.ci_change_log, class: read }
+    - { name: cmdb.ci_get,        class: read }
+    - { name: cmdb.ci_relations,  class: read }
+    - { name: cmdb.ci_search,     class: read }
+
+  # The host injects credentials for exactly these scopes.
+  #
+  # Verified against the adapter host policy
+  # (`toolset.adapterPolicy()`, core/manager/middleware/toolset/sources_plugin.go:43-48):
+  #
+  #   vocabulary check: topology.read ∈ core/domain/plugin.go:60-73   → yes
+  #   required_scopes = [topology.read]
+  #   granted        = [db.read, db.write, k8s.read, k8s.exec,
+  #                     mq.read, mq.write, host.read, host.write]
+  #   topology.read ∉ granted  →  Satisfies() == false  →  Admit refuses:
+  #                              pig-ops.yaml: spec.required_scopes: not granted: topology.read
+  #
+  # This is the narrower of the two unresolved drafts: the scope already
+  # exists in the vocabulary and its meaning is right — read asset / topology
+  # information, which is what a CI list is. Only the grant is missing, and
+  # `adapterPolicy()` is unexported with a hard-coded GrantedScopes, so
+  # Decision D1 asks the user whether to grant it.
+  #
+  # One caveat travels with the choice, and it is worth naming before D1 is
+  # answered rather than after. `topology.read` is a single name for two
+  # possible credential sources: OpsKeeper's own topology store, and an
+  # external CMDB. If those are ever two different credentials, they should
+  # be two scopes (`topology.read` / `cmdb.read`) rather than one name doing
+  # two jobs. This manifest is drafted with `topology.read` because that is
+  # the semantically correct existing name; splitting it is part of D1.
+  required_scopes:
+    - topology.read
+
+  audit:
+    emits: true
+    mutates: false
+
+  approval:
+    # Read-only. No blast radius: `sdk.Validate` refuses one here.
+    required: false
+
+  install:
+    strategy: rolling
+    # pig 下限此前不存在；本仓固定 PiG v0.4.0（决策 455）。
+    min_pig_version: 0.4.0
+    min_edge_version: 0.8.0
+
+  # No autonomy block. Reading a CMDB does not become safe because the
+  # control plane went away.
