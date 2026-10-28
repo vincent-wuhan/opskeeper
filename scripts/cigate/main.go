@@ -127,6 +127,14 @@ func Gates() []Gate {
 // nothing. It is also the gate this table caught skipping itself: until
 // decision 164 it asked for go.work, which CI does not have, so wiring it in
 // alone would have run a check that skipped.
+//
+// vm-integration-check is here because the VictoriaMetrics slice committed to a
+// contract job of its own -- the plugin client and the first-party Prometheus
+// client asked the same questions of one real VictoriaMetrics -- and wired that
+// job into CI without recording the promise in this table. The gate that
+// checks the gates then read a wired-but-unrecorded gate-shaped target as an
+// unaccounted one and failed the build. The job was the promise all along;
+// what was missing was the record of it.
 func DecisionGates() []Gate {
 	return []Gate{
 		{
@@ -384,6 +392,18 @@ func DecisionGates() []Gate {
 				"it prints, not the number a document believes. The gate reads the headline and not the " +
 				"running log beneath it, because that log is history and history that has been overtaken " +
 				"is correct history (decision 404)",
+		},
+		{
+			Target: "vm-integration-check",
+			Why: "the first third-party datasource package is the first-party Prometheus client with " +
+				"a different address, and the only way to know the two answer the same question " +
+				"is to ask both against one real VictoriaMetrics and compare five PromQL templates " +
+				"to an absolute difference of zero -- a contract against an httptest fixture cannot " +
+				"see a dialect the server actually has. It is a job of its own rather than a step " +
+				"inside integration-check because the two fail for unrelated reasons: one needs a " +
+				"MySQL DSN, the other an image pull, and a machine with no docker skips this one " +
+				"-- so folding it into the build job would print a skip that reads exactly like a " +
+				"pass (datasource-victoriametrics-slice, design D7 and task 4.3)",
 		},
 	}
 }
