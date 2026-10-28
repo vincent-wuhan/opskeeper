@@ -49,6 +49,7 @@
 - [ ] 4.7 为 `collector` 候选补齐边缘采集插件方案，保持进程模型、日志和资源上限可审查。
   - 初稿：`collector-plugin-plan.md`（含 `collector-manifests/` 三份 manifest 草案：六内置参考 + otelcol kubeletstats + otelcol filelog），含五道现状闸门审计（C1 activator 缺失 / C2 内置不经内核 / C3 配置面闭集 / C4 endpoint 两路 / C5 资源日志零执行点）、内置迁移三切片与资源治理三条腿设计；待评审 D1（endpoint 解析）、D2（collector 分级上限）、D3（`spec.collector` schema）后再勾选。
 - [ ] 4.8 补齐 observability、readonly、middleware 插件中的业务缺口，优先旧 release 已有但新架构未恢复完整的能力。
+  - 初稿：`plugin-gap-plan.md`（基线 `main@07499880` 对比 `release-v2026.09.20-patch.2`，盘点口径按节点插件面 / manager 编译内面 / 节点上呼面三列展开，旧 102+ 工具逐项判定无未解释遗漏），含盘点新发现缺口 G0（6 个已上 manifest 未上呼 dispatch + 6 个反向不对称，决策 350 同类）与五项补齐方案（`query_knowledge` → observability 新增 `knowledge.read`、`query_incidents`/`get_incident_detail`/`query_devices` → readonly、`get_host_processes` → observability）、三项 ADR 决策对比、不补清单及反悔条件；待评审 D-1（知识包归属）、D-2（G0 桥修法）、D-3（事件读归属）后再勾选。
 - [ ] 4.9 强化 repair 插件的计划预览、独立验证、回滚说明和审批证据。
 - [ ] 4.10 为每个新增插件包维护 manifest、精确版本、scope、安全级别、兼容范围、测试、签名和回滚文档。
 - [ ] 4.11 运行插件构建、测试、准入、签名、灰度和回滚闸门。
