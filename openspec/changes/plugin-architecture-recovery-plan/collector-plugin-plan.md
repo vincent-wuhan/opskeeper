@@ -2,6 +2,8 @@
 
 > 状态：**方案 v0.1（待评审）**。对应 `tasks.md` 4.7；评审通过前不勾选 4.7。
 >
+> **评审裁决（2026-10-28，用户确认）**：D1 选 **D1-a**（采集器包自带 endpoint_kind，resolver 按包名→kind→系统设置三层解析，保留 loki.url 自动重定向；D1-b 仅作落地前过渡）；D2 选**收窄**——用已合并的 WithKindCeiling 机制（PR #106）给 edge 宿主 `KindCollector` 收窄到 L1，消除 saas 档放行 L3 采集器的治理失真；D3（spec.collector schema）维持独立 change 推迟。
+>
 > 基线：`main@483783b4`（本任务打开时的 HEAD，即 4.5 已合并的 `notifier-plugin-plan.md` 之后）；与 4.1 `business-domain-mapping.md`、4.2 结论保持口径一致。
 >
 > 范围：**仅方案产出**。本文档回答三件事：edge 侧第三方 collector 的真实装配路径上有哪些闸门（§3）、六个内置采集器怎么在默认部署行为不变的前提下变成编译内预装插件（§5）、进程模型与资源上限怎么同时有 manifest 声明位和宿主执行点（§6）。§10 的实现切片建议**不**在本任务内合入；任何对 `core/floor/kernel/kind.go`、`core/edge/pluginhost/host.go` 主流程、`core/edge/plugins/` 结构、`core/domain/plugin.go` 的真实改动，必须另开 change 并独立评审。
