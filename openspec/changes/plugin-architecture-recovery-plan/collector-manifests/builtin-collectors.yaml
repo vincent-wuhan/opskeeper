@@ -1,0 +1,93 @@
+# pig-ops.yaml — 参考形态：OpsKeeper 为六个内置边缘采集器合成的治理 manifest。
+#
+# 这不是可分发的插件包。六个内置采集器编译在 opskeeper-edge 二进制里，
+# 磁盘上没有要加载的 pig-ops.yaml；迁移方案（collector-plugin-plan.md §5）让
+# 它们以"编译内预装插件"的身份过与第三方包同一道门，方式是
+# core/manager/biz/aiops/datasource/datasource.go 的 manifestFor() 在
+# datasource 上已经用过、notifier-plugin-plan.md §5.3 在 notifier 上建议的同一条
+# 路：包名 + 信号名分开，manifest 由宿主合成，admission 照走。
+#
+# 一包一信号，共六包（外加一个不入本次迁移的 metrics，见 §5.1 的说明）：
+#
+#   包名                                      信号名           required_scopes
+#   opskeeper-collector-hostmetrics           hostmetrics      host.read, observability.read
+#   opskeeper-collector-procmetrics           procmetrics      host.read, observability.read
+#   opskeeper-collector-logs                  logs             host.read, observability.read
+#   opskeeper-collector-traces                traces           observability.read
+#   opskeeper-collector-custommetrics         custommetrics    observability.read
+#   opskeeper-collector-databasemetrics       databasemetrics  db.read, host.read, observability.read
+#
+# 包名与信号名刻意不是同一个字符串，理由与 datasource 用 opskeeper-datasource-prom
+# 对应信号 "prom" 完全一致：回滚按包名进行，查找按信号名进行，两者合一之后
+# 第一个问题就没法措辞了。信号名必须继续等于今天 main.go 里 registered 切片的
+# 插件名，因为 edge_plugin_configs 表、manager 的 IsKnownPluginName、
+# supervisor 的注册表键和心跳里的 PluginHealth.Name 全部用它——迁移改的是
+# admission 路径，不是这条名字链。
+#
+# 六包的 safety_level / capabilities / audit / approval / install 完全相同，
+# 差异只在 required_scopes（上表）。这一"共同形状 + 一处差异"就是 §5.2
+# 默认行为不变论证的落点：迁移搬的是 admission，不搬任何一行采集实现。
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-collector-hostmetrics   # 一包一信号，见上表
+  version: 1.0.0                          # 合成值，同 datasource.go 的 manifestFor
+  vendor: opskeeper
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  targets: [edge]
+
+  # L1。一个采集器读它所在的这台节点并把结果作为遥测产出；它不改
+  # OpsKeeper 状态，也不改外部系统。safety.go 对 L1 的措辞是
+  # "read-only plus local evidence collection, no approval"，这正好是
+  # 采集器的定义本身，而不是一个借来的等级。
+  #
+  # 注意 logs 采集器是这六包里唯一需要单独说明的：spec.file_paths 允许
+  # 运维把 promtail 指向节点上的任意文件并把内容送进 Loki，这是一条
+  # operator 授权的宿主读取面，所以它的 host.read 不是装饰性的，是
+  # 真正在描述这条面。host.read 在两个部署 profile 都已授予。
+  safety_level: L1
+
+  # read，且只有 read。一个要写什么的"采集器"不是采集器，是修复动作，
+  # 应该走 tool / repair 的门。
+  capabilities: [read]
+
+  # host.read + observability.read。host.read 是"读这台节点"（/proc、
+  # journald、文件路径）；observability.read 是"作为遥测面产出"。两者的
+  # 差别在凭据形状，不在危险程度：前者拿到的是本机视角，后者拿到的是
+  # 数据面 endpoint 与其 basic-auth 凭据。
+  #
+  # databasemetrics 额外要 db.read：它读 edge 本地受管凭据文件并拨号
+  # 数据库抓取指标，这是六个里唯一一个拿到数据库连接凭据的，多问的
+  # 那个 scope 就是评审时能看见的那条面。
+  required_scopes:
+    - host.read
+    - observability.read
+
+  audit:
+    # 采集器的审计账本由宿主写：PluginHealth 上的状态迁移与重启计数经
+    # 心跳上送，配置变更经 edge_plugin_configs 的 upsert 落库。包本身
+    # emits: true 声明它有活动值得记录，mutates 必须为 false——审计账本
+    # 不可委托给插件，加载期就会拒绝。
+    emits: true
+    mutates: false
+
+  approval:
+    # required: false。这些包不声明 spec.tools，agent 工具调用的审批往返
+    # 对它们不存在；写 true 等于声明一个不存在的控制。采集器真正的授权
+    # 在宿主侧且今天就有：每边缘的启用开关是 edge_plugin_configs 的行，
+    # 其增删改经 manager HTTP API 且被审计；本方案的 §6.4 再给第三方包
+    # 加一道 admission。
+    required: false
+    # 不写 max_blast_radius。L1 是只读级别，sdk.Validate 明确拒绝
+    # "只读级别却携带 blast radius"的 manifest，写了就是加载失败。
+  install:
+    # pin。合成 manifest 不写 min_pig_version / min_edge_version，理由与
+    # notifier 的 builtin-channels.yaml 相同：包和二进制是同一次构建，
+    # 一个不会漂移的兼容下限是该字段的反面。
+    #
+    # strategy 选 pin 而不是 rolling，与采集器的语义有关：节点上的采集器
+    # 升级等价于"这台节点的遥测面换了一个版本"，灰度单位是节点而非租户，
+    # 而节点队列的 rollout 编排（core/domains/service/plugin/rollout.go）
+    # 服务的是 PiG 包。写 pin 表达的是治理意图；真正的生效点在宿主。
+    strategy: pin

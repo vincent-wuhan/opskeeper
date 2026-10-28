@@ -1,0 +1,58 @@
+# pig-ops.yaml — OpsKeeper 治理 manifest：otelcol filelog 采集器包。
+#
+# 候选 2（琥珀）。它补的是 promtail 的弱项：filelog receiver 有真正的
+# 解析器（json / regex / syslog）、多行合并（combine）、按操作符路由，
+# 以及结构化字段提升。应用日志里最有诊断价值的那部分——带 trace_id
+# 的行、被栈追踪拆散的异常——正是内置 logs 采集器（msg_type: text 的
+# promtail）送进 Loki 后没法查的那部分。
+#
+# 琥珀的原因不在 scope，在 §3.4 的闸门 C4：这是一个推（push）型采集器，
+# 要把日志推到 manager 的 /loki/api/v1/push，而
+# cmd/opskeeper/main.go 的 pluginEndpointResolver.Endpoint 只认
+# "logs" 与 "traces" 两个名字，其余一律返回空串。本包因此需要决策 D1
+# （见 collector-plugin-plan.md §8），D1 未裁决前它在真实节点上拿不到
+# 数据面 endpoint，装得上、跑不起来。
+#
+# 刻意的缓解（写进 manifest 而不是留给实现者猜）：spec 里带
+# endpoint_override 时优先于宿主解析。这是 D1 的折中形态——先把
+# endpoint 当作运维填写的部署参数，宿主解析扩展后再收回。spec 是
+# 免费格式 map，不需要任何 schema 变更就能承载它；它的代价是 endpoint
+# 出现在配置行里而不是系统设置里，D1 裁决时要把这条代价写进变更单。
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-collector-filelog
+  version: 0.1.0
+  vendor: open-telemetry
+  homepage: https://github.com/open-telemetry/opentelemetry-collector-contrib
+spec:
+  targets: [edge]
+
+  # L1。与内置 logs 采集器同级别：读本机文件、送进 Loki，两步都是读。
+  # 它比内置 logs 更需要被评审看清的一点是 file_paths 的语义相同——
+  # 运维可以把接收器指向节点上任意文件——所以 host.read 在这里同样是
+  # 真实描述，不是装饰。
+  safety_level: L1
+
+  capabilities: [read]
+
+  # host.read + observability.read，与内置 logs 采集器完全相同。这是
+  # 刻意的：一个第三方包要替换内置采集器的某条信号，它声明的授予面
+  # 不应该比被替换者更宽；更宽就必须在评审里被看见。
+  required_scopes:
+    - host.read
+    - observability.read
+
+  audit:
+    emits: true
+    mutates: false
+
+  approval:
+    required: false
+  install:
+    # pin 而不是 rolling：一个日志采集器的版本更换意味着解析规则更换，
+    # 已收日志的字段形状随之改变，查询侧（logquery 的字段投影）需要
+    # 跟着变。这种变更不该按节点波次铺开，该按运维显式决定逐台铺开。
+    strategy: pin
+    min_pig_version: 0.4.0
+    min_edge_version: 0.8.0

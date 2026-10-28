@@ -47,6 +47,7 @@
 - [ ] 4.6 为 `provider` 候选补齐模型供应商插件方案，保持凭据环境作用域和费用/速率治理。
   - 初稿：`provider-plugin-plan.md`（含 `provider-manifests/` 三份 manifest 草案，manifest 闸门已实测），待评审其中“待评审问题”后再勾选。
 - [ ] 4.7 为 `collector` 候选补齐边缘采集插件方案，保持进程模型、日志和资源上限可审查。
+  - 初稿：`collector-plugin-plan.md`（含 `collector-manifests/` 三份 manifest 草案：六内置参考 + otelcol kubeletstats + otelcol filelog），含五道现状闸门审计（C1 activator 缺失 / C2 内置不经内核 / C3 配置面闭集 / C4 endpoint 两路 / C5 资源日志零执行点）、内置迁移三切片与资源治理三条腿设计；待评审 D1（endpoint 解析）、D2（collector 分级上限）、D3（`spec.collector` schema）后再勾选。
 - [ ] 4.8 补齐 observability、readonly、middleware 插件中的业务缺口，优先旧 release 已有但新架构未恢复完整的能力。
 - [ ] 4.9 强化 repair 插件的计划预览、独立验证、回滚说明和审批证据。
 - [ ] 4.10 为每个新增插件包维护 manifest、精确版本、scope、安全级别、兼容范围、测试、签名和回滚文档。
