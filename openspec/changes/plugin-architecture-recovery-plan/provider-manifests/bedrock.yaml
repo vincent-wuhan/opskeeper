@@ -1,0 +1,58 @@
+# pig-ops.yaml —— AWS Bedrock 模型供应商包的治理 manifest 草案。
+#
+# 为什么这个包值得存在：Bedrock 是 custom 表达不了的唯一一类主流云厂商
+# 端点。custom 的前提是"端点说 OpenAI 的协议、凭据是 bearer 头"；Bedrock
+# 两者都不是——每个请求要按 SigV4 用 IAM 凭据签名，凭据三元组是
+# access_key_id/secret_access_key/region，模型名是
+# anthropic.claude-sonnet-4-5 或 us.anthropic.… 这类 inference profile。
+# core/pig/pigai 只定义了两种线型（APIOpenAICompletions 与
+# APIAnthropicMessages，见 pigai.go:116-120），所以这个包必须自带一个
+# Bedrock ConverseStream -> PiG stream 的翻译层，这正是工厂缝存在的意义：
+# 一个"说没人预料到的形状"的端点，靠加包而不是改 core/pig 进来。
+#
+# 凭据走既有环境作用域：core/domains/biz/secret 已内置 aws 凭据类型，
+# 其 InjectEnv 规则把 access_key_id/secret_access_key/region 注入为
+# AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_DEFAULT_REGION。
+# 本包在同一接缝上读取（由宿主解析、随调用注入，不落盘、不进 manifest），
+# 不新增凭据类型、不新增凭据存储。
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-provider-bedrock
+  version: 0.1.0
+  vendor: aws
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  # 只在控制面。SigV4 签名要用长期 IAM 凭据，落到节点上等于把能签
+  # 任意 AWS 请求的材料放进每个节点——llmgw"密钥不去节点"的设计正是
+  # 为了不让这件事发生。
+  targets: [manager]
+
+  # L2 + [write]，与七个内置 provider 同档，逐句论证见
+  # builtin-providers.yaml。Bedrock 有真实单价，费用治理对本包是硬约束
+  # 而非可选项；比内置 provider 更硬的一点是：Bedrock 的计量单位是
+  # input/output token 双轴，宿主的账本必须两轴都记（见 §6.4）。
+  safety_level: L2
+  capabilities: [write]
+
+  # 空集。理由见 builtin-providers.yaml；这里要特别防住一个诱人的错法：
+  # 把 k8s.read 或 db.read 写进来"因为 Bedrock 跑在云上"。scope 描述的是
+  # OpsKeeper 域内凭据的授权，本包一个都不需要。
+  required_scopes: []
+
+  audit:
+    emits: false
+    mutates: false
+
+  approval:
+    required: false
+    # 不写 max_blast_radius：费用上限是另一个量纲，由宿主的预算执行，
+    # 见 builtin-providers.yaml 同一条注释。
+
+  install:
+    strategy: pin
+    # 承重字段：包自带 ConverseStream -> PiG stream 的翻译层，编译在
+    # PiG v0.4.0 的 ai 类型上；PiG 若将来提供原生的 APIBedrockConverse，
+    # 包在版本号里换实现，不动这个下限。
+    min_pig_version: 0.4.0
+    min_edge_version: 0.8.0
