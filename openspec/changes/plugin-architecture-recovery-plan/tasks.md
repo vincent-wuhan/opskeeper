@@ -37,22 +37,26 @@
 
 ## 4. P1 插件能力恢复
 
-- [ ] 4.1 建立旧 release 业务板块到六个扩展点的映射表：工作台、观测、事件、修复、审批、知识、协同、企业集成。
-  - 初稿：`business-domain-mapping.md`（基线 `release-v2026.09.20-patch.2` 对比 `main@86dff884`），待评审其中“待评审问题”后再勾选。
-- [ ] 4.2 盘点当前编译内能力，标记保留在 core、迁移为插件、暂缓迁移和淘汰四类。
-- [ ] 4.3 为第一批 `datasource` 候选制定插件包方案，优先 VictoriaMetrics、Elasticsearch 或 OpenSearch。
-- [ ] 4.4 为第一批 `adapter` 候选制定插件包方案，优先 Kubernetes、云资源、ITSM、CMDB 或 Git。
-- [ ] 4.5 为 `notifier` 候选补齐插件化方案，覆盖飞书、钉钉、Slack、PagerDuty 或 Webhook 的差异化能力。
-  - 初稿：`notifier-plugin-plan.md`（含 `notifier-manifests/` 六份 manifest 草案），待评审其中“开放问题”后再勾选。
-- [ ] 4.6 为 `provider` 候选补齐模型供应商插件方案，保持凭据环境作用域和费用/速率治理。
-  - 初稿：`provider-plugin-plan.md`（含 `provider-manifests/` 三份 manifest 草案，manifest 闸门已实测），待评审其中“待评审问题”后再勾选。
-- [ ] 4.7 为 `collector` 候选补齐边缘采集插件方案，保持进程模型、日志和资源上限可审查。
-  - 初稿：`collector-plugin-plan.md`（含 `collector-manifests/` 三份 manifest 草案：六内置参考 + otelcol kubeletstats + otelcol filelog），含五道现状闸门审计（C1 activator 缺失 / C2 内置不经内核 / C3 配置面闭集 / C4 endpoint 两路 / C5 资源日志零执行点）、内置迁移三切片与资源治理三条腿设计；待评审 D1（endpoint 解析）、D2（collector 分级上限）、D3（`spec.collector` schema）后再勾选。
-- [ ] 4.8 补齐 observability、readonly、middleware 插件中的业务缺口，优先旧 release 已有但新架构未恢复完整的能力。
-  - 初稿：`plugin-gap-plan.md`（基线 `main@07499880` 对比 `release-v2026.09.20-patch.2`，盘点口径按节点插件面 / manager 编译内面 / 节点上呼面三列展开，旧 102+ 工具逐项判定无未解释遗漏），含盘点新发现缺口 G0（6 个已上 manifest 未上呼 dispatch + 6 个反向不对称，决策 350 同类）与五项补齐方案（`query_knowledge` → observability 新增 `knowledge.read`、`query_incidents`/`get_incident_detail`/`query_devices` → readonly、`get_host_processes` → observability）、三项 ADR 决策对比、不补清单及反悔条件；待评审 D-1（知识包归属）、D-2（G0 桥修法）、D-3（事件读归属）后再勾选。
+- [x] 4.1 建立旧 release 业务板块到六个扩展点的映射表：工作台、观测、事件、修复、审批、知识、协同（含智能体协同与团队协同）、企业集成、资产与拓扑（第九板块）。
+  - 产出：`business-domain-mapping.md`（基线 `release-v2026.09.20-patch.2` 对比 `main@86dff884`）；五个待评审问题已于 2026-10-19 评审并落结论（该文档 §7）。
+- [x] 4.2 盘点当前编译内能力，标记保留在 core、迁移为插件、暂缓迁移和淘汰四类。
+  - 产出：`capability-classification.md`（2026-10-19 用户确认接受四分类；demo 淘汰待线上确认无依赖后移除）。
+- [x] 4.3 为第一批 `datasource` 候选制定插件包方案，优先 VictoriaMetrics、Elasticsearch 或 OpenSearch。
+  - 产出：`datasource-plugin-plan.md` + `datasource-manifests/{victoriametrics,elasticsearch,opensearch}.yaml`（PR #102，2026-10-21 合并，`9f8bc820`）。经评审修订：信号复用 + 配置期单激活（ErrDuplicate fail-closed）、required_scopes 收敛到 observability.read、版本 0.1.0。实现切片仅建议，落地需另开 change。
+- [x] 4.4 为第一批 `adapter` 候选制定插件包方案，优先 Kubernetes、云资源、ITSM、CMDB 或 Git。
+  - 产出：`adapter-plugin-plan.md` + `adapter-manifests/{karmada,alicloud,cmdb}.yaml`（PR #103，2026-10-23 合并）。关键发现：G1 读回缺口（`Sources()` 只遍历一方，注释与实现不符）。评审裁决：D1/D2 均同意（topology.read 授予、新增 cloud.read），三候选全绿；Git/ITSM 合理排除。实现切片（S0 前置宿主切片）另开 change。
+- [x] 4.5 为 `notifier` 候选补齐插件化方案，覆盖飞书、钉钉、Slack、PagerDuty 或 Webhook 的差异化能力。
+  - 产出：`notifier-plugin-plan.md` + `notifier-manifests/`（6 份草案）（PR #104，2026-10-23 合并）。关键结论：通知渠道定 L3/destructive（外部副作用）；评审裁决 Q1 接受 WithKindCeiling（S-1 独立 change）、Q2–Q6 按草案。缺口 G-1（2xx 即成功）存量修复随 S-4 同批。B1–B3 迁移切片与候选包另开 change。
+- [x] 4.6 为 `provider` 候选补齐模型供应商插件方案，保持凭据环境作用域和费用/速率治理。
+  - 产出：`provider-plugin-plan.md` + `provider-manifests/`（PR #108，2026-10-28 合并）。关键结论：零内核改动、L2+[write] 定级、七内置 id 保留名防凭据让渡、治理收口 Registry 单缝（一个账本一个写者）。§11 三项（llm.call scope、嵌入模型、spec.limits）为独立 change。
+- [x] 4.7 为 `collector` 候选补齐边缘采集插件方案，保持进程模型、日志和资源上限可审查。
+  - 产出：`collector-plugin-plan.md` + `collector-manifests/`（PR #109，2026-10-28 合并）。关键发现：五道闸门（C1 零 RegisterActivator / C3 配置面双侧闭集 / C5 子进程继承凭据环境）。评审裁决：D1-a 三层 endpoint 解析、D2 用 WithKindCeiling 收窄 KindCollector 到 L1、D3（spec.collector schema）推迟为独立 change。
+- [x] 4.8 补齐 observability、readonly、middleware 插件中的业务缺口，优先旧 release 已有但新架构未恢复完整的能力。
+  - 产出：`plugin-gap-plan.md`（PR #110，2026-10-30 合并）。关键发现：G0 上呼双向对账缺口（6 已声明未服务 + 6 已服务未声明）。评审裁决：D-1 query_knowledge 归 observability + 新增 knowledge.read、D-2 BaseTool 桥、D-3 事件读归 readonly；五项补齐 + 不补清单（含反悔条件）。实施切片 S-1~S-3 另开 change。本提交同时把 4.3–4.7 的勾选状态（此前仅在会话分支）同步到 main。
 - [ ] 4.9 强化 repair 插件的计划预览、独立验证、回滚说明和审批证据。
 - [ ] 4.10 为每个新增插件包维护 manifest、精确版本、scope、安全级别、兼容范围、测试、签名和回滚文档。
 - [ ] 4.11 运行插件构建、测试、准入、签名、灰度和回滚闸门。
+- [ ] 4.12 为告警规则 / 草稿 / 降噪制定插件化方案（extension tool + command），承接 4.1 映射表板块⑤的缺口，由 4.2 盘点后细化。
 
 ## 5. P1/P2 企业流程与协同
 

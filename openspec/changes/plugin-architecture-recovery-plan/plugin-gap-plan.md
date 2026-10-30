@@ -2,6 +2,8 @@
 
 > 状态：**方案 v0.1（待评审）**。对应 `tasks.md` 4.8；评审通过前不勾选 4.8（与 4.1 / 4.3–4.7 的处理一致）。
 >
+> **评审裁决（2026-10-30，用户确认）**：D-1、D-2、D-3 三项均按方案推荐采纳——query_knowledge 归 observability 包并新增 `knowledge.read` scope（finance/SaaS 两 profile 同步授予）；G0 以上呼通道 BaseTool 桥修复（一实现两面）；事件读（query_incidents/get_incident_detail）归 readonly 包。实施切片 S-1（G0 桥先行）→ S-2/S-3 并行，均另开 change。
+>
 > 基线：`main@07499880`（PR #109 之后）；旧 release `release-v2026.09.20-patch.2`（commit `8774f7b3`）。
 >
 > 范围：**仅盘点与方案产出**。本文档回答"旧 release 的运维工具现在恢复到什么程度、哪些该补、补到哪个包、怎么测、怎么回滚"，并给出实现切片建议（不在本任务内合入）。任何对 `plugins/pig-ops/`、`core/manager/biz/aiops/tools/`、`core/floor/pluginmanifest/` 的真实改动必须另开 change 并独立评审。
