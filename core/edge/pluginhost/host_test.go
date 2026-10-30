@@ -210,3 +210,58 @@ func TestDefaultPolicyComesFromTheProfile(t *testing.T) {
 			pol.MaxBlastRadius, profile.Policy().MaxBlastRadius)
 	}
 }
+
+// TestEdgePolicyIsUnaffectedByPerKindCeilings 钉住 S-1 的第一条验收：
+// 既有 Policy() 构造点的源码零改动、行为逐位不变。
+//
+// 节点侧的 PolicyFrom 从部署 profile 渲染策略，它不带 per-kind 条目，
+// 于是每个 kind 的生效 ceiling 仍是 profile 给的全局 ceiling。
+func TestEdgePolicyIsUnaffectedByPerKindCeilings(t *testing.T) {
+	profile, err := pluginmanifest.ProfileForName(string(DefaultProfile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pol := PolicyFrom(profile)
+	if len(pol.KindCeilings) != 0 {
+		t.Fatalf("PolicyFrom() carries %d per-kind ceilings; want 0 (this construction point must stay unchanged)", len(pol.KindCeilings))
+	}
+	for _, k := range kernel.Kinds() {
+		if got := pol.EffectiveSafetyCeiling(k); got != pol.MaxSafetyLevel {
+			t.Fatalf("EffectiveSafetyCeiling(%q) = %s; want %s (no entry ⇒ the global ceiling)",
+				k, got, pol.MaxSafetyLevel)
+		}
+	}
+	if got := pol.WidestSafetyCeiling(); got != pol.MaxSafetyLevel {
+		t.Fatalf("WidestSafetyCeiling() = %s; want %s", got, pol.MaxSafetyLevel)
+	}
+
+	// 准入判定也不变：与 profile ceiling 同级的包过，比它高的包被拒。
+	host := kernel.NewHost(kernel.NewRegistry(), pol, nil)
+	atCeiling := edgePluginManifest("at-ceiling", pol.MaxSafetyLevel, pol.GrantedScopes)
+	if err := host.Admit(atCeiling); err != nil {
+		t.Fatalf("a package at the profile ceiling must be admitted: %v", err)
+	}
+	if pol.MaxSafetyLevel.Rank() < domain.SafetyL3.Rank() {
+		above := edgePluginManifest("above", domain.SafetyL3, pol.GrantedScopes)
+		if err := host.Admit(above); err == nil {
+			t.Fatal("a package above the profile ceiling must be refused")
+		}
+	}
+}
+
+// edgePluginManifest 造一份与节点侧 profile 准入对得上的最小 manifest。
+func edgePluginManifest(name string, level domain.SafetyLevel, scopes domain.Scopes) pluginmanifest.Plugin {
+	return pluginmanifest.Plugin{
+		Manifest: domain.PluginManifest{
+			APIVersion: domain.PluginAPIVersion,
+			Kind:       domain.PluginKind,
+			Metadata:   domain.PluginMeta{Name: name, Version: "1.0.0"},
+			Spec: domain.PluginSpec{
+				Targets:        domain.Targets{domain.TargetEdge},
+				SafetyLevel:    level,
+				Capabilities:   []domain.ToolClass{domain.ClassRead},
+				RequiredScopes: scopes,
+			},
+		},
+	}
+}

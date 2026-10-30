@@ -1,0 +1,99 @@
+# pig-ops.yaml —— 参考清单：OpsKeeper 为七个编译内模型供应商合成的治理 manifest。
+#
+# 本文件不是可分发的插件包。七个内置 provider 编译在 manager 二进制里，
+# 磁盘上没有可供加载的 pig-ops.yaml；它们与第三方包走同一道准入闸门，
+# manifest 由装配层的 manifestFor() 函数合成，做法与
+# core/manager/biz/aiops/datasource/datasource.go 为一方 Prometheus/Loki/Tempo
+# 合成 manifest、以及 notifier 方案为六条内置渠道合成 manifest 完全一致。
+# 把合成的 YAML 形态放在候选包旁边，是为了评审能在同一个 diff 里对照两份。
+#
+# 一个 provider id 一个包，共七个：
+#   opskeeper-provider-anthropic  -> provider id "anthropic"
+#   opskeeper-provider-custom     -> provider id "custom"
+#   opskeeper-provider-deepseek   -> provider id "deepseek"
+#   opskeeper-provider-gemini     -> provider id "gemini"
+#   opskeeper-provider-kimi       -> provider id "kimi"
+#   opskeeper-provider-openai     -> provider id "openai"
+#   opskeeper-provider-zhipu      -> provider id "zhipu"
+#
+# 包名与 provider id 故意不同字符串，理由与 datasource 用
+# opskeeper-datasource-prom 对应信号 "prom" 相同：回滚以包名为键，解析以
+# provider id 为键，两个键写成一个字符串会让"回滚 openai"这句话没法说。
+#
+# 七份 manifest 除了 name 之外逐字段相同。openai/zhipu/deepseek/kimi/custom
+# 五个 id 共享同一个 OpenAI 兼容工厂（core/pig/pigmodel/providers.go 的
+# 注释写明了理由：它们的差别在端点接受什么，由 ai.DetectCompat 按 id 与
+# base URL 推导，不在 provider 怎么构造），anthropic 与 gemini 各有一个
+# 原生工厂。迁移只搬工厂，不改本页任何字段。
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-provider-openai        # 七个 id 各一份，见上
+  version: 1.0.0                         # 合成 manifest，随二进制构建
+  vendor: opskeeper
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  # provider 只在控制面存在。这不是部署偏好而是安全边界：节点不持有任何
+  # provider 凭据（core/domains/server/llmgw 的整篇设计就建立在"要么密钥
+  # 去节点、要么请求来控制面，选后者"上），一个 targets 含 edge 的 provider
+  # 包等于要求把运维的模型密钥放到节点上。
+  targets: [manager]
+
+  # L2，按 core/domain/safety.go 的原文逐句对出来的结论，不是抄 4.3 的
+  # L1。L1 是"只读加本地取证"，而 ClassRead 自己的定义是"pure observation,
+  # touches no external system"——一次补全把转录发给了第三方并产生了一条
+  # 计费用量记录，既不"纯"也不"无外部系统"。L3 是"mutates external
+  # systems"，被操作的对象（推理服务）没有被改写，ClassDestructive 的例句
+  # 是"重启服务、kubectl apply、一条 SQL"，没有一句是"调用一次 API"。
+  # 一次成功的补全确实改变了 OpsKeeper 管理的状态：集群当日 token 账本
+  # （llm.InMemoryBudget.Record）、节点级账本（llmgw.AttributedBudget）、
+  # 用量序列（prom.ObserveLLMCall）。这正是本任务"费用治理"要管的那个
+  # 状态，L2 = "mutates OpsKeeper state" 是词表里唯一能对上的那一档。
+  safety_level: L2
+
+  # write，与 L2 的上限恰好相等（safety.go：L2 的 MinimumClass 是
+  # ClassWrite）。写进 OpsKeeper 状态的是账本与用量，而账本由宿主从自己的
+  # 调用结果派生，包既不能伪造也不能抑制。
+  capabilities: [write]
+
+  # 空集，且空集是判定而非省略。core/domain/plugin.go 的 scope 常量集里
+  # 没有任何一项描述"以运维的模型凭据发起一次补全"：observability.read 是
+  # 读指标库，alert.read 是读告警，db.read 是读数据库，抄任何一个都是
+  # scope 膨胀。provider 的凭据不走 scope 注入——它由宿主在每次调用时从
+  # 设置表/环境解析（Registry 的 getKey 闭包与 StreamOptions.APIKey），
+  # 包拿不到也存不下。见 provider-plugin-plan.md §12 的新增 scope 建议。
+  required_scopes: []
+
+  audit:
+    # emits 是 false，因为包没有什么可上报的：它贡献的是一个工厂函数，
+    # 不产生工具调用。每次补全的用量记录来自宿主自己的观测缝
+    # （pigmodel.Registry.WithCallObserver → prom.ObserveLLMCall），与
+    # notification_deliveries 由宿主写是同一条纪律——账本条目由宿主从自己
+    # 的调用派生，包不能伪造也不能抑制。mutates 保持 false：审计账本只
+    # 能宿主写，manifest 请求它会在加载时被拒。
+    emits: false
+    mutates: false
+
+  approval:
+    # false，理由与 notifier 方案 §4.3 相同但要再往深一层：
+    # ApprovalPolicy.required 门的是 agent 工具调用往返，本包不声明
+    # spec.tools，那条路径对它不存在，写 true 是声明一个不存在的控制。
+    # 真正生效的授权在宿主侧，而且今天就有三层：设置页的 provider 行是
+    # admin-only（core/domains/server/setting/http.go 的 requireAdmin），
+    # 每次写入都进审计且敏感值只留摘要与长度（value_digest）；没有设置行
+    # 的 provider 解析到 ErrNotConfigured，不会被调用；每次调用的上限由
+    # 宿主的预算/速率闸门执行（provider-plugin-plan.md §6）。
+    required: false
+    # 不写 max_blast_radius。词表的半径是 k8s 语汇（pod/namespace/cluster），
+    # 一次补全的花销没有对应的半径维度；费用上限是另一个量纲，由宿主的
+    # token/金额预算执行，把它塞进半径字段会让两个字段都说不清楚。
+    # （一个只读包带半径会在加载时被拒；L2 允许带，但这里没有可声明的东西。）
+
+  install:
+    # pin。换 provider 不是可以按 1/10 灰度的事：两个批次回答同一个问题的
+    # 模型不同，诊断结论就会不可比。pin 也让升级成为显式、排期的动作。
+    strategy: pin
+    # 合成 manifest 不写 min_pig_version / min_edge_version：包与二进制同
+    # 构建，下限是一个不会漂移的数字，与该字段的用途相反。第三方包要写，
+    # 因为那里包与二进制是两份工件——尤其 provider：工厂的签名编译在
+    # github.com/MichaelKinsy/PiG/ai 上，min_pig_version 对它是承重字段。

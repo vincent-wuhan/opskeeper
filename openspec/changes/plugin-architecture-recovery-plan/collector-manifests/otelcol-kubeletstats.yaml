@@ -1,0 +1,61 @@
+# pig-ops.yaml — OpsKeeper 治理 manifest：otelcol kubeletstats 采集器包。
+#
+# 候选 1（绿）。它回答一个当前六采集器都没有答案的问题：这台节点上
+# 每个容器 / 每个 pod 此刻在消耗什么。hostmetrics 给的是 node_* 的
+# 整机视角（node_exporter），procmetrics 给的是按 comm 分组的进程视角
+# （process-exporter），没有任何一条路径给出 per-pod / per-container 的
+# CPU、内存、网络、卷指标——而"这个节点上哪个 pod 把 CPU 吃完了"是
+# 落到具体节点上诊断时的第一问。
+#
+# 实现面复用节点已带的 otelcol-contrib 二进制（traces 采集器用的就是
+# 它），只换 receiver：kubeletstats receiver 读 kubelet 的
+# /stats/summary，Prometheus exporter 把结果暴露在本机一个只监听
+# 127.0.0.1 的端口，由 manager 侧 Prometheus 沿用 hostmetrics 的抓取
+# 路径来抓。这个"拉"的形状是刻意的：它不需要 manager 下发数据面
+# endpoint，因此不落进 §3.4 那道闸门（C4），也不需要任何新的凭据
+# 注入通道。
+#
+# 凭据形状：kubelet read（read-only 端口或带 nodes/stats 权限的
+# service account token）。这就是 k8s.read 在这台节点上的含义——与
+# 一方 k8s 适配器的 kubeconfig 是同一族凭据，但作用域更窄。若某部署
+# 希望两者分开，正确做法是拆一个独立 scope，而不是让本包借用
+# host.read；这与 adapter 方案 §6.3 对 topology.read/cmdb.read 的
+# 处理同一条纪律。
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-collector-otelcol-kubeletstats
+  version: 0.1.0
+  vendor: open-telemetry
+  homepage: https://github.com/open-telemetry/opentelemetry-collector-contrib
+spec:
+  targets: [edge]
+
+  # L1。只读：读 kubelet 统计端点，暴露成本机指标端口，不写任何
+  # OpsKeeper 状态，不写任何外部系统。提升到 L2/L3 没有任何理由，
+  # 而低报在 safety.go 的语义下没有任何好处——未识别等级按 L3 排名。
+  safety_level: L1
+
+  capabilities: [read]
+
+  # k8s.read + observability.read，两个都在两个部署 profile 的授予集内
+  # （finance 与 saas 都授予），因此本候选在 §7.1 的实测里对两个 profile
+  # 都是绿。不再多要一个：topology.read / alert.read 对一个只读 kubelet
+  # 统计采集器是 scope 膨胀。
+  required_scopes:
+    - k8s.read
+    - observability.read
+
+  audit:
+    emits: true
+    mutates: false
+
+  approval:
+    required: false
+    # 不写 max_blast_radius：L1 只读级别携带半径会被 sdk.Validate 拒绝。
+  install:
+    # rolling。采集器的新增是"多了一个只读面"，出问题时丢的是新增
+    # 序列而不是既有序列；节点队列的灰度波次可以承担真实检查。
+    strategy: rolling
+    min_pig_version: 0.4.0
+    min_edge_version: 0.8.0

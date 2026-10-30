@@ -1,0 +1,60 @@
+# pig-ops.yaml —— Ollama 自托管模型供应商包的治理 manifest 草案。
+#
+# 为什么这个包值得存在：core/domain/provider.go 的注释已经把 Ollama 列为
+# custom（通用 OpenAI 兼容端点）"应该覆盖"的对象之一，而
+# core/domains/biz/setting/llm.go 的 ResolveProviders 在读到 base_url 之前
+# 就因 api_key 为空跳过了该 provider——Ollama 恰恰是没有密钥的那一类。
+# 也就是说：一个本地 Ollama 在今天的 OpsKeeper 里**配不进来**，
+# llm.ProviderConfig.Configured 明明允许"只有 base_url"（注释还专门解释了
+# 为什么允许：网络层鉴权的 vLLM 或企业网关是合法部署，拒绝它会把运维
+# 逼着去贴一个假密钥），读取层却先把它丢了。这个包因此不是"多一种选择"，
+# 而是把域类型早已承诺的那条路真正走通。
+#
+# 差异化能力（相对 custom）：
+#   - 默认端点 http://127.0.0.1:11434/v1 固化在 descriptor 里，运维不填
+#     base_url 也能用；custom 必须填，因为它没有默认端点；
+#   - 设置卡片不问密钥（requires_api_key=false），不再逼运维贴假密钥；
+#   - 模型清单可从 /api/tags 发现，而不是手写一行 JSON；
+#   - 出口只有回环/内网地址，是所有 provider 里数据外发面最小的一类。
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-provider-ollama
+  version: 0.1.0
+  vendor: ollama
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  # 只在控制面。节点不持有 provider 凭据；本地 Ollama 也一样，请求由
+  # 控制面发出（见 builtin-providers.yaml 同一条注释）。
+  targets: [manager]
+
+  # L2 + [write]，与七个内置 provider 同档，理由见
+  # builtin-providers.yaml 的逐句论证。特别要写明的一点：**自托管不等于
+  # 免费**。零边际 token 费用换来的是 CPU/内存与并发槽位，一次失控的
+  # agent 循环照样能占住本地推理队列并拖垮同一台机器上的其他负载，
+  # 所以预算/速率/并发/超时四道闸门对本包同样生效，不因"不花钱"豁免。
+  safety_level: L2
+  capabilities: [write]
+
+  # 空集。Ollama 甚至没有密钥可申请；它需要的只有 descriptor 里那个
+  # 默认端点，而端点是运维配置，不是 scope。见 provider-plugin-plan.md §12。
+  required_scopes: []
+
+  audit:
+    emits: false
+    mutates: false
+
+  approval:
+    # false：本包不声明 spec.tools，被该字段门住的路径不存在。生效的授权
+    # 是设置页 admin-only 的行写入 + 宿主的预算/速率闸门。
+    required: false
+
+  install:
+    strategy: pin
+    # 对 provider 包，min_pig_version 是承重字段：工厂的签名
+    # (cfg, providerID, getKey) -> ai.Provider 编译在 PiG v0.4.0 的 ai 包上。
+    min_pig_version: 0.4.0
+    # 本包 targets 只有 manager，永远不会落到节点上；写下限是为了目录里
+    # 所有 provider manifest 形状一致，将来若出现"all fields required"的
+    # 检查不必为 manager 包开特例（与 notifier 方案 §4.6 的处理一致）。
+    min_edge_version: 0.8.0

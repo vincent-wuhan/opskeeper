@@ -1,0 +1,112 @@
+# pig-ops.yaml — OpsKeeper governance manifest for the Karmada adapter package.
+#
+# This is the first third-party `adapter` package. The kernel's adapter
+# extension point (`core/floor/kernel/kind.go`, `KindAdapter`) already hosts
+# eight first-party families, and this package exists to prove the third-party
+# shape rather than to replace any of them: it contributes one
+# `KindAdapter` entry named `karmada`, whose contribution answers
+# Diagnose / Collect / Execute and whose tools live under the `karmada.`
+# namespace.
+#
+# Why a federation and not another Kubernetes. The first-party `k8s` family
+# is bound to a single cluster (kubeconfig / in-cluster / endpoint), and its
+# thirteen tools are all single-cluster questions: which pods, which nodes,
+# which PVCs. Karmada puts several member clusters behind one control plane
+# and adds exactly the objects that answer "where did this change actually
+# land" — Cluster, Work, PropagationPolicy — and no first-party tool answers
+# that. So this package sits beside `k8s`, not in front of it: both are
+# active at once, because a federated view and a single-cluster view are
+# different questions rather than competing implementations of one.
+#
+# The family name is deliberately NOT `k8s`. A duplicate (kind, name) is
+# refused by the registry (ErrDuplicate), and a shared tool prefix would make
+# it impossible to tell whose implementation is behind a `k8s.*` call. The
+# prefix also has to be checked for prefix-containment rather than equality:
+# `karmada` and `k8s` are distinct and neither contains the other.
+#
+# Scope: read-only across a Karmada control plane. v1 performs no mutation
+# of the federation — unbinding a member cluster or deleting a propagation
+# policy would be an L2 operation and is not here.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-adapter-karmada
+  version: 0.1.0
+  vendor: karmada
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  targets: [manager]
+
+  # L1. Every tool below is a read, and the package ships no Execute path:
+  # `karmada.cluster_unbind` and `karmada.propagation_delete` are explicitly
+  # out of scope for v1. The level is a statement about what ships, not an
+  # aspiration — adding a write means a manifest diff (L2, capabilities
+  # [read, write], approval.required, max_blast_radius) that a reviewer has
+  # to read, and `sdk.validateTools` refuses any tool class above
+  # `spec.capabilities`, so a write cannot slip in under an L1 manifest.
+  safety_level: L1
+
+  # read, and only read. Widening this list requires a version bump whose
+  # diff is exactly the widening.
+  capabilities: [read]
+
+  # The tool inventory, and the host's allow-list: a tool the runtime
+  # produces that is not named here is refused. Every name below is a thing
+  # somebody agreed this package may read.
+  #
+  # These five must also appear in `plugins/pig-ops/opskeeper-sre-middleware/
+  # pig-ops.yaml`, or be excluded through `toolset.NotPackagedFamilies` /
+  # `NotPackaged` with a stated reason — `TestTheMiddlewareProfilesDeclared
+  # ToolsAreExactlyWhatItShipsToTheModel` and `TestToolsetMatchesTheAdapters`
+  # fail otherwise. A new family showing up as a diff in a reviewed file is
+  # the intended outcome, not a blocker to work around.
+  tools:
+    - { name: karmada.cluster_list,       class: read }
+    - { name: karmada.cluster_status,     class: read }
+    - { name: karmada.propagation_status, class: read }
+    - { name: karmada.resource_placement, class: read }
+    - { name: karmada.work_list,          class: read }
+
+  # The host injects credentials for exactly these scopes. A scope not
+  # listed here is never handed to the package, so it cannot reach a
+  # credential it did not ask for — and asking is the reviewable act.
+  #
+  # Verified against the adapter host policy
+  # (`toolset.adapterPolicy()`, core/manager/middleware/toolset/sources_plugin.go:43-48):
+  #
+  #   required_scopes = [k8s.read]
+  #   granted        = [db.read, db.write, k8s.read, k8s.exec,
+  #                     mq.read, mq.write, host.read, host.write]
+  #   k8s.read ∈ granted  →  Satisfies() == true  →  Admit passes
+  #
+  # This is the only one of the three first-batch candidates that is green
+  # without a host policy change, which is why it is the one to land first.
+  required_scopes:
+    - k8s.read
+
+  audit:
+    # The package reports tool activity; the host derives each ledger entry
+    # from its own gate events, so a package can neither forge nor suppress
+    # a record. `mutates` is always false — audit-ledger writes are
+    # host-only, and a manifest asking for them is refused at load.
+    emits: true
+    mutates: false
+
+  approval:
+    # Read-only packages never enter the approval queue, and there is no
+    # blast radius here. Declaring one on a package that cannot mutate is a
+    # load error (`sdk.Validate`), not a warning, so this field stays absent.
+    required: false
+
+  install:
+    # rolling. Everything here is a read against an already-deployed
+    # federation, so a version change adds tools rather than actions and the
+    # canary wave is a real check rather than a formality.
+    strategy: rolling
+    # pig 下限此前不存在；本仓固定 PiG v0.4.0（决策 455）。
+    min_pig_version: 0.4.0
+    min_edge_version: 0.8.0
+
+  # No autonomy block. The empty block is the strongest statement available
+  # here: this package behaves identically whether or not the control plane
+  # is reachable.

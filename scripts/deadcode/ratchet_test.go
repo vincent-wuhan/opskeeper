@@ -329,15 +329,24 @@ import (
 // fake-PiG 夹具。`ProcessDriver` 构造和工件摘要入口仍只有测试调用；
 // runtime API 与治理网关接线完成前，这仍是暂时读数。生命周期行为
 // 已由 fake-PiG 集成测试约束，后续接线必须删除这批豁免。
+// 912 → 914 / 601 / 313：notifier 内核首切片（S-1 + S-4）的三个新符号，全部
+// 落在 test-only 这一类，dead 一格不动。`Policy.WithKindCeiling` 与
+// `Policy.WithWiderKindCeiling` 是 S-1 新增的两个方向相反的写入入口，唯一
+// 能成为它们调用方的 `NotifierPolicy()` 明确不在本 change 内（design.md §6.3），
+// 所以当前生产调用图到达不了它们；它们的语义由 `policy_test.go` 的三条不变式
+// （条目生效 / 无条目回落全局 / 写入方向可测）钉住。`FakeSlack.SetReply` 是
+// e2e 夹具的增量响应开关，住在非测试文件里是因为外部 e2e 包必须能导入它——与
+// 决策 445 记录的 `UsingRealLLM` 同类。接线落地后应优先删除这批豁免。
+//
 // 883 → 907 / 600 / 307：本增量来自运行时管理 §2.1 首切片。该切片刻意先交付
 // 持久化领域模型与 API 契约；仓储、runtime API 与 worker 接线将在后续切片落地，
 // 因此当前生产调用图无法到达这批符号。相关行为均由领域测试覆盖，形成
 // test-only 增量；`+1` dead 是新域暴露给后续调用方的哨兵错误。后续接线完成后，
 // 删除通道应优先把这些符号转入真实生产调用边。
 const (
-	unreachableBudget    = 912
+	unreachableBudget    = 914
 	deadSymbolBudget     = 601
-	testOnlySymbolBudget = 311
+	testOnlySymbolBudget = 313
 )
 
 // TestTheUnreachableSymbolCountNeverGrows is the gate decision 199 declined to

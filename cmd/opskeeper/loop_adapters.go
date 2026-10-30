@@ -70,8 +70,21 @@ func riskLevelToToolClass(risk string) (domain.ToolClass, bool) {
 // observable state as before any adapter existed: an empty registry and an
 // invoker that refuses with a reason instead of advancing the run.
 func wireLoopRemediationAdapters(ctx context.Context, log *slog.Logger, reg *middlewareregistry.Registry) []func() {
+	return wireSources(ctx, log, reg, toolset.Sources())
+}
+
+// wireSources is the boot loop over a family list, with the list as a
+// parameter.
+//
+// It is the same loop wireLoopRemediationAdapters runs, with one thing
+// parameterised: which families to wire. That is what lets the wiring of a
+// contributed family be tested without a real backend — a test hands in a
+// family whose Wire counts its calls — and it is why the production call site
+// has no branch of its own: a family that reaches this loop has already been
+// through the kernel gate that produced the list.
+func wireSources(ctx context.Context, log *slog.Logger, reg *middlewareregistry.Registry, srcs []toolset.Source) []func() {
 	var closers []func()
-	for _, src := range toolset.Sources() {
+	for _, src := range srcs {
 		dsn := strings.TrimSpace(os.Getenv(src.Env))
 		if dsn == "" {
 			continue

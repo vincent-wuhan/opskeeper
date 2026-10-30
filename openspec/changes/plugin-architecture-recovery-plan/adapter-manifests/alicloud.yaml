@@ -1,0 +1,101 @@
+# pig-ops.yaml — OpsKeeper governance manifest for the Alibaba Cloud ECS
+# adapter package (v0.1.0, read-only).
+#
+# STATUS: this draft does NOT pass admission today, and that is deliberate.
+# See `required_scopes` below and decision D2 in adapter-plugin-plan.md §5.4.
+# Shipping it as if it were admissible would hide the one thing a reviewer
+# most needs to see.
+#
+# Why cloud inventory is an adapter at all. 4.1 §③ puts "云资源同步" on the
+# adapter extension point: the first operational question in an incident is
+# frequently "which host is this on, and has it changed recently". The
+# first-party `host` family answers a different question — it describes the
+# machine the platform itself is pointed at — and no first-party source
+# enumerates cloud assets at all.
+#
+# The credential type already exists (`alicloud` in
+# core/domains/biz/secret/credtype.go:98), so this package adds no new
+# credential plumbing; it adds a reader for an OpenAPI that OpsKeeper has
+# never spoken to.
+#
+# v1 is read-only. Cloud has perfectly good write operations — reboot an
+# instance, attach a disk, release a snapshot — and they are planned, not
+# forgotten: see the v0.1.0 → v0.2.0 table in adapter-plugin-plan.md §5.5.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-adapter-alicloud
+  version: 0.1.0
+  vendor: alicloud
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  targets: [manager]
+
+  # L1 for v0.1.0 — and the reason is a scope decision, not an absence of
+  # write capability. Cloud has write operations; they are deferred to
+  # v0.2.0 precisely so that the first version of this package cannot cause
+  # an outage in an account it has never been shown around.
+  #
+  # The v0.2.0 shape is: L2 / capabilities [read, write] /
+  # approval.required true / max_blast_radius pod / required_scopes
+  # [cloud.read, cloud.write]. `pod` is the right radius for rebooting one
+  # instance, and the adapter host ceiling (L2, single-ns) already contains
+  # it, so granting the write needs no ceiling change — only the scopes in
+  # D2.
+  safety_level: L1
+
+  capabilities: [read]
+
+  tools:
+    - { name: alicloud.instance_list,     class: read }
+    - { name: alicloud.instance_describe, class: read }
+    - { name: alicloud.snapshot_list,     class: read }
+    - { name: alicloud.disk_list,         class: read }
+
+  # The host injects credentials for exactly these scopes.
+  #
+  # Verified against the adapter host policy
+  # (`toolset.adapterPolicy()`, core/manager/middleware/toolset/sources_plugin.go:43-48):
+  #
+  #   required_scopes = [cloud.read]
+  #   granted        = [db.read, db.write, k8s.read, k8s.exec,
+  #                     mq.read, mq.write, host.read, host.write]
+  #   cloud.read ∉ granted  →  Satisfies() == false  →  Admit refuses:
+  #                          pig-ops.yaml: spec.required_scopes: not granted: cloud.read
+  #
+  # `cloud.read` is a third-party namespaced scope. The vocabulary allows it
+  # (core/domain/plugin.go:57-59 — "Third parties may declare their own
+  # namespaced scopes"), and an unknown scope is treated as unsatisfied
+  # rather than permissive. What is missing is a grant: `adapterPolicy()` is
+  # unexported and its GrantedScopes is an eight-item literal, so no package
+  # can widen it. Decision D2 asks the user whether it should be widened.
+  #
+  # The tempting shortcut is `host.read`, which IS granted and would make
+  # this manifest load. It is the wrong scope: `host.read` means "the machine
+  # the platform is pointed at" and carries local / SSH-shaped credentials,
+  # and reusing it here would hand a cloud OpenAPI client a credential the
+  # manifest describes as something else. A scope that reads correctly in
+  # the ledger and is wrong in the packet is worse than an admission error,
+  # so this manifest keeps the honest name and stays a refusal until D2 is
+  # answered.
+  required_scopes:
+    - cloud.read
+
+  audit:
+    emits: true
+    mutates: false
+
+  approval:
+    # Read-only in v0.1.0. `max_blast_radius` is absent on purpose:
+    # `sdk.Validate` refuses a blast radius on a package whose safety level
+    # does not require approval, so writing one here would be a load error.
+    required: false
+
+  install:
+    strategy: rolling
+    # pig 下限此前不存在；本仓固定 PiG v0.4.0（决策 455）。
+    min_pig_version: 0.4.0
+    min_edge_version: 0.8.0
+
+  # No autonomy block: nothing here runs without a human in the loop, and
+  # nothing here behaves differently when the control plane is unreachable.

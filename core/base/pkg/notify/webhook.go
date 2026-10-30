@@ -9,19 +9,22 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
 
 type webhookSender struct {
-	name       string
-	endpoint   string
-	secret     string
-	client     *http.Client
-	buildBody  func(Message) (any, error)
-	signTarget func(endpoint, secret string, body []byte) (string, map[string]string, error)
+	name          string
+	endpoint      string
+	secret        string
+	client        *http.Client
+	buildBody     func(Message) (any, error)
+	signTarget    func(endpoint, secret string, body []byte) (string, map[string]string, error)
+	checkResponse func(body []byte) error
 }
 
 // NewGenericWebhookSender posts the normalized Message JSON. When secret is
@@ -29,7 +32,7 @@ type webhookSender struct {
 func NewGenericWebhookSender(name, endpoint, secret string, client *http.Client) Sender {
 	return newWebhookSender(name, endpoint, secret, client, func(msg Message) (any, error) {
 		return msg, nil
-	}, signGenericWebhook)
+	}, signGenericWebhook, nil)
 }
 
 // NewSlackSender posts to a Slack incoming webhook in the attachments
@@ -41,7 +44,7 @@ func NewGenericWebhookSender(name, endpoint, secret string, client *http.Client)
 func NewSlackSender(name, endpoint string, client *http.Client) Sender {
 	return newWebhookSender(name, endpoint, "", client, func(msg Message) (any, error) {
 		return formatSlack(msg), nil
-	}, nil)
+	}, nil, nil)
 }
 
 // formatSlack renders one Message as a Slack incoming-webhook payload using
@@ -151,7 +154,7 @@ func NewFeishuSender(name, endpoint, secret string, client *http.Client) Sender 
 			payload["sign"] = signFeishu(ts, secret)
 		}
 		return payload, nil
-	}, nil)
+	}, nil, channelAPIError)
 }
 
 // NewDingTalkSender posts a text payload compatible with DingTalk custom bots.
@@ -161,7 +164,7 @@ func NewDingTalkSender(name, endpoint, secret string, client *http.Client) Sende
 			"msgtype": "text",
 			"text":    map[string]string{"content": formatText(msg)},
 		}, nil
-	}, signDingTalkURL)
+	}, signDingTalkURL, channelAPIError)
 }
 
 // NewWeComSender posts a text payload compatible with 企业微信 (WeCom) group
@@ -174,7 +177,7 @@ func NewWeComSender(name, endpoint string, client *http.Client) Sender {
 			"msgtype": "text",
 			"text":    map[string]string{"content": formatText(msg)},
 		}, nil
-	}, nil)
+	}, nil, channelAPIError)
 }
 
 // NewTelegramSender posts to the Telegram Bot API sendMessage endpoint.
@@ -188,7 +191,7 @@ func NewTelegramSender(name, endpoint, chatID string, client *http.Client) Sende
 			"chat_id": chatID,
 			"text":    formatText(msg),
 		}, nil
-	}, nil)
+	}, nil, nil)
 }
 
 func newWebhookSender(
@@ -198,6 +201,7 @@ func newWebhookSender(
 	client *http.Client,
 	buildBody func(Message) (any, error),
 	signTarget func(endpoint, secret string, body []byte) (string, map[string]string, error),
+	checkResponse func(body []byte) error,
 ) Sender {
 	if name == "" {
 		name = "webhook"
@@ -206,12 +210,13 @@ func newWebhookSender(
 		client = http.DefaultClient
 	}
 	return &webhookSender{
-		name:       name,
-		endpoint:   endpoint,
-		secret:     secret,
-		client:     client,
-		buildBody:  buildBody,
-		signTarget: signTarget,
+		name:          name,
+		endpoint:      endpoint,
+		secret:        secret,
+		client:        client,
+		buildBody:     buildBody,
+		signTarget:    signTarget,
+		checkResponse: checkResponse,
 	}
 }
 
@@ -254,7 +259,100 @@ func (s *webhookSender) Send(ctx context.Context, msg Message) error {
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("unexpected status: %s", resp.Status)
 	}
+	if s.checkResponse == nil {
+		return nil
+	}
+	// A 2xx is the transport's verdict, not the channel's. The chat channels
+	// answer HTTP 200 with a non-zero errcode for a bad signature, a rate
+	// limit or a revoked bot, so a sender that stops here reports those as
+	// delivered and the delivery ledger records a success nobody received.
+	// An unreadable body is treated as a failure rather than waved through:
+	// the receiver's verdict is exactly what we could not establish.
+	reply, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	return s.checkResponse(reply)
+}
+
+// maxResponseBytes bounds how much of a channel's reply is read to judge it.
+// Every channel we judge answers in a few dozen bytes; the bound exists so a
+// misconfigured endpoint pointing at something huge cannot pull an arbitrary
+// body into the dispatcher's memory.
+const maxResponseBytes = 64 << 10
+
+// channelErrorCodes maps each chat channel's failure field to the field
+// carrying its human-readable reason, in the order they are consulted. The
+// first field present decides; a body carrying none of them is not judged.
+//
+// DingTalk and 企业微信 both answer {"errcode":0,"errmsg":"ok"}, Feishu
+// answers {"code":0,"msg":"success"} — and, on the older shape some
+// deployments still serve, {"StatusCode":0,"StatusMessage":"success"}.
+var channelErrorCodes = []struct{ code, message string }{
+	{code: "errcode", message: "errmsg"},
+	{code: "code", message: "msg"},
+	{code: "StatusCode", message: "StatusMessage"},
+}
+
+// channelAPIError judges a chat channel's reply body.
+//
+// It reports a failure only when the body says so in the channel's own
+// protocol: a non-zero error code. A body we cannot parse is passed, because
+// a response that is not the channel's protocol is not evidence about the
+// channel — some receivers legitimately answer with an empty 200, and this
+// hook must not turn those into delivery failures.
+func channelAPIError(body []byte) error {
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil
+	}
+	for _, field := range channelErrorCodes {
+		raw, ok := payload[field.code]
+		if !ok {
+			continue
+		}
+		code, ok := decodeErrorCode(raw)
+		if !ok || code == 0 {
+			return nil
+		}
+		reason := decodeErrorText(payload[field.message])
+		if reason == "" {
+			return fmt.Errorf("channel rejected the message: %s %d", field.code, code)
+		}
+		return fmt.Errorf("channel rejected the message: %s %d: %s", field.code, code, reason)
+	}
 	return nil
+}
+
+// decodeErrorCode reads a channel's numeric code, accepting both the number
+// and the quoted-number spellings. A code that is neither is reported as
+// undecidable so the caller passes it rather than guessing zero.
+func decodeErrorCode(raw json.RawMessage) (int64, bool) {
+	var n int64
+	if err := json.Unmarshal(raw, &n); err == nil {
+		return n, true
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		if parsed, perr := strconv.ParseInt(s, 10, 64); perr == nil {
+			return parsed, true
+		}
+	}
+	return 0, false
+}
+
+// decodeErrorText pulls the channel's reason string out of the payload. It is
+// what an operator reads in the delivery ledger to tell a bad signature from
+// a revoked bot, so it is carried into the error rather than discarded.
+func decodeErrorText(raw json.RawMessage) string {
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return ""
+	}
+	return s
 }
 
 func formatText(msg Message) string {
