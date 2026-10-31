@@ -58,7 +58,8 @@
 - [x] 4.10 为每个新增插件包维护 manifest、精确版本、scope、安全级别、兼容范围、测试、签名和回滚文档。
   - 产出：`plugin-governance-ledger.md`（统一治理台账：37 行包级记录 + 非包级增量索引；一致性核对 5 项对齐 / 4 项漂移，其中 adapter 两份草案的过时准入注释已随本任务修正——S0 落地 D1/D2 后它们在当前宿主 policy 下已通过准入；签名/分发双路径写成可执行步骤）。台账测试列即 4.11 闸门的输入清单。
 - [ ] 4.11 运行插件构建、测试、准入、签名、灰度和回滚闸门。
-- [ ] 4.12 为告警规则 / 草稿 / 降噪制定插件化方案（extension tool + command），承接 4.1 映射表板块⑤的缺口，由 4.2 盘点后细化。
+- [x] 4.12 为告警规则 / 草稿 / 降噪制定插件化方案（extension tool + command），承接 4.1 映射表板块⑤的缺口，由 4.2 盘点后细化。
+  - 产出：`alert-plugin-plan.md` + `alert-manifests/`（PR 代建）。关键发现：R1（两配置工具声明在 repair manifest 但 manager 上呼无分发，4.8 "已恢复"过报）、R3（会话面只认 create，update/enable/delete 不可表达）、A1（SemanticDedupService 零生产调用者）。方案：新包 opskeeper-sre-alert、L2/write/approval、RollbackPlan 一等字段。降噪 v1 不成包（登记四个插拔点）。决策点 D-3/D-4 待评审；manifest 闸门静态核对（实测固化入 S-1）。
 
 ## 5. P1/P2 企业流程与协同
 
