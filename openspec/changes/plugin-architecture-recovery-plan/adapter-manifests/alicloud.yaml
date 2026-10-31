@@ -1,10 +1,15 @@
 # pig-ops.yaml — OpsKeeper governance manifest for the Alibaba Cloud ECS
 # adapter package (v0.1.0, read-only).
 #
-# STATUS: this draft does NOT pass admission today, and that is deliberate.
-# See `required_scopes` below and decision D2 in adapter-plugin-plan.md §5.4.
-# Shipping it as if it were admissible would hide the one thing a reviewer
-# most needs to see.
+# STATUS: admission-ready as of the adapter host slice S0 (PR #105), which
+# landed decision D2 by adding `cloud.read` to the adapter host's default
+# granted set (`defaultAdapterScopes()` in
+# core/manager/middleware/toolset/sources_plugin.go). This file originally
+# shipped as a deliberate admission refusal — the grant did not exist and
+# `adapterPolicy()` was unexported with a hard-coded GrantedScopes — and the
+# refusal is what made D2 reviewable. D2 was answered; see `required_scopes`
+# below for what the grant now says, and the plugin governance ledger
+# (plugin-governance-ledger.md) for the drift record.
 #
 # Why cloud inventory is an adapter at all. 4.1 §③ puts "云资源同步" on the
 # adapter extension point: the first operational question in an incident is
@@ -55,29 +60,23 @@ spec:
   # The host injects credentials for exactly these scopes.
   #
   # Verified against the adapter host policy
-  # (`toolset.adapterPolicy()`, core/manager/middleware/toolset/sources_plugin.go:43-48):
+  # (`toolset.adapterPolicy()`, core/manager/middleware/toolset/sources_plugin.go):
   #
   #   required_scopes = [cloud.read]
   #   granted        = [db.read, db.write, k8s.read, k8s.exec,
-  #                     mq.read, mq.write, host.read, host.write]
-  #   cloud.read ∉ granted  →  Satisfies() == false  →  Admit refuses:
-  #                          pig-ops.yaml: spec.required_scopes: not granted: cloud.read
+  #                     mq.read, mq.write, host.read, host.write,
+  #                     topology.read, cloud.read]
+  #   cloud.read ∈ granted  →  Satisfies() == true  →  Admit passes
   #
-  # `cloud.read` is a third-party namespaced scope. The vocabulary allows it
-  # (core/domain/plugin.go:57-59 — "Third parties may declare their own
-  # namespaced scopes"), and an unknown scope is treated as unsatisfied
-  # rather than permissive. What is missing is a grant: `adapterPolicy()` is
-  # unexported and its GrantedScopes is an eight-item literal, so no package
-  # can widen it. Decision D2 asks the user whether it should be widened.
-  #
-  # The tempting shortcut is `host.read`, which IS granted and would make
-  # this manifest load. It is the wrong scope: `host.read` means "the machine
-  # the platform is pointed at" and carries local / SSH-shaped credentials,
-  # and reusing it here would hand a cloud OpenAPI client a credential the
-  # manifest describes as something else. A scope that reads correctly in
-  # the ledger and is wrong in the packet is worse than an admission error,
-  # so this manifest keeps the honest name and stays a refusal until D2 is
-  # answered.
+  # `cloud.read` is a first-class domain constant since S0
+  # (`core/domain/plugin.go` ScopeCloudRead, landed with decision D2). The
+  # scope is deliberately separate from `host.read`: host.read means "the
+  # machine the platform is pointed at" and carries local / SSH-shaped
+  # credentials, while the cloud API takes vendor AK/SK material — folding
+  # the cloud read into host.read would hand one declaration two classes of
+  # credential, which is scope laundering. That was the argument recorded
+  # while this draft was still a refusal, and it is why the grant that
+  # eventually landed is a new constant rather than a reuse.
   required_scopes:
     - cloud.read
 
