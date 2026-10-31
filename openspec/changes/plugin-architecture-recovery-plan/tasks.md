@@ -53,7 +53,8 @@
   - 产出：`collector-plugin-plan.md` + `collector-manifests/`（PR #109，2026-10-28 合并）。关键发现：五道闸门（C1 零 RegisterActivator / C3 配置面双侧闭集 / C5 子进程继承凭据环境）。评审裁决：D1-a 三层 endpoint 解析、D2 用 WithKindCeiling 收窄 KindCollector 到 L1、D3（spec.collector schema）推迟为独立 change。
 - [x] 4.8 补齐 observability、readonly、middleware 插件中的业务缺口，优先旧 release 已有但新架构未恢复完整的能力。
   - 产出：`plugin-gap-plan.md`（PR #110，2026-10-30 合并）。关键发现：G0 上呼双向对账缺口（6 已声明未服务 + 6 已服务未声明）。评审裁决：D-1 query_knowledge 归 observability + 新增 knowledge.read、D-2 BaseTool 桥、D-3 事件读归 readonly；五项补齐 + 不补清单（含反悔条件）。实施切片 S-1~S-3 另开 change。本提交同时把 4.3–4.7 的勾选状态（此前仅在会话分支）同步到 main。
-- [ ] 4.9 强化 repair 插件的计划预览、独立验证、回滚说明和审批证据。
+- [x] 4.9 强化 repair 插件的计划预览、独立验证、回滚说明和审批证据。
+  - 产出：`repair-hardening-plan.md`（PR #111，2026-10-31 合并）。审计 17 道缺口（P/V/R/A 四关键词，回滚最红）；设计取向：把闸门语义投影为可引用/可哈希/可对账的证据对象。裁决 D1–D5 均按推荐（诚实预览声明、双名对齐测试、preview.read 归 repair 包、write 落档、不新增回滚写工具）。实施切片另开 change。
 - [ ] 4.10 为每个新增插件包维护 manifest、精确版本、scope、安全级别、兼容范围、测试、签名和回滚文档。
 - [ ] 4.11 运行插件构建、测试、准入、签名、灰度和回滚闸门。
 - [ ] 4.12 为告警规则 / 草稿 / 降噪制定插件化方案（extension tool + command），承接 4.1 映射表板块⑤的缺口，由 4.2 盘点后细化。
