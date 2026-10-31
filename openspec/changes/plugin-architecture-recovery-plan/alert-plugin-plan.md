@@ -1,6 +1,8 @@
 # 4.12 告警规则 / 草稿 / 降噪插件化方案（extension tool + command）
 
-> 任务来源：OpenSpec change `plugin-architecture-recovery-plan` 任务 4.12，承接 4.1 §7 结论⑤（告警配置写路径未进插件词表）与 4.8（plugin-gap-plan）的三面盘点。基线：`main`（PR #111 之后，`21efd90a`）。
+> 状态：**已评审（2026-10-31）**。任务来源：OpenSpec change `plugin-architecture-recovery-plan` 任务 4.12，承接 4.1 §7 结论⑤（告警配置写路径未进插件词表）与 4.8（plugin-gap-plan）的三面盘点。基线：`main`（PR #111 之后，`21efd90a`）。
+>
+> **评审裁决（2026-10-31，用户确认）**：D-3 维持现状分工（radius 表物理触达、scope_type+draft_hash 表语义触达，不新增 config 枚举）；D-4 删除 SemanticDedupService（独立小 PR，同步下调死码棘轮）；S-3 会话面词表扩展排 R1 之后第二切片；S-4 command pack 随 alert 包同仓库发布。
 >
 > **这是纯方案产出**：不实现任何包、不改 `core/floor/pluginmanifest` 与 `sdk` 代码、不动 `core/manager/biz/alert` 主流程、不做告警事件的 incident 化（5.x）。所有实现内容以切片（§10）形式留给后续 PR，每个切片自带测试与回滚。
 >
