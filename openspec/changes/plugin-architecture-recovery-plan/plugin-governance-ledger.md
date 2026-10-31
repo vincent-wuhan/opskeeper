@@ -98,6 +98,12 @@
 | `opskeeper-collector-otelcol-kubeletstats` | 0.1.0 | k8s.read, observability.read | rolling | 绿：finance（L2/pod）与 saas（L3/ns）两 profile 实测均过（4.7 §9.1） | 未实施（五层待建：unit+integration+contract+failure+resource[内存超限]） | 待签 | `collector-manifests/otelcol-kubeletstats.yaml`；4.7 §7；回滚 §7.2 |
 | `opskeeper-collector-filelog` | 0.1.0 | host.read, observability.read | pin | **琥珀**：闸门 C4——manager 的 endpoint 解析只认 `logs`/`traces`，D1-a（三层 endpoint 解析）裁决前装得上、跑不起来 | 未实施（五层待建，同上） | 待签 | `collector-manifests/filelog.yaml`；4.7 §8；回滚 §8.3 |
 
+**alert（4.12，PR 代建）**。新包 / edge / L2 / read+write / pin / alert.read+alert.write / 2 工具（`alert.rule_config`、`alert.rule_apply`，从 repair 硬切 `draft_config_change`/`apply_config_change`）。
+
+| 包名 | 版本 | scopes | 准入 | 测试 | 签名 | 指针 |
+|---|---|---|---|---|---|---|
+| `opskeeper-sre-alert` | 0.1.0 | alert.read, alert.write | **静态核对，未实测**（起草环境无 Go 工具链；sdk 三段闸门实测固化为 S-1 首条验收，并入 4.11 闸门 harness） | 未实施（S-1~S-4 待建） | 待签 | `alert-manifests/alert-rule-config.yaml`；4.12；command 草案 `alert-manifests/command-alert-rule.md`；回滚见方案 §10 |
+
 ### 3.3 待实施——一方预装参考形态（编译内合成 manifest）
 
 这些**不是可分发的插件包**：编译在二进制里，磁盘上没有 pig-ops.yaml；manifest 由装配层的 `manifestFor()` 合成（datasource 先例：`core/manager/biz/aiops/datasource/datasource.go`），与第三方包走同一道 `Admit` 闸门。参考 YAML 放在候选包旁边仅供评审同 diff 对照。签名状态一律**不适用**（无磁盘树可签，出处由二进制发布签名与版本绑定承担，见 §5.3）；下限一律不写（与二进制同构建）。
@@ -125,7 +131,7 @@
 | 4.8 切片 S-1（G0 对账 + BaseTool 桥） | manager 上呼通道改动，非包增量；它是 §3.4 observability 行的依赖 | 4.8 §5.5 / §10 |
 | 4.9 切片 S-1/S-3~S-6 | 预览域证据对象、审批链、回滚对象、判定规则——均宿主/预览域侧，非包增量（包面只有 §3.4 repair 行） | 4.9 §10 |
 
-**覆盖性声明**：本计划产出的包级增量 = §3.1（1 个已落地）+ §3.2（14 个第三方草案）+ §3.3（19 个一方合成参考形态）+ §3.4（3 个版本内增量）= **37 行**，与 4.3–4.9 七份方案的"产出"清单逐一对应；方案文档中被排除的候选（4.4 的 Git/ITSM、4.7 的 metrics 采集器与 changewatcher、4.8 §7 不补清单）不在台账内，理由留驻原方案。
+**覆盖性声明**：本计划产出的包级增量 = §3.1（1 个已落地）+ §3.2（14 个第三方草案）+ §3.3（19 个一方合成参考形态）+ §3.4（3 个版本内增量）= **38 行**（2026-10-31 4.12 落台账后 +1），与 4.3–4.9 七份方案的"产出"清单逐一对应；方案文档中被排除的候选（4.4 的 Git/ITSM、4.7 的 metrics 采集器与 changewatcher、4.8 §7 不补清单）不在台账内，理由留驻原方案。
 
 ---
 

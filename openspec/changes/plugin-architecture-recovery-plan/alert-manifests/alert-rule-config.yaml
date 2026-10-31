@@ -1,0 +1,111 @@
+# pig-ops.yaml — OpsKeeper governance manifest for the alert-rule
+# configuration package (draft, 4.12).
+#
+# This package owns the conversational alert-rule write path: draft a rule
+# change, get it confirmed against an exact hash, apply it. Both tool names
+# move here from opskeeper-sre-repair, which carried them since the first
+# packaged release for no better reason than that repair was the only L2
+# package that existed at the time. Repair's own header states its promise
+# as "bounded, reversible-by-a-human operation on one named target" — a
+# restart is that; a detection policy that decides when a human gets paged
+# is not, and the two make different promises about who must review them.
+# Splitting them lets a fleet grant alert authoring without host mutation
+# and vice versa; bundling them means the weaker promise governs the
+# stronger, which is the exact failure the read-only/repair split exists
+# to prevent.
+#
+# The move is a hard cutover, not a dual-home window: the repo's ownership
+# test asserts a tool name is declared by exactly one package, because a
+# single node allow-list cannot honour two different promises about one
+# name. See alert-plugin-plan.md §6.2 for the release sequencing.
+apiVersion: opskeeper.io/v1
+kind: Plugin
+metadata:
+  name: opskeeper-sre-alert
+  version: 0.1.0
+  vendor: opskeeper
+  homepage: https://github.com/vincent-wuhan/opskeeper
+spec:
+  # edge: the package is installed into the per-node agent process, and
+  # every tool is served by an upcall to the control plane. That is not a
+  # coincidence of implementation — the rule store, the preview evaluator
+  # and the draft lease all live where the database is, and the draft hash
+  # that gates the apply must be computed by the same process that issued
+  # it or it gates nothing.
+  targets: [edge]
+
+  # L2 — applying a draft mutates OpsKeeper-managed state (one alert_rules
+  # row). It does not mutate anything outside OpsKeeper's control, which is
+  # what L3 means, so declaring L3 would be an overstatement that prices
+  # this package out of the financial profile for no gained safety.
+  safety_level: L2
+
+  # write, not destructive: the row is OpsKeeper's own, and every action in
+  # the vocabulary has an inverse expressed in the same vocabulary
+  # (create↔delete, update↔update, disable↔enable). v1 wires create only —
+  # the host's draft domain refuses any other action today
+  # (config_tools.go:310 "action must be create") — and update/delete arrive
+  # as a host-side vocabulary extension, not by this package widening its
+  # own schema past what the host will accept. "read" is present
+  # because draft_config_change persists nothing — it validates a candidate
+  # and returns a hash, and a package whose read half needed approval would
+  # train operators to click through.
+  capabilities: [read, write]
+
+  # Two names, sorted. This is deliberately NOT one tool per action: the
+  # draft→confirm→apply shape is the control, so every action (create,
+  # update, disable/enable via update, delete) travels the same two hops
+  # and is bound to the same hash. Five action-specific tools would be five
+  # approval paths to review and five places for one of them to skip the
+  # binding.
+  tools:
+    - { name: apply_config_change,  class: write }  # commit a hash-confirmed alert-rule draft (v1: create; update/delete are the S-3 host-side extension)
+    - { name: draft_config_change,  class: read  }  # validate a candidate; persists nothing, returns draft_hash
+
+  # alert.read is the rule read-back the drafter needs to build an update
+  # or delete draft against the current row. alert.write is the apply.
+  # Nothing else: this package has no tool that can reach a host, a
+  # database or a channel, and a scope it did not need would be a key with
+  # no lock.
+  required_scopes:
+    - alert.read
+    - alert.write
+
+  audit:
+    # The package reports tool activity; the host derives each ledger entry
+    # from its own gate events, so a package can neither forge nor suppress
+    # a record. mutates is false — audit-ledger writes are host-only and a
+    # manifest asking for them is refused at load rather than downgraded.
+    emits: true
+    mutates: false
+
+  approval:
+    # Every apply waits for a human. Two gates hold, in this order: the
+    # node's broker demands the gate's receipt for any call at or above
+    # write, and the tool itself refuses an apply whose draft_hash does not
+    # match a draft the same manager process issued to the same caller.
+    # The second gate is what makes "approved" mean "approved this exact
+    # rule" rather than "approved something a moment ago".
+    required: true
+
+    # pod is the narrowest radius in the vocabulary, and it is the honest
+    # one for the mutation itself: one apply writes exactly one
+    # alert_rules row. The vocabulary has no value for what a rule *means*
+    # — a global rule changes when a whole fleet gets paged — and that
+    # reach is not carried by this field. It is carried by the rule's own
+    # scope_type, which the draft discloses and the operator confirms, and
+    # by the draft hash that binds the confirmation to that exact scope.
+    # Recording this here rather than widening the number: a cluster radius
+    # would be refused by the financial profile's ceiling and would still
+    # not say the true thing. See alert-plugin-plan.md §7.3 (D-3).
+    max_blast_radius: pod
+
+  install:
+    # pin. A package that decides when a human gets paged is not one to
+    # auto-upgrade across a fleet: an operator who approved a draft against
+    # 0.1.0's validation rules did not approve one validated by 0.2.0's,
+    # and the difference is exactly the kind that surfaces as a rule that
+    # fires when it should not.
+    strategy: pin
+    min_pig_version: 0.4.0
+    min_edge_version: 0.8.0
