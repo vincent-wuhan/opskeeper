@@ -1,9 +1,16 @@
 # pig-ops.yaml — OpsKeeper governance manifest for the CMDB adapter package
 # (v0.1.0, read-only).
 #
-# STATUS: like the cloud draft, this one does NOT pass admission today, by
-# exactly one missing grant. See `required_scopes` below and decision D1 in
-# adapter-plugin-plan.md §6.4.
+# STATUS: admission-ready as of the adapter host slice S0 (PR #105), which
+# landed decision D1 by adding `topology.read` to the adapter host's default
+# granted set (`defaultAdapterScopes()` in
+# core/manager/middleware/toolset/sources_plugin.go). This file originally
+# shipped one missing grant away from admission — `adapterPolicy()` was
+# unexported with a hard-coded GrantedScopes that did not include
+# topology.read — and the refusal is what made D1 reviewable. D1 was
+# answered; see `required_scopes` below for the caveat that travelled with
+# it, and the plugin governance ledger (plugin-governance-ledger.md) for
+# the drift record.
 #
 # Why a CMDB reader is an adapter. 4.1 §③ routes CMDB to the adapter
 # extension point, and §⑨ groups it with cloud resources and ITSM. The gap
@@ -47,28 +54,29 @@ spec:
   # The host injects credentials for exactly these scopes.
   #
   # Verified against the adapter host policy
-  # (`toolset.adapterPolicy()`, core/manager/middleware/toolset/sources_plugin.go:43-48):
+  # (`toolset.adapterPolicy()`, core/manager/middleware/toolset/sources_plugin.go):
   #
-  #   vocabulary check: topology.read ∈ core/domain/plugin.go:60-73   → yes
+  #   vocabulary check: topology.read ∈ core/domain/plugin.go   → yes
   #   required_scopes = [topology.read]
   #   granted        = [db.read, db.write, k8s.read, k8s.exec,
-  #                     mq.read, mq.write, host.read, host.write]
-  #   topology.read ∉ granted  →  Satisfies() == false  →  Admit refuses:
-  #                              pig-ops.yaml: spec.required_scopes: not granted: topology.read
+  #                     mq.read, mq.write, host.read, host.write,
+  #                     topology.read, cloud.read]
+  #   topology.read ∈ granted  →  Satisfies() == true  →  Admit passes
   #
-  # This is the narrower of the two unresolved drafts: the scope already
-  # exists in the vocabulary and its meaning is right — read asset / topology
-  # information, which is what a CI list is. Only the grant is missing, and
-  # `adapterPolicy()` is unexported with a hard-coded GrantedScopes, so
-  # Decision D1 asks the user whether to grant it.
+  # The scope already existed in the vocabulary and its meaning is right —
+  # read asset / topology information, which is what a CI list is. What was
+  # missing until D1 landed was the grant: `adapterPolicy()` had a
+  # hard-coded GrantedScopes without it.
   #
-  # One caveat travels with the choice, and it is worth naming before D1 is
-  # answered rather than after. `topology.read` is a single name for two
-  # possible credential sources: OpsKeeper's own topology store, and an
-  # external CMDB. If those are ever two different credentials, they should
-  # be two scopes (`topology.read` / `cmdb.read`) rather than one name doing
-  # two jobs. This manifest is drafted with `topology.read` because that is
-  # the semantically correct existing name; splitting it is part of D1.
+  # One caveat travels with the choice, and it is worth naming after D1 as
+  # much as before. `topology.read` is a single name for two possible
+  # credential sources: OpsKeeper's own topology store, and an external
+  # CMDB. If those are ever two different credentials, they should be two
+  # scopes (`topology.read` / `cmdb.read`) rather than one name doing two
+  # jobs. This manifest keeps `topology.read` because that is the
+  # semantically correct existing name and D1 granted it as such; the split
+  # remains open and is recorded in the plan (§6.4) and the governance
+  # ledger.
   required_scopes:
     - topology.read
 
