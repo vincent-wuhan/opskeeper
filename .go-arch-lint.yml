@@ -269,9 +269,32 @@ components:
   # The compiled PiG contract. A leaf: it imports no OpsKeeper package
   # and nothing imports it, so it constrains only itself.
   oxpig_contract:       { in: core/pig/pigcontract/** }
+  # 第一个落在 plugins/ 下的源模块。它与同目录的 plugins/pig-ops/ 不同：
+  # 那下面是 Pi 运行时的分发产物，这里是一个会被 make module-standalone-check
+  # 真编译、真单测的模块。
+  oxdatasource_vm:      { in: plugins/opskeeper-datasource-victoriametrics/** }
 
 # 允许依赖的正向清单（未列出 = 禁止）
 deps:
+  # ---------------- 数据源插件面 → 契约层 ----------------
+  #
+  # VictoriaMetrics 数据源的三条依赖各自都是必须的，且不多一条：
+  #
+  #   shared_pkg   core/base/pkg/promquery —— 过边界的结果类型。插件返回
+  #                *promquery.InstantResult 而不是自己的一套形状，兼容性的
+  #                全部论证就是这一行；换成插件自己的类型，上面五个窄接口
+  #                一个都满足不了，而这种不匹配是静默的。
+  #   oxfloor      core/floor/kernel（Registrar + KindDatasource）与
+  #                core/floor/pluginmanifest（承载 pig-ops.yaml 的解码结果）。
+  #   oxplugin_sdk sdk.Decode —— 治理清单的解码入口。
+  #
+  # 刻意没有的：core/manager、core/pig*。这条白名单和插件模块 go.mod 里
+  # 没有任何 control 侧依赖是同一件事的两种写法，缺一边另一边就失效：
+  # 有人绕过这里往 go.mod 里加一条 import，modulecheck 会先于 arch-lint
+  # 报出来，但 go.mod 的 replace 只覆盖 control 侧的模块图，插件自己的
+  # 依赖得靠这份文件站在仓库这一侧说一遍。
+  oxdatasource_vm:
+    mayDependOn: [shared_pkg, oxfloor, oxplugin_sdk]
   # ---------------- 插件面 → 契约层 ----------------
   #
   # 决策 271 把容器加载器从 core/manager/biz/aiops/chatruntime 切到
@@ -945,6 +968,11 @@ deps:
       # 在），以及节点的工作目录。与 autonomy 同一条理由：这三样只有这里
       # 同时知道，让账本自己去找就等于让它变成节点面本身。
       - oxedge_auditlog
+      # 第三方数据源插件。装配根是唯一知道「这次部署选了哪个后端」的地方，
+      # 而插件的贡献也必须在同一个 kernel.Host 上走同一扇 kernel.Activate
+      # 门——放在这里授权而不是加在插件那一侧，是因为替代方案是让插件自己
+      # 决定何时被装载，那正是磁盘插件通道尚未落地之前不能做的事。
+      - oxdatasource_vm
       - iam_biz
       - iam_data
       - iam_model

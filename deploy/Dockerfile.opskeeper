@@ -94,9 +94,9 @@ ENV PATH=/usr/local/go/bin:/go/bin:$PATH \
 # the ~150s mod-download cost. Requires syntax=docker/dockerfile:1.7
 # (declared at the top of this file).
 #
-# The seven local modules are copied in BEFORE `go mod download`, and that
-# ordering is load-bearing rather than tidy. The root go.mod replaces seven
-# modules with local directories (`=> ./core`, `=> ./core/edge`, …), and for a
+# The local modules are copied in BEFORE `go mod download`, and that
+# ordering is load-bearing rather than tidy. The root go.mod replaces every
+# module with a local directory (`=> ./core`, `=> ./core/edge`, …), and for a
 # directory replacement Go reads `<dir>/go.mod` to compute the module graph. So
 # `COPY go.mod go.sum ./` on its own leaves `go mod download` looking for
 # /app/core/go.mod, which is not there, and the build dies with
@@ -126,6 +126,7 @@ COPY core/harness/go.mod  ./core/harness/
 COPY core/manager/go.mod  ./core/manager/
 COPY core/pig/go.mod      ./core/pig/
 COPY sdk/go.mod           ./sdk/
+COPY plugins/opskeeper-datasource-victoriametrics/go.mod ./plugins/opskeeper-datasource-victoriametrics/
 RUN go mod download
 
 # Copy the rest of the repo (build context = repo root).

@@ -338,15 +338,21 @@ import (
 // e2e 夹具的增量响应开关，住在非测试文件里是因为外部 e2e 包必须能导入它——与
 // 决策 445 记录的 `UsingRealLLM` 同类。接线落地后应优先删除这批豁免。
 //
+// 914 → 915 / 601 / 314：VictoriaMetrics 首切片的 `+1` 全部落在 test-only
+// 这一类，dead 一格不动。`vmplugin.QueryPromqlCallTimeout` 是 internal
+// `vmquery` 常量的再导出包装，唯一调用方是 `cmd/opskeeper/prom_backend_interfaces_test.go`
+// 的超时漂移检查（插件副本与 toolcore 上限相等才放行）——该检查本身是测试文件，
+// 所以包装在生产调用图上不可达；这正是该检查存在的目的，不是遗漏。
+//
 // 883 → 907 / 600 / 307：本增量来自运行时管理 §2.1 首切片。该切片刻意先交付
 // 持久化领域模型与 API 契约；仓储、runtime API 与 worker 接线将在后续切片落地，
 // 因此当前生产调用图无法到达这批符号。相关行为均由领域测试覆盖，形成
 // test-only 增量；`+1` dead 是新域暴露给后续调用方的哨兵错误。后续接线完成后，
 // 删除通道应优先把这些符号转入真实生产调用边。
 const (
-	unreachableBudget    = 914
+	unreachableBudget    = 915
 	deadSymbolBudget     = 601
-	testOnlySymbolBudget = 313
+	testOnlySymbolBudget = 314
 )
 
 // TestTheUnreachableSymbolCountNeverGrows is the gate decision 199 declined to

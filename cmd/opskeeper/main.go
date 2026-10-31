@@ -1300,6 +1300,10 @@ func main() {
 		promwriteClient   *pkgpromwrite.Client
 		promQueryClient   *pkgpromquery.Client
 		promwriteIngester *managerbizpromwrite.Ingester
+		// promResolver is hoisted out of the Enabled block because the
+		// third-party metrics backend resolves its base URL through the same
+		// object, and the datasource wiring below runs after it.
+		promResolver *managerbizsetting.PromResolver
 	)
 	if cfg.Prom.Enabled {
 		// One resolver, three roles: implements promauth.Resolver (auth),
@@ -1309,11 +1313,8 @@ func main() {
 		// when the DB rows are absent. UI saves take effect within ~5s
 		// without a manager restart — the prom clients re-resolve on each
 		// request and the round-tripper has its own 5s cache.
-		queryFallback := cfg.Prom.URL
-		if cfg.Prom.QueryURL != "" {
-			queryFallback = cfg.Prom.QueryURL
-		}
-		promResolver := managerbizsetting.NewPromResolver(settingSvc, queryFallback, cfg.Prom.RemoteWriteURL)
+		queryFallback := promQueryFallback(cfg)
+		promResolver = managerbizsetting.NewPromResolver(settingSvc, queryFallback, cfg.Prom.RemoteWriteURL)
 
 		promHTTPClient, herr := promauth.BuildClient(
 			promauth.TLSConfig{
@@ -1711,11 +1712,32 @@ func main() {
 	ph := pluginhost.New(managerPluginsDir, aiopsdatasource.ManagerPolicy(), pluginLog)
 	capabilityHandler = managerserversystemhealth.NewCapabilitiesHandler(ph)
 
+	// Which implementation answers the `prom` signal. planPromBackend is the
+	// whole of the switch: on the default path it names no third-party package
+	// and everything below behaves exactly as it did before the field existed,
+	// and on the third-party path it names the package whose signal replaces
+	// the first-party one. An unknown value stopped the process back at
+	// config load, so reaching here means the value was one of the two.
+	promPlan, planErr := planPromBackend(cfg.Prom.Backend)
+	if planErr != nil {
+		log.Error("prom backend selection", slog.Any("err", planErr))
+		os.Exit(1)
+	}
+
 	dsBackends := aiopsdatasource.Backends{}
 	// PromQuerier is the interface tools/registry takes; passing a typed-nil
 	// *Client would yield a non-nil interface and bypass the conditional tool
 	// registration, so a disabled backend stays nil all the way through.
-	if promQueryClient != nil {
+	//
+	// A third-party backend owns this signal instead: it is admitted and
+	// activated below, registering the same `prom` name into the same host.
+	// Leaving dsBackends.Prom set as well is not "both" — the registry admits
+	// one contribution per signal, so the second Activate returns
+	// ErrDuplicate and startup fails. That is the fail-closed behaviour the
+	// configuration branch is supposed to have: a wiring mistake surfaces at
+	// boot rather than as queries quietly answered by whichever package
+	// happened to be registered first.
+	if promPlan.ThirdParty == "" && promQueryClient != nil {
 		dsBackends.Prom = promQueryClient
 	}
 	// LogQuerier / TraceQuerier mirror the same pattern: build a client only
@@ -1725,6 +1747,30 @@ func main() {
 	}
 	if cfg.Traces.URL != "" {
 		dsBackends.Traces = pkgtracequery.New(cfg.Traces.URL, log.With(slog.String("comp", "aiops-tracequery")))
+	}
+	// The third-party metrics backend goes in before the first-party three so
+	// that the Resolve() inside Activate already sees it. Same kernel host,
+	// same admission gate, same rollback path — the only difference is that
+	// this one carries a governance manifest loaded from disk and validated
+	// against a scope ceiling rather than one synthesised in Go.
+	if promPlan.ThirdParty != "" && promQueryClient != nil {
+		if vmErr := activateVictoriaMetricsDatasource(ph, cfg, promResolver, log); vmErr != nil {
+			log.Error("victoriametrics datasource activation",
+				slog.String("plugin", promPlan.ThirdParty),
+				slog.Any("err", vmErr))
+			os.Exit(1)
+		}
+		log.Info("prom backend selected",
+			slog.String("backend", promPlan.Backend),
+			slog.String("query_fallback", promQueryFallback(cfg)),
+			// The split is real and mostly invisible: the tool registry now
+			// answers from VictoriaMetrics while these surfaces still reach
+			// Prometheus directly. Naming them at boot is the only place an
+			// operator will see the difference.
+			slog.Any("surfaces_still_on_first_party_prometheus", promResidualSurfaceLog()),
+			slog.Bool("remote_write_switched", false),
+			slog.String("note", "Backend selects the query signal only; remote_write / push_prom_samples still target Prometheus"),
+		)
 	}
 	dsSet, dsErr := aiopsdatasource.Activate(ph.Kernel(), dsBackends)
 	if dsErr != nil {

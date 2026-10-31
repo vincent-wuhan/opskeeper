@@ -167,7 +167,14 @@ func moduleDirsInTree(t *testing.T) map[string]bool {
 		if rel == "." {
 			return nil
 		}
-		if strings.HasPrefix(rel, "plugins/") {
+		// plugins/ holds two different things and only one of them is a
+		// source module. plugins/pig-ops/ is the Pi runtime's own trees,
+		// checked in with go.mod files of their own that nothing in this
+		// repository builds; a walk that counted them would demand a
+		// standalone build for each. The datasource modules beside them are
+		// ordinary modules, so the walk continues into plugins/ and skips
+		// that one subtree.
+		if rel == "plugins/pig-ops" {
 			return fs.SkipDir
 		}
 		if _, statErr := os.Stat(filepath.Join(path, "go.mod")); statErr == nil {
