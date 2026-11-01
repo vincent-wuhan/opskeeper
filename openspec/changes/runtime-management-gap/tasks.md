@@ -11,7 +11,8 @@
 
 ## 2. Durable Task Lifecycle
 
-- [ ] 2.1 Define task state, idempotency, admission, claim, lease, checkpoint, attempt, failure classification, and terminal-result models.
+- [x] 2.1 Define task state, idempotency, admission, claim, lease, checkpoint, attempt, failure classification, and terminal-result models.
+  - 已随 PR #98 落入 `core/manager/model/runtimemgmt/`（task{,_state,_idempotency,_admission,_claim,_lease,_checkpoint,_attempt,_result,_safety}.go + failure_class.go + errors.go，均带测试）。本勾选为 2026-11-01 读数纠偏（此前 change 显示 0/41 但 2.1 实际已交付）。
 - [ ] 2.2 Implement slot-before-claim admission using server limits, runtime health, free slots, and local capacity.
 - [ ] 2.3 Add claim, prepare-lease renewal, start, checkpoint, progress, result, cancel, stale-recovery, and failure APIs.
 - [ ] 2.4 Integrate one read-only diagnostic worker and repair-preview execution with the shared task lifecycle.
