@@ -6,6 +6,7 @@
 //   - WithHostAdapter 注入自定义 adapter（NilAdapter 防御）
 //   - E2E：source_linker 根据 alert 标签（resource=host, metric=cpu_usage）
 //     路由回 host.cpu skill + NoopHostAdapter 可被调用
+//   - DIAGNOSIS_SKILL_MAP 的 12 条映射齐全、别名归一化（pg/postgresql 等）
 //
 // 设计参考：spec §D.12 + 路径 A 集成 Day 3 任务 3.5。
 package alert
@@ -264,5 +265,166 @@ func TestSourceLinker_HostNormalizeAlias(t *testing.T) {
 	_, err := s.Lookup("host", "host.cpu")
 	if err != nil {
 		t.Errorf("Lookup(host, host.cpu): %v, want nil", err)
+	}
+}
+
+// ============================================================
+// 路由映射与别名覆盖（原先与 L4 语义降噪测试混装，随其移除迁入本文件）
+// ============================================================
+
+func TestSourceLinker_Next_HitPG(t *testing.T) {
+	s := NewSourceLinker()
+	out, err := s.Next(context.Background(), SourceLinkInput{
+		ResourceType: "postgresql",
+		CurrentSkill: "investigateSlowQueries",
+	})
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if out.NextPhaseHint != "link_runtime_to_commit" {
+		t.Errorf("NextPhaseHint = %q, want link_runtime_to_commit", out.NextPhaseHint)
+	}
+	if out.Tool.ToolName != "linkRuntimeToCommit" {
+		t.Errorf("Tool.ToolName = %q, want linkRuntimeToCommit", out.Tool.ToolName)
+	}
+}
+
+func TestSourceLinker_Next_HitAllTwelve(t *testing.T) {
+	s := NewSourceLinker()
+	cases := []struct {
+		rt    string
+		skill string
+	}{
+		{"postgresql", "investigateSlowQueries"},
+		{"postgresql", "investigateHighCpuUsage"},
+		{"postgresql", "investigateLowMemory"},
+		{"postgresql", "investigateConnectionPoolIssues"},
+		{"redis", "investigateRedisHighMemoryUsage"},
+		{"redis", "investigateRedisSlowCommands"},
+		{"kubernetes", "kubernetesInvestigatePodCrash"},
+		{"kubernetes", "kubernetesInvestigateOom"},
+		{"kubernetes", "kubernetesInvestigatePodPending"},
+		{"host", "host.cpu"},
+		{"host", "host.memory"},
+		{"host", "host.disk"},
+	}
+	for _, tc := range cases {
+		out, err := s.Next(context.Background(), SourceLinkInput{
+			ResourceType: tc.rt, CurrentSkill: tc.skill,
+		})
+		if err != nil {
+			t.Errorf("%s/%s: %v", tc.rt, tc.skill, err)
+			continue
+		}
+		if out.NextPhaseHint != "link_runtime_to_commit" {
+			t.Errorf("%s/%s: NextPhaseHint = %q", tc.rt, tc.skill, out.NextPhaseHint)
+		}
+	}
+}
+
+func TestSourceLinker_Next_UnknownResource(t *testing.T) {
+	s := NewSourceLinker()
+	out, err := s.Next(context.Background(), SourceLinkInput{
+		ResourceType: "mq",
+		CurrentSkill: "any",
+	})
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if out.NextPhaseHint != "skip" || out.UnmatchedReason != "unknown_resource_type" {
+		t.Errorf("got %+v, want skip/unknown_resource_type", out)
+	}
+}
+
+func TestSourceLinker_Next_UnknownSkill(t *testing.T) {
+	s := NewSourceLinker()
+	out, err := s.Next(context.Background(), SourceLinkInput{
+		ResourceType: "postgresql",
+		CurrentSkill: "nonExistentSkill",
+	})
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if out.NextPhaseHint != "skip" || out.UnmatchedReason != "unknown_skill" {
+		t.Errorf("got %+v, want skip/unknown_skill", out)
+	}
+}
+
+func TestSourceLinker_ResolveFromStaticHit(t *testing.T) {
+	s := NewSourceLinker()
+	cases := []struct {
+		hit       *StaticRuleHit
+		wantSkill string
+	}{
+		{&StaticRuleHit{Rule: StaticRule{ID: "pg/long-running-tx"}}, "investigateSlowQueries"},
+		{&StaticRuleHit{Rule: StaticRule{ID: "redis/memory-burst"}}, "investigateRedisHighMemoryUsage"},
+		{&StaticRuleHit{Rule: StaticRule{ID: "host/cpu-spike"}}, "host.cpu"},
+	}
+	for _, tc := range cases {
+		link, err := s.ResolveFromStaticHit(context.Background(), tc.hit)
+		if err != nil {
+			t.Errorf("%s: %v", tc.hit.Rule.ID, err)
+			continue
+		}
+		if link == nil {
+			t.Errorf("%s: nil link", tc.hit.Rule.ID)
+			continue
+		}
+	}
+}
+
+// 路径 A 集成 Day 3：host/cpu-spike 已纳入 DIAGNOSIS_SKILL_MAP 共 12 条。
+// 显式验证 host/cpu-spike 路由回 host.cpu skill，返回 NoopHostAdapter 占位 binding。
+func TestSourceLinker_ResolveFromStaticHit_HostNowScoped(t *testing.T) {
+	s := NewSourceLinker()
+	link, err := s.ResolveFromStaticHit(context.Background(), &StaticRuleHit{
+		Rule: StaticRule{ID: "host/cpu-spike"},
+	})
+	if err != nil {
+		t.Fatalf("host/cpu-spike: expected hit, got error %v", err)
+	}
+	if link == nil {
+		t.Fatalf("host/cpu-spike: link = nil, want host.cpu mapping")
+	}
+	if link.Tool != "host.cpu.investigateCPU" {
+		t.Errorf("host/cpu-spike: tool = %q, want %q", link.Tool, "host.cpu.investigateCPU")
+	}
+	if link.HarnessCaseID != "host/cpu-spike" {
+		t.Errorf("host/cpu-spike: HarnessCaseID = %q, want %q", link.HarnessCaseID, "host/cpu-spike")
+	}
+}
+
+func TestSourceLinker_CountMappings(t *testing.T) {
+	s := NewSourceLinker()
+	if got := s.CountMappings(); got != 12 {
+		t.Errorf("CountMappings = %d, want 12", got)
+	}
+}
+
+func TestSourceLinker_AllExpectedMappingsExist(t *testing.T) {
+	// 设计 G.1：硬编码 12 条清单检查（PG 4 + Redis 2 + K8s 3 + Host 3），避免改名漏改。
+	s := NewSourceLinker()
+	want := map[string][]string{
+		"postgresql": {"investigateSlowQueries", "investigateHighCpuUsage", "investigateLowMemory", "investigateConnectionPoolIssues"},
+		"redis":      {"investigateRedisHighMemoryUsage", "investigateRedisSlowCommands"},
+		"kubernetes": {"kubernetesInvestigatePodCrash", "kubernetesInvestigateOom", "kubernetesInvestigatePodPending"},
+		"host":       {"host.cpu", "host.memory", "host.disk"},
+	}
+	for rt, skills := range want {
+		for _, skill := range skills {
+			if _, err := s.Lookup(rt, skill); err != nil {
+				t.Errorf("missing mapping %s/%s: %v", rt, skill, err)
+			}
+		}
+	}
+}
+
+func TestSourceLinker_NormalizeAlias(t *testing.T) {
+	s := NewSourceLinker()
+	// pg / postgresql 应命中同一映射
+	_, err1 := s.Lookup("pg", "investigateSlowQueries")
+	_, err2 := s.Lookup("postgresql", "investigateSlowQueries")
+	if err1 != nil || err2 != nil {
+		t.Errorf("pg/postgresql alias failed: %v / %v", err1, err2)
 	}
 }
