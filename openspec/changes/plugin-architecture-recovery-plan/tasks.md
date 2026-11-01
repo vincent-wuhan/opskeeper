@@ -57,9 +57,12 @@
   - 产出：`repair-hardening-plan.md`（PR #111，2026-10-31 合并）。审计 17 道缺口（P/V/R/A 四关键词，回滚最红）；设计取向：把闸门语义投影为可引用/可哈希/可对账的证据对象。裁决 D1–D5 均按推荐（诚实预览声明、双名对齐测试、preview.read 归 repair 包、write 落档、不新增回滚写工具）。实施切片另开 change。
 - [x] 4.10 为每个新增插件包维护 manifest、精确版本、scope、安全级别、兼容范围、测试、签名和回滚文档。
   - 产出：`plugin-governance-ledger.md`（统一治理台账：37 行包级记录 + 非包级增量索引；一致性核对 5 项对齐 / 4 项漂移，其中 adapter 两份草案的过时准入注释已随本任务修正——S0 落地 D1/D2 后它们在当前宿主 policy 下已通过准入；签名/分发双路径写成可执行步骤）。台账测试列即 4.11 闸门的输入清单。
-- [ ] 4.11 运行插件构建、测试、准入、签名、灰度和回滚闸门。
+
+- [x] 4.11 运行插件构建、测试、准入、签名、灰度和回滚闸门。
+  - 产出：`gate-run-report.md`（闸门命令逐条输出摘要、准入复核与固化、灰度逐包结论、回滚三段式审计、遗留项 L1–L9）。准入验证固化为三份仓内测试：`cmd/opskeeper/plan_manifests_gate_test.go`（datasource/provider/notifier）、`core/manager/middleware/toolset/adapter_plan_manifests_test.go`（adapter，对照未导出的 `adapterPolicy()` 真本）、`cmd/opskeeper-edge/collector_plan_manifests_test.go`（collector，对照 `pluginhost.EdgePolicyFor` 双 profile）。复核钉住四处方案↔代码漂移（per-kind ceiling 的包级/激活期两层、provider 对照 A 的双字段改写、notifier 的 L2 列在现状 policy 下是 scope 拒绝、datasource §7 的 canary/replace 旧词表）；`install.strategy` 词表两值均被 `PlanRollout` 真实消费。副作用：manager 规模行第十八次重取（+1 文件 / +243 行，全是闸门固化测试）。
 - [x] 4.12 为告警规则 / 草稿 / 降噪制定插件化方案（extension tool + command），承接 4.1 映射表板块⑤的缺口，由 4.2 盘点后细化。
   - 产出：`alert-plugin-plan.md` + `alert-manifests/`（PR 代建）。关键发现：R1（两配置工具声明在 repair manifest 但 manager 上呼无分发，4.8 "已恢复"过报）、R3（会话面只认 create，update/enable/delete 不可表达）、A1（SemanticDedupService 零生产调用者）。方案：新包 opskeeper-sre-alert、L2/write/approval、RollbackPlan 一等字段。降噪 v1 不成包（登记四个插拔点）。决策点 D-3/D-4 待评审；manifest 闸门静态核对（实测固化入 S-1）。
+
 
 ## 5. P1/P2 企业流程与协同
 
