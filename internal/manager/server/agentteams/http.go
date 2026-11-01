@@ -160,6 +160,14 @@ func (h *Handler) putState(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) hitlDecide(w http.ResponseWriter, r *http.Request) {
+	// BENY-886 加固：该通道写 state.HITL 无 proposal 哈希绑定，是弱通道。
+	// 外部决策面（paperclip walker）上线后应设置 OPKEEPER_HITL_DECIDE_DISABLED=1
+	// 关闭，统一走 /v1/hitl/proposals/{id}/decision fail-closed 通道。
+	if os.Getenv("OPKEEPER_HITL_DECIDE_DISABLED") == "1" {
+		h.log.Warn("hitlDecide blocked by OPKEEPER_HITL_DECIDE_DISABLED")
+		writeJSONError(w, http.StatusForbidden, "hitl decide channel disabled; use /v1/hitl/proposals/{id}/decision")
+		return
+	}
 	id, ok := mcpauth.FromContext(r.Context())
 	if !ok {
 		writeJSONError(w, http.StatusUnauthorized, "no resolved identity")

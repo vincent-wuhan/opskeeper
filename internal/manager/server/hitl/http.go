@@ -41,6 +41,9 @@ func (h *Handler) Register(router chi.Router) {
 		versioned.Post("/v1/hitl/proposals/{id}/approve", h.approve)
 		versioned.Post("/v1/hitl/proposals/{id}/reject", h.reject)
 		versioned.Post("/v1/hitl/proposals/{id}/expire", h.expire)
+		// 门 A 外部决议（paperclip walker，BENY-886）：fail-closed，绑定
+		// proposal_ref/target_ref/approval_hash 三重校验，过期返回 410
+		versioned.Post("/v1/hitl/proposals/{id}/decision", h.decideExternal)
 	})
 }
 
@@ -165,6 +168,70 @@ func (h *Handler) reject(w http.ResponseWriter, r *http.Request) {
 // @Router /api/v1/hitl/proposals/{id}/expire [post]
 func (h *Handler) expire(w http.ResponseWriter, r *http.Request) {
 	h.transition(w, r, hitlmodel.StateExpired)
+}
+
+// externalDecisionRequest 是 walker.opskeeper 子插件 POST 体
+// （walker/contracts/change-proposal-v1.md §4 change-decision 映射）。
+type externalDecisionRequest struct {
+	ProposalRef  string    `json:"proposal_ref"`
+	TargetRef    string    `json:"target_ref"`
+	Decision     string    `json:"decision"`
+	ApprovalHash string    `json:"approval_hash"`
+	DecidedAt    time.Time `json:"decided_at"`
+	Reason       string    `json:"reason"`
+	Source       string    `json:"source"`
+}
+
+// decideExternal
+// @Summary External gate-A decision from paperclip walker (fail-closed)
+// @Tags hitl
+// @Accept json
+// @Produce json
+// @Param id path string true "Proposal UUID"
+// @Param request body hitl.externalDecisionRequest true "External decision"
+// @Success 200 {object} hitl.apiResponse
+// @Failure 409 {object} hitl.apiResponse "binding mismatch (ref/target/hash)"
+// @Failure 410 {object} hitl.apiResponse "proposal expired"
+// @Router /api/v1/hitl/proposals/{id}/decision [post]
+func (h *Handler) decideExternal(w http.ResponseWriter, r *http.Request) {
+	if _, ok := requireAdmin(w, r); !ok {
+		return
+	}
+	var request externalDecisionRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	if request.Source != "" && request.Source != bizhitl.SourcePaperclip {
+		writeError(w, errs.ErrInvalid)
+		return
+	}
+	snapshot, err := h.service.DecideExternal(r.Context(), bizhitl.ExternalDecisionInput{
+		ProposalID:   chi.URLParam(r, "id"),
+		ProposalRef:  request.ProposalRef,
+		TargetRef:    request.TargetRef,
+		Decision:     mapExternalDecision(request.Decision),
+		ApprovalHash: request.ApprovalHash,
+		Reason:       request.Reason,
+		DecidedAt:    request.DecidedAt,
+	})
+	if err != nil {
+		writeError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, &snapshot)
+}
+
+// mapExternalDecision 把 walker 契约的 decision 值映射为 proposal 状态。
+// 空值与未知值映射为空串（biz 层 ErrInvalid fail-closed）。
+func mapExternalDecision(decision string) string {
+	switch decision {
+	case "approved":
+		return hitlmodel.StateApproved
+	case "rejected":
+		return hitlmodel.StateRejected
+	default:
+		return ""
+	}
 }
 
 func (h *Handler) transition(w http.ResponseWriter, r *http.Request, state string) {
