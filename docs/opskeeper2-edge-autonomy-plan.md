@@ -73,7 +73,7 @@
 |---|---|---|
 | 审计端口抽出、解开反向依赖 | 完成 | 声明边已切 34 / 34 |
 | 多集群联邦 | 完成 | `core/floor/federation`（4 MiB 上限、摘要先验后解包、签名 gate）、`core/floor/tunnel/federation.go` 的 `cluster.hello` / `cluster.policy` / `cluster.state` |
-| **manager 本体拆分** | **未开始** | 未搬 **1038 个 Go 文件 / 262324 行**（**插件闸门固化重取**：+1 文件 / +243 行，全部是 `middleware/toolset/adapter_plan_manifests_test.go`——把 adapter 方案三份草案的准入验证从一次性跑过固化成仓内测试；分母第十八次因为补守卫而变大，方向不变）（口径就是台账第 15 条闸门跑的那两条命令；`scripts/ledgercheck` 现在**同时**核对本文档这一句，见 8.2） |
+| **manager 本体拆分** | **未开始** | 未搬 **1042 个 Go 文件 / 263502 行**（**notifier B1+B2 迁移切片合入后由闸门再次叫出并重取**：+4 文件 / +1,178 行，全部是 `core/manager/biz/notify/`——六个内置通知渠道的内核胶水、准入策略与它们的守卫测试；分母第十九次因为补守卫而变大，方向不变；**插件闸门固化重取**：+1 文件 / +243 行，全部是 `middleware/toolset/adapter_plan_manifests_test.go`——把 adapter 方案三份草案的准入验证从一次性跑过固化成仓内测试；分母第十八次因为补守卫而变大，方向不变）（口径就是台账第 15 条闸门跑的那两条命令；`scripts/ledgercheck` 现在**同时**核对本文档这一句，见 8.2） |
 
 ---
 

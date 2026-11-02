@@ -317,6 +317,17 @@ var edges = map[edge]string{
 
 	{"mcp", "loop"}: "an investigation started over MCP enters the same loop as a chat one",
 
+	// The notifier admission policy is DERIVED from the datasource one
+	// rather than written out beside it: the control-plane ceiling is one
+	// thing, and two policies stating it separately are two things that can
+	// disagree about how wide the control plane is. The derivation adds
+	// exactly two deltas -- the notifier extension point's ceiling, raised
+	// to L3 because a notification writes into somebody else's system, and
+	// the alert.write scope without which an L3 notifier manifest is
+	// refused at the door -- and a test asserts the count, because a third
+	// delta nobody re-reads is a ceiling nobody chose.
+	{"notify", "aiops"}: "the notifier admission policy is derived from the datasource admission policy, so the control-plane ceiling is changed in one place rather than in two that can drift apart",
+
 	// The nodeagent -> nodefleet edge is gone (decision 282). It was declared
 	// as "the node-agent endpoints are the fleet's session handles", which is
 	// true and irrelevant: the reason it was a declared edge is that nodeagent

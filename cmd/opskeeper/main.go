@@ -119,6 +119,7 @@ import (
 	aiopschatprompt "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/chatprompt"
 	aiopschatruntime "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/chatruntime"
 	aiopsdatasource "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/datasource"
+	notifybiz "github.com/vincent-wuhan/opskeeper/core/manager/biz/notify"
 	"github.com/vincent-wuhan/opskeeper/core/manager/middleware/pluginhost"
 
 	mcpclient "github.com/vincent-wuhan/opskeeper/core/base/pkg/mcpclient"
@@ -1709,7 +1710,7 @@ func main() {
 	// sits beside a datasource's entry, on the same rollback path.
 	pluginLog := log.With(slog.String("comp", "pluginhost"))
 	managerPluginsDir := os.Getenv("OPSKEEPER_MANAGER_PLUGINS_DIR")
-	ph := pluginhost.New(managerPluginsDir, aiopsdatasource.ManagerPolicy(), pluginLog)
+	ph := pluginhost.New(managerPluginsDir, notifybiz.Policy(), pluginLog)
 	capabilityHandler = managerserversystemhealth.NewCapabilitiesHandler(ph)
 
 	// Which implementation answers the `prom` signal. planPromBackend is the
@@ -1812,6 +1813,26 @@ func main() {
 		} else {
 			log.Warn("manager plugin directory does not exist", slog.String("dir", dir))
 		}
+	}
+
+	// The six built-in notification channels join the same host as the
+	// third-party packages, and they join it LAST: a third-party variant of
+	// a channel type is already registered by the time the first-party
+	// package tries, so the first-party package stands aside and the
+	// deployment gets the variant. The order is the contract, not an
+	// accident of where this call sits.
+	//
+	// The call is unconditional: the channels are the default deployment's
+	// notification path, and a deployment with no third-party packages still
+	// has six channels.
+	//
+	// A failure here is fatal. Six channels quietly becoming five — because
+	// one of them was refused by a ceiling, a scope or a manifest check —
+	// while the boot log looks healthy is exactly the state this call
+	// exists to prevent, so the process stops instead.
+	if _, notifyErr := notifybiz.Wire(ph.Kernel(), notifybiz.Builtins(), pluginLog); notifyErr != nil {
+		log.Error("notification channel activation", slog.Any("err", notifyErr))
+		os.Exit(1)
 	}
 	// The one tool-registry wiring for this binary, as a value rather than
 	// as a constructor call: the fields that exist now are filled now, and
