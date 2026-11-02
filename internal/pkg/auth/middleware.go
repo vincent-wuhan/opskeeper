@@ -1,7 +1,9 @@
 package auth
 
 import (
+	"crypto/subtle"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/vincent-wuhan/opskeeper/internal/pkg/tenantctx"
@@ -21,6 +23,14 @@ import (
 func Middleware(signer *Signer) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if walkerServiceTokenPass(r) {
+				// paperclip walker service token：仅门 A 决议端点放行，
+				// 注入受限服务身份（handler 内 requireAdminOrWalkerToken 仍校验）
+				t := tenantctx.Tenant{Role: "admin", IsSuperuser: true}
+				tenantctx.SetOnSlot(r.Context(), t)
+				next.ServeHTTP(w, r.WithContext(tenantctx.With(r.Context(), t)))
+				return
+			}
 			tok := extractBearer(r)
 			if tok == "" {
 				http.Error(w, "missing bearer token", http.StatusUnauthorized)
@@ -65,8 +75,28 @@ func Middleware(signer *Signer) func(http.Handler) http.Handler {
 	}
 }
 
-func validAgentTeamsRequest(claims *Claims, path string) bool {
-	if path != "/v1/mcp" && path != "/api/v1/mcp" {
+// walkerServiceTokenPass：OPSKEEPER_WALKER_TOKEN 等值且路径精确限定为
+// 门 A 决议端点（/v1/hitl/proposals/{id}/decision，含 /api 前缀）时放行。
+// 恒定时间比较；env 未配置时恒 false（行为与原 JWT-only 完全一致）。
+func walkerServiceTokenPass(r *http.Request) bool {
+	token := strings.TrimSpace(os.Getenv("OPSKEEPER_WALKER_TOKEN"))
+	if token == "" {
+		return false
+	}
+	path := r.URL.Path
+	trimmed := strings.TrimPrefix(path, "/api")
+	if !strings.HasPrefix(trimmed, "/v1/hitl/proposals/") || !strings.HasSuffix(trimmed, "/decision") {
+		return false
+	}
+	const prefix = "Bearer "
+	authHeader := r.Header.Get("Authorization")
+	if !strings.HasPrefix(authHeader, prefix) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(strings.TrimPrefix(authHeader, prefix)), []byte(token)) == 1
+}
+
+func validAgentTeamsRequest(claims *Claims, path string) bool {	if path != "/v1/mcp" && path != "/api/v1/mcp" {
 		return false
 	}
 	if claims.TokenType != AgentTeamsTokenType ||
