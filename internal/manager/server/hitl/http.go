@@ -2,9 +2,12 @@
 package hitl
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -194,7 +197,7 @@ type externalDecisionRequest struct {
 // @Failure 410 {object} hitl.apiResponse "proposal expired"
 // @Router /api/v1/hitl/proposals/{id}/decision [post]
 func (h *Handler) decideExternal(w http.ResponseWriter, r *http.Request) {
-	if _, ok := requireAdmin(w, r); !ok {
+	if !requireAdminOrWalkerToken(w, r) {
 		return
 	}
 	var request externalDecisionRequest
@@ -219,6 +222,25 @@ func (h *Handler) decideExternal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, &snapshot)
+}
+
+// requireAdminOrWalkerToken 接受两种身份：JWT admin（requireAdmin 路径）
+// 或专用 walker service token（Bearer 明文等值比对 OPSKEEPER_WALKER_TOKEN，
+// 恒定时间比较）。service token 仅授予门 A 决议端点，避免长期 JWT 的
+// 12h 过期与宽权限问题；未配置该 env 时行为与 requireAdmin 完全一致。
+func requireAdminOrWalkerToken(w http.ResponseWriter, r *http.Request) bool {
+	if token := strings.TrimSpace(os.Getenv("OPSKEEPER_WALKER_TOKEN")); token != "" {
+		const prefix = "Bearer "
+		auth := r.Header.Get("Authorization")
+		if strings.HasPrefix(auth, prefix) &&
+			subtle.ConstantTimeCompare([]byte(strings.TrimPrefix(auth, prefix)), []byte(token)) == 1 {
+			return true
+		}
+	}
+	if _, ok := requireAdmin(w, r); ok {
+		return true
+	}
+	return false
 }
 
 // mapExternalDecision 把 walker 契约的 decision 值映射为 proposal 状态。
