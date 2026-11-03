@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -22,10 +23,14 @@ const maxRequestBodyBytes = 32 << 10
 
 type Handler struct {
 	service *bizhitl.Service
+	uplink  *bizhitl.PaperclipUplink
 }
 
 func NewHandler(service *bizhitl.Service) *Handler {
-	return &Handler{service: service}
+	return &Handler{
+		service: service,
+		uplink:  bizhitl.NewPaperclipUplinkFromEnv(slog.Default()),
+	}
 }
 
 func (h *Handler) Register(router chi.Router) {
@@ -112,6 +117,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	h.uplink.NotifyProposalCreated(snapshot.ID, request.Payload, snapshot.PayloadHash)
 	writeJSON(w, http.StatusCreated, &snapshot)
 }
 
