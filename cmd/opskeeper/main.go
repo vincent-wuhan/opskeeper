@@ -1786,6 +1786,11 @@ func main() {
 				// for an explicitly Chinese-default install.
 				// See [[feedback_ai_output_locale]].
 				DefaultLocale: firstNonEmpty(os.Getenv("OPSKEEPER_DEFAULT_LOCALE"), "en"),
+				// BENY-912 多假设并行 + Verifier（默认关闭）：
+				// OPSKEEPER_INVESTIGATOR_HYPOTHESES="default" 启用四角度；
+				// 逗号分隔自定义角度；空=单 worker 历史行为。
+				HypothesisAngles: hypothesisAnglesFromEnv(),
+				VerifierEnabled:  os.Getenv("OPSKEEPER_INVESTIGATOR_VERIFIER") == "1",
 			}, log)
 			// Same InvestigationRepo also implements the
 			// related-alerts query (same DB handle, different method).
@@ -3455,6 +3460,25 @@ func (r *llmResolverFunc) Resolve(ctx context.Context) (string, string, string, 
 // falling back to "" if all are empty. Used at the LLM provider wiring
 // site to layer "config → env default → hard-coded default" without
 // nesting ternaries.
+// hypothesisAnglesFromEnv 解析 OPSKEEPER_INVESTIGATOR_HYPOTHESES：
+// "default" → 内置四角度；逗号分隔 → 自定义；空/未设 → nil（单 worker）。
+func hypothesisAnglesFromEnv() []string {
+	v := strings.TrimSpace(os.Getenv("OPSKEEPER_INVESTIGATOR_HYPOTHESES"))
+	if v == "" {
+		return nil
+	}
+	if v == "default" {
+		return investigator.DefaultHypothesisAngles
+	}
+	var angles []string
+	for _, a := range strings.Split(v, ",") {
+		if a = strings.TrimSpace(a); a != "" {
+			angles = append(angles, a)
+		}
+	}
+	return angles
+}
+
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if v != "" {

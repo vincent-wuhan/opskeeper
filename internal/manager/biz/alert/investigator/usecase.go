@@ -141,6 +141,12 @@ type Config struct {
 	// provider (e.g. "zhipu" for GLM-4-air). Empty → router default.
 	SummarizerProvider string
 
+	// HypothesisAngles 非空 → 多假设并行模式（BENY-912）：每角度一个
+	// 并行 worker；默认空 = 单 worker，行为与历史版本一致。
+	HypothesisAngles []string
+	// VerifierEnabled → 多假设结果经 LLM Verifier 反向复核合成。
+	VerifierEnabled bool
+
 	// SummarizerTimeout bounds the extraction LLM call. Default 30s
 	// — short prompt, short reply, no tool loop.
 	SummarizerTimeout time.Duration
@@ -598,6 +604,13 @@ func (uc *Usecase) run(reportID string, incident alertmodel.Incident, dedupKeyVa
 	ctx, cancel := context.WithTimeout(context.Background(), uc.cfg.WorkerTimeout)
 	defer cancel()
 
+	// BENY-912 多假设并行 + Verifier：角度配置非空时走并行路径，
+	// 产出合成 finalAnswer 后复用统一收尾。
+	if len(uc.cfg.HypothesisAngles) > 0 {
+		uc.runHypothesisMode(ctx, reportID, incident, locale, ownerUserID, start)
+		return
+	}
+
 	prompt := renderAlertPrompt(&incident, locale)
 	worker, err := uc.spawner.SpawnWorker(ctx, chatruntime.SpawnRequest{
 		AgentName:   uc.cfg.AgentName,
@@ -671,26 +684,21 @@ func (uc *Usecase) run(reportID string, incident alertmodel.Incident, dedupKeyVa
 		return
 	}
 
-	// PR-3: structured extraction. Falls back internally to the first-
-	// paragraph heuristic when summarizer is nil / LLM errors / JSON
-	// parse fails — caller sees a fully-populated ReadyFields either way.
-	// tool_call_count is read back from the worker transcript (chat_messages
-	// by session_id) so the report + UI show how many tools the
-	// investigation actually invoked instead of a hardcoded 0.
-	toolCalls := uc.countToolCalls(worker.SessionID)
-	fields := uc.extractStructured(context.Background(), incident, finalAnswer, toolCalls, locale)
+	uc.finalizeAnswer(reportID, incident, finalAnswer, uc.countToolCalls(worker.SessionID), locale)
+	terminalStatus = alertmodel.InvestigationStatusReady
+}
 
+// finalizeAnswer 是单/多假设路径共用的收尾：结构化抽取 + MarkReady。
+func (uc *Usecase) finalizeAnswer(reportID string, incident alertmodel.Incident, finalAnswer string, toolCalls int, locale string) {
+	fields := uc.extractStructured(context.Background(), incident, finalAnswer, toolCalls, locale)
 	if err := uc.repo.MarkReady(context.Background(), reportID, fields); err != nil {
 		uc.log.Warn("mark ready failed",
 			slog.String("report_id", reportID), slog.Any("err", err))
 		return
 	}
-	terminalStatus = alertmodel.InvestigationStatusReady
-
 	uc.log.Info("investigation finished",
 		slog.String("report_id", reportID),
 		slog.Uint64("incident_id", incident.ID),
-		slog.Duration("elapsed", time.Since(start)),
 		slog.String("root_cause", fields.RootCause))
 }
 
