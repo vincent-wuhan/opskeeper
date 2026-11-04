@@ -27,13 +27,10 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/vincent-wuhan/opskeeper/core/base/pkg/dbx"
-	"github.com/vincent-wuhan/opskeeper/core/base/pkg/notify"
 	"github.com/vincent-wuhan/opskeeper/core/floor/config"
 	manageraiopstools "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools"
 	"github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/alerting"
 	"github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/chat2query"
-	managerbizapproval "github.com/vincent-wuhan/opskeeper/core/manager/biz/approval"
-	devicebiz "github.com/vincent-wuhan/opskeeper/core/manager/biz/device"
 	manageraiopsdata "github.com/vincent-wuhan/opskeeper/core/manager/data/aiops/store"
 	manageralertdata "github.com/vincent-wuhan/opskeeper/core/manager/data/alert/store"
 	managerapprovaldata "github.com/vincent-wuhan/opskeeper/core/manager/data/approval/store"
@@ -201,36 +198,14 @@ func TestEveryWitnessedManagerToolIsInTheBagThisBinaryServes(t *testing.T) {
 // bag. It is the seam decision 350 added: before toolRegistryWiring existed,
 // this function could not be written, and that is the whole reason C.1
 // shipped as delivered without ever appearing.
+//
+// The wiring itself lives in buildTheRealToolRegistry, because the plugin
+// gap gate asks the same question of the same registry and a second
+// wiring would be a second answer.
 func buildTheRealToolBag(t *testing.T) *manageraiopstools.ToolBag {
 	t.Helper()
-	db := throwawayDB(t)
-	log := newTestLogger(t)
-	approval := managerbizapproval.NewUsecase(managerapprovaldata.NewRepo(db), log)
-	channels := manageralertdata.NewRepo(db)
-	router := notify.NewFromConfig(config.NotificationConfig{}, log)
-
-	wiring := toolRegistryWiring{
-		Caller:  stubCaller{},
-		Edges:   stubEdgeCatalog{},
-		Devices: &devicebiz.Usecase{},
-		Prom:    stubPromQuerier{},
-		Logs:    stubLogQuerier{},
-		Trace:   stubTraceQuerier{},
-		Alerts:  stubAlertUsecase{},
-		Log:     log,
-	}
-	reg := wiring.buildRegistry()
-	wiring.Approval = approval
-	wiring.Channels = channels
-	wiring.Router = router
-	wiring.DB = db
-	wiring.LLM = stubCompleter{}
-	wiring.PagesDir = t.TempDir()
-	wiring.AuditLister = stubAuditLister{}
-	wiring.EdgeChanges = stubEdgeChangeLister{}
-	wiring.ConfigManager = stubConfigManager{}
-	wiring.apply(reg)
-	return reg.BuildBaseTools()
+	_, bag := buildTheRealToolRegistry(t)
+	return bag
 }
 
 // throwawayDB is a migrated sqlite database in a temp directory, opened and
