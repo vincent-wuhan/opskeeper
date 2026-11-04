@@ -349,10 +349,36 @@ import (
 // 因此当前生产调用图无法到达这批符号。相关行为均由领域测试覆盖，形成
 // test-only 增量；`+1` dead 是新域暴露给后续调用方的哨兵错误。后续接线完成后，
 // 删除通道应优先把这些符号转入真实生产调用边。
+//
+// 915 → 909 / 601 / 308：L4 语义降噪整块删除，三格同向下降，无一格上调。
+// `core/manager/biz/alert/semantic_dedup.go` 是一份零生产调用者的完整实现——
+// 模型、中文 prompt、熔断器、配置注入齐全，但仓内除自身与它的测试文件外无任何
+// 引用（openspec/changes/plugin-architecture-recovery-plan/alert-plugin-plan.md
+// §3 A1）。评审裁决 D-4 判其删除（§9.3），故随本次一并移除；`CircuitBreaker`、
+// `LLMClient` 与 prompt 模板只服务这一个服务，一并随文件走——留下任何一件都会
+// 变成新的零调用者死码。**零调用者的完整实现是最贵的一种死码**：它读起来像
+// "这个能力已经有了"，而生产调用图里根本没有它。
+//
+// dead 一格不动，是因为删除前报告把这六个符号记在 test-only 一类而不是 dead：
+// `WithThreshold`、`WithCooldown`、`WithClock`、`FailureCount`、
+// `NewSemanticDedupService` 在自己的文件里没有第二处引用，只被被删的测试文件
+// 提到；文件连同测试一起删掉之后，它们不是换了类，是直接离开了计数。剩下的
+// 二十来个符号在自己的文件里被引用过（`renderPrompt` 调 `parseDedupResponse`、
+// `Enqueue` 调 `Process`），本报告按同文件内引用即算可达，所以它们从来就没进过
+// 这三格，删文件等于它们离开了这棵树。
+//
+// 同一处删除还揭开了另一处计数假象，这也是本行把 dead 留在 601 而不是上调到
+// 602 的原因。`chatdiagnose.WithThreshold`
+// （`core/manager/biz/chatdiagnose/kb_lookup.go`）此前记在 test-only 一类，
+// 唯一原因是**被删的测试文件调用了另一个包的同名方法** `cb.WithThreshold(...)`，
+// 而本报告按裸名匹配、不区分包。删除之后它再无任何调用者，真正是死码，于是
+// 随之删除。**一个符号在报告里"活着"，可能只是另一个包里一个同名标识符顺带
+// 提到过它**——名字相同不等于调用关系相同，而这正是本报告按名匹配的那一处
+// 模糊性。留着一个只为保住计数而存在的符号，就是让棘轮去度量噪声。
 const (
-	unreachableBudget    = 915
+	unreachableBudget    = 909
 	deadSymbolBudget     = 601
-	testOnlySymbolBudget = 314
+	testOnlySymbolBudget = 308
 )
 
 // TestTheUnreachableSymbolCountNeverGrows is the gate decision 199 declined to

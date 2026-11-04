@@ -219,11 +219,6 @@ type AuditEntry struct {
 // KBLookupOption configures a KBLookupImpl at construction time.
 type KBLookupOption func(*KBLookupImpl)
 
-// WithThreshold overrides the default similarity floor.
-func WithThreshold(t float64) KBLookupOption {
-	return func(k *KBLookupImpl) { k.threshold = t }
-}
-
 // WithAuditLogger wires an audit sink.
 func WithAuditLogger(a AuditLogger) KBLookupOption {
 	return func(k *KBLookupImpl) { k.auditLogger = a }
