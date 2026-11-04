@@ -41,11 +41,15 @@ type agentToolCall struct {
 	EdgeID    uint64
 	SessionID string
 	Tool      string
-	Surface   string // "aiops" or "middleware"
-	Args      json.RawMessage
-	Result    json.RawMessage
-	Started   time.Time
-	Duration  time.Duration
+	// Surface is which of the control plane's tool surfaces served the
+	// call: the closure registry, the adapter registry, the BaseTool
+	// bridge, or "unknown" when no surface did. It is recorded from the
+	// dispatch that answered rather than inferred from the tool name.
+	Surface  string
+	Args     json.RawMessage
+	Result   json.RawMessage
+	Started  time.Time
+	Duration time.Duration
 
 	// Denied separates "the call was refused before it ran" from "the
 	// call ran and failed". Both are failures to the caller, but only one
