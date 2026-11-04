@@ -3395,6 +3395,32 @@ func main() {
 	toolWiring.LLM = modelRegistry
 	toolWiring.PagesDir = os.Getenv("OPSKEEPER_PAGES_DIR")
 	pageStore := toolWiring.apply(toolsReg)
+	// The BaseTool bridge onto the node's upcall channel.
+	//
+	// It is assembled HERE, after toolWiring.apply, and that ordering is
+	// load-bearing rather than incidental. apply() is where every
+	// post-construction dependency is injected, and six of the tools the
+	// node packages declare depend on those late ones — the topology
+	// graph, the audit seam, the code browser. Build the bag before
+	// apply() and the bridge comes up holding the tools that do not need
+	// a late dependency, which is a bridge that looks wired and answers
+	// "no such tool" for exactly the tools that were missing.
+	//
+	// It gets its own bag rather than the MCP one below. That bag has
+	// the node-local host_* probes appended to it, and those are the
+	// node's own business: a node serves them locally, and sharing the
+	// bag would make the control plane a second door to a question the
+	// asker can answer without leaving the machine.
+	agentTools.basetool = newBaseToolUpcall(toolsReg.BuildBaseTools(), aiopstoolsdec.Deps{
+		Timeout: 15 * time.Second,
+		// Audit is deliberately empty. This channel's own ledger
+		// (agentToolAudit) records every call it serves, and the
+		// decorator chain's audit writes chat_tool_calls — writing both
+		// would record one call in two places with two different
+		// readers, and the two readers would conclude different things.
+		Limiter:    aiopstoolsdec.NewTokenBucketLimiter(0),
+		Registerer: reg,
+	}, log)
 	// The MCP surface is assembled HERE, not where mcpHandler was built.
 	// Everything that changes what the registry yields — SetHostBashProposer,
 	// SetCloudBashProposer, SetIMSender, SetPageStore — runs after the handler
@@ -7005,6 +7031,23 @@ type agentToolUpcall struct {
 	// configured", which is the correct answer.
 	middleware *middlewareregistry.Registry
 
+	// basetool is the third surface this handler dispatches from: the
+	// BaseTool implementations the control plane builds from the same
+	// registry, behind the same decorator chain.
+	//
+	// It is a separate surface rather than another entry in the aiops
+	// registry because the aiops registry is the *closure* form of the
+	// capability — name, schema, executor — and the BaseTool form is the
+	// object form, with a class, an origin and a decorator chain around
+	// it. The same capability exists in both, and the node's schema is
+	// generated from the BaseTool one, so a node's arguments are shaped
+	// for the BaseTool and the bridge is what answers them.
+	//
+	// nil on a deployment that wired no bridge, which is not an error:
+	// the node's package then gets "not available on this control
+	// plane", which is the correct answer.
+	basetool *baseToolUpcall
+
 	//
 	// audit is the record of what this channel ran on a node's behalf.
 	// Every exit below goes through it, including the two refusals, so
@@ -7028,12 +7071,12 @@ type agentToolUpcall struct {
 // is not thereby impersonating one.
 func (a *agentToolUpcall) RunAgentTool(ctx context.Context, edgeID uint64, sessionID, tool string, args json.RawMessage) (json.RawMessage, error) {
 	started := time.Now()
-	result, denied, reason, err := a.dispatchAgentTool(ctx, edgeID, sessionID, tool, args)
+	result, surface, denied, reason, err := a.dispatchAgentTool(ctx, edgeID, sessionID, tool, args)
 	a.audit.record(ctx, agentToolCall{
 		EdgeID:    edgeID,
 		SessionID: sessionID,
 		Tool:      tool,
-		Surface:   agentToolSurface(tool),
+		Surface:   surface,
 		Args:      args,
 		Result:    result,
 		Started:   started,
@@ -7045,33 +7088,50 @@ func (a *agentToolUpcall) RunAgentTool(ctx context.Context, edgeID uint64, sessi
 	return result, err
 }
 
-// agentToolSurface names which of the two registries served the call, for
-// the audit row. A reader asking "what did the control plane run" needs to
-// know whether the answer came from a tool that knows about the fleet or
-// one that reaches into a customer's database, and inferring that from the
-// tool name prefix would make the ledger depend on a naming convention.
-func agentToolSurface(tool string) string {
-	if toolset.ParseFamily(tool) != "" {
-		return "middleware"
-	}
-	return "aiops"
-}
+// The surfaces an agent.tool upcall can be served by, as they are recorded
+// on the audit row.
+//
+// A reader asking "what did the control plane run" needs to know whether the
+// answer came from a tool that knows about the fleet, one that reaches into
+// a customer's database, or one of the BaseTool implementations the node's
+// package was written against. The surface is recorded from the dispatch
+// that actually served the call rather than inferred from the tool name:
+// the name does not say which of the three it was, and a ledger that
+// guesses is a ledger that lies.
+const (
+	// agentToolSurfaceAiops is the closure registry (registry.go).
+	agentToolSurfaceAiops = "aiops"
+	// agentToolSurfaceMiddleware is the adapter registry — the tools that
+	// reach into PostgreSQL, Redis, Kubernetes and the brokers.
+	agentToolSurfaceMiddleware = "middleware"
+	// agentToolSurfaceBaseTool is the BaseTool bridge — the object form of
+	// the same capabilities, behind the decorator chain.
+	agentToolSurfaceBaseTool = "basetool"
+	// agentToolSurfaceUnknown is recorded when no surface served the call:
+	// the control plane was still starting, the node named a session it
+	// does not own, or no surface carries that name. Naming a surface
+	// that did not serve the call would be a worse lie than admitting it.
+	agentToolSurfaceUnknown = "unknown"
+)
 
 // dispatchAgentTool is the whole of RunAgentTool's decision-making, kept
 // separate so that the audit write has exactly one place to happen. A
 // second `return` added to RunAgentTool later cannot skip it, which is the
 // failure mode this shape exists to prevent.
-func (a *agentToolUpcall) dispatchAgentTool(ctx context.Context, edgeID uint64, sessionID, tool string, args json.RawMessage) (json.RawMessage, bool, string, error) {
+//
+// It returns the surface that served the call, so that the audit row
+// records the answer rather than a guess about it.
+func (a *agentToolUpcall) dispatchAgentTool(ctx context.Context, edgeID uint64, sessionID, tool string, args json.RawMessage) (json.RawMessage, string, bool, string, error) {
 	if a.reg == nil {
 		// A call in the window between the transport coming up and the
 		// registry being built. Refusing is right: a half-built registry
 		// would answer for the tools it happened to have registered so far.
-		return nil, true, "the control plane is still starting", fmt.Errorf(
+		return nil, agentToolSurfaceUnknown, true, "the control plane is still starting", fmt.Errorf(
 			"%s is not available: the control plane is still starting", tool)
 	}
 	if a.fleet != nil && sessionID != "" {
 		if _, ok := a.fleet.Stats(edgeID, sessionID); !ok {
-			return nil, true, "the node named a session it does not own", fmt.Errorf(
+			return nil, agentToolSurfaceUnknown, true, "the node named a session it does not own", fmt.Errorf(
 				"%s was not run: this node has no open conversation %q, so the call cannot be attributed to an operator",
 				tool, sessionID)
 		}
@@ -7082,18 +7142,84 @@ func (a *agentToolUpcall) dispatchAgentTool(ctx context.Context, edgeID uint64, 
 	// aiops tool of the same name, and the two surfaces are reviewed by
 	// different people for different reasons.
 	if toolset.ParseFamily(tool) != "" {
-		return a.runMiddlewareTool(ctx, tool, args)
+		res, denied, reason, err := a.runMiddlewareTool(ctx, tool, args)
+		return res, agentToolSurfaceMiddleware, denied, reason, err
 	}
 
-	res, err := a.reg.Invoke(ctx, tool, args)
+	// The BaseTool bridge comes before the closure registry, and the order
+	// is the opposite of the middleware one above for a reason that has
+	// nothing to do with prefixes.
+	//
+	// The middleware routing is by prefix because a family prefix is a
+	// *type marker*: `redis.info` can only be a middleware tool, and no
+	// aiops tool is named that way, so there is no ambiguity to resolve
+	// and each surface can be reviewed on its own.
+	//
+	// The bridge and the closure registry are the same namespace holding
+	// two implementations of the same capability, and their argument
+	// shapes have already diverged — the closure form takes `edge_name`,
+	// the BaseTool form takes `device_ids[]`. The node's schema is
+	// generated from the BaseTool metadata, so the arguments a node sends
+	// are shaped for the BaseTool. Letting the closure registry answer
+	// first would make the tool "exist" and still fail on every call:
+	// the same gap, wearing a different hat.
+	res, denied, reason, err := a.runBaseTool(ctx, tool, args)
+	switch {
+	case err == nil:
+		return res, agentToolSurfaceBaseTool, false, "", nil
+	case errors.Is(err, errBaseToolNotHere):
+		// The bridge does not carry that name; the closure registry may.
+	default:
+		return nil, agentToolSurfaceBaseTool, denied, reason, err
+	}
+
+	res2, err := a.reg.Invoke(ctx, tool, args)
 	if err != nil {
 		// The error is the model's to read, so it is passed through
 		// rather than flattened into a transport failure. "no such tool"
 		// and "the alert service is down" are different sentences and the
 		// model reacts to them differently.
-		return nil, false, "", fmt.Errorf("%s: %w", tool, err)
+		if errors.Is(err, errs.ErrNotFound) {
+			if a.basetool == nil {
+				// No surface carries the name, and one of the surfaces
+				// is not even wired here. Saying "no such tool" alone
+				// would be a claim this deployment cannot support: the
+				// tool may exist in the BaseTool surface that this
+				// process did not wire. "Not configured" is the
+				// sentence an operator can act on.
+				return nil, agentToolSurfaceUnknown, false, "", fmt.Errorf(
+					"%s: %w (the BaseTool surface is not wired on this control plane)", tool, err)
+			}
+			return nil, agentToolSurfaceUnknown, false, "", fmt.Errorf("%s: %w", tool, err)
+		}
+		return nil, agentToolSurfaceAiops, false, "", fmt.Errorf("%s: %w", tool, err)
 	}
-	return res.ResultJSON, false, "", nil
+	return res2.ResultJSON, agentToolSurfaceAiops, false, "", nil
+}
+
+// runBaseTool dispatches a BaseTool the node's agent asked for.
+//
+// The bridge itself decides what this channel serves, so this function is
+// thin on purpose: the exposure rules live in one place (basetool_upcall.go)
+// rather than being re-stated at the call site, where a second copy would
+// drift.
+//
+// A name the bridge does not carry comes back as errBaseToolNotHere, which
+// is not a failure — it is the signal to try the closure registry. The
+// distinction matters for the answer the model eventually reads: "this
+// control plane will not run that for you" and "there is no tool by that
+// name" are different sentences, and only the second is worth chasing.
+func (a *agentToolUpcall) runBaseTool(ctx context.Context, tool string, args json.RawMessage) (json.RawMessage, bool, string, error) {
+	if a.basetool == nil {
+		// A deployment that wired no bridge. The answer says the surface
+		// is not configured rather than that the tool does not exist,
+		// because from here the two are indistinguishable and the first
+		// is the one an operator can act on.
+		return nil, false, "", fmt.Errorf(
+			"%w: %s is not available on this control plane: the BaseTool surface is not wired here",
+			errBaseToolNotHere, tool)
+	}
+	return a.basetool.invoke(ctx, tool, args)
 }
 
 // runMiddlewareTool dispatches a middleware tool the node's agent asked for.
