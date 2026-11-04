@@ -14,8 +14,28 @@
 #
 #   候选（第三份就是本文件）                     组内 import   跨组 import   切断的硬约束
 #   docs/manager-split.proposed 50 6 0 / 0
-#   docs/manager-split.constrained 53 3 0 / 0
-#   docs/manager-split.release-floor 0 56 0 / 0
+#   docs/manager-split.constrained 54 3 0 / 0
+#   docs/manager-split.release-floor 43 14 0 / 0
+#
+# **notifier 切片重取了这三行，其中本文件的组内 import 从 0 变成 43、跨组从 56
+# 掉到 14。** 这一刀的机制与前面每一次都不同：**它是加边，不是切边。** 六个内置
+# 通知渠道的内核胶水（OpenSpec change `notifier-builtin-kernel-migration`）把
+# `core/manager/biz/notify` 放进控制面，而它的准入策略是**从
+# `aiopsdatasource.ManagerPolicy()` 派生**的——宿主一份 policy，notifier 只加
+# 两个 delta（notifier 的 L3 天花板与 `alert.write`）。派生是一条**生产 import
+# 的域边**，于是 `notify -> aiops` 成为一条声明边。
+#
+# 而本文件的分组规则是「零入向即进 independent」，规则本身一个字没改，答案却
+# 变了两处：**`notify` 的入向为零，进 independent；`aiops` 的入向因此不再是零，
+# 搬出 independent。** 这是一进一出，本组的域数不变（45 → 45）。
+#
+# **而 `aiops` 是全树最大的枢纽**：它往 `alert` / `device` / `loop` 一共 43 条
+# import。这三个域一直在 `core` 组里，于是这 43 条 import 过去是**缝**，现在
+# 变成了**组内**。**一条新的入边换来 42 条缝的消失**——跨组 56 → 14，组内 0 → 43。
+# 这仍然是「报价是分组方式的函数，不是树质量的函数」这句话的第四个证据：树的
+# 可证明独立发版面**没有变**（`notify` 进 floor、`aiops` 出 floor，一进一出），
+# 报价却掉了一大截——**变的不是树，是分组**。而这一刀的方向与前面三次相反：
+# 前面三次是树变好、报价变坏，这一次报价变好，原因是**一个枢纽换了站的一边**。
 #
 # **决策 283 重取了这三行，其中本文件的组内 import 从 4 变成 0。** 组内 0 是
 # 一个值得单独说的读数，不是排版事故：这一份的分组依据是「零入向即可证明独立
@@ -205,10 +225,11 @@
 # 那个包的 `Proposal.TableName()` 与 `core/manager/model/hitl` 的同名方法
 # 都返回 `"proposal"`——**两个形状不同的模型映射同一张表，而入度为零的那个
 # 从未被任何代码使用**。删掉的是影子，不是功能。
-independent = aiops, audit, chatdiagnose, cluster, demo, edgeauth, federation, federationchild,
+independent = audit, chatdiagnose, cluster, demo, edgeauth, federation, federationchild,
         federationlink, flow, frontierbound, grafana, iam, imbridge, incident, integration,
         llmgw, llmpig, logs, marketplace, mcp, metric, monitor, nodeagent,
         hitl,
+        notify,
         plugin, pluginimport, prometheus, promwrite, report,
         pigruntime,
         runtimemgmt,
@@ -217,6 +238,20 @@ independent = aiops, audit, chatdiagnose, cluster, demo, edgeauth, federation, f
         topology, traces, version, webshell,
         edge,
         approval
+
+# **notifier 切片把 `notify` 搬进了 `independent`，又把 `aiops` 搬了出去**，于是
+# 本组 45 → 45 个域：一进一出，而这两个移动是**同一条边**的两半。
+#
+# `notify` 进组是**读数**：六个内置通知渠道的内核胶水（OpenSpec change
+# `notifier-builtin-kernel-migration`）是一个新域，除 `core/base` 底座之外没有
+# 入向跨域 import——没有任何东西 import 它，所以它可证明独立发版。**而 `aiops`
+# 出组是同一条边的另一半**：notifier 的准入策略从 `aiopsdatasource.ManagerPolicy()`
+# 派生，所以 `notify -> aiops` 是一条**生产 import**，`aiops` 的入向因此从零变成
+# 1，**它不再满足「零入向」这个本文件的入组条件**。
+#
+# **一条边同时让一个域进组、让另一个域出组**，而这一对的净效果是本组 45 → 45。
+# 树的可证明独立发版面没有变，**变的是分组**：而因为搬走的是全树最大的枢纽
+# `aiops`，这一搬同时把 43 条 import 从缝变成了组内（见上面那张价表）。
 
 # **决策 273 把 `audit` 从这一组搬进了 `independent`**，于是本组 36 → 37 个域，
 # 而「其余」那一组相应地少了一个。这一搬不是判断，是**读数**：`audit` 的入向
@@ -261,19 +296,22 @@ independent = aiops, audit, chatdiagnose, cluster, demo, edgeauth, federation, f
 # 搬进 `independent` 不解决它对 `device` 的出向依赖——那是反方向，不影响
 # 「没有东西 import 它」这个定理。
 #
-# 其余 13 个。**这个数字此前写的是 20，账是 9 + 10 + 1，而三项全错**，本轮由闸门
+# 其余 14 个。**这个数字此前写的是 20，账是 9 + 10 + 1，而三项全错**，本轮由闸门
 # 一次点出来，值得把每一项的错法都写下来：
 #
-#   - 应当是 **3** 个入向有边、因而需要真答案的域（`alert` `device` `loop`），
-#     加起来正好是 `-graph` 报告里 in-degree 非零的那 3 行。
+#   - 应当是 **4** 个入向有边、因而需要真答案的域（`alert` `device` `loop`
+#     `aiops`），加起来正好是 `-graph` 报告里 in-degree 非零的那 4 行。
 #     **决策 275 让它从 10 变成 9**（`federation` 切掉最后一条入边），
 #     **决策 276、277、280、282、283 各让一个域归零**：`topology`（`aiops -> topology`）、
 #     `hitl`（`aiops -> hitl`）、`aiops` 本身（`imbridge -> aiops`）、以及 `nodefleet`
 #     （`nodeagent -> nodefleet`）、以及 `edge`（`aiops -> edge`）。这五刀把 9 变成 4，
 #     **决策 284 又让 `approval` 归零**（`aiops -> approval`）——这六刀把 9 变成 3，
 #     而散文上一轮还停在 9，**因为散文没有随树动，而闸门会**。
-#     **剩下的 3 个全都是大域**（`device` 28 条入边 / 2 边、`alert` 18 条 / 2 边、
-#     `loop` 10 条 / 4 边），合计占全树 20.7%——**「剩下的都在这几个大域里」这次
+#     **notifier 切片又把它加回来一个**：`notify -> aiops` 是这一串里第一条
+#     **加边**，它让 `aiops` 的入向从零变成 1，于是需要真答案的域从 3 变回 4。
+#     **剩下的 4 个全都是大域**（`device` 28 条入边 / 2 边、`alert` 18 条 / 2 边、
+#     `loop` 10 条 / 4 边，加上 `aiops`——它只有 1 条入边，却是全树最大的域，
+#     占 22.8% 的行），合计占全树 43.5%——**「剩下的都在这几个大域里」这次
 #     变成了真的，而它在决策 283 结束时还是错的**。**一个判断的真假取决于它
 #     说的是哪一刀之后的树，所以这类判断必须带读数一起说，否则下一次还会错。**
 #   - 10 个 shared 底座组件（`agentteams` `container` `control` `dataguard`
@@ -290,7 +328,7 @@ independent = aiops, audit, chatdiagnose, cluster, demo, edgeauth, federation, f
 #     错误的两面**。散文里早就把 `agentteams` 点进了那 10 个 shared 组件，**说的
 #     和做的不是同一件事**。
 #
-# 3 + 10 = 13。
+# 4 + 10 = 14。
 #
 # **这段散文此前写的是「其余 25 个 = 13 + 10 + 2」，四个数字全错**，而它错在
 # 一个已经发生过的事件上：它描述的是一个把 `chatdiagnose` 与 `frontierbound`
@@ -302,7 +340,7 @@ independent = aiops, audit, chatdiagnose, cluster, demo, edgeauth, federation, f
 # 它在 import 图里读作叶子——被依赖不需要声明——但它同时被 aiops 与 marketplace
 # 依赖，而且已经是一个独立的 Go module（core/extension），入度在这张图里
 # 不可测这件事本身不该成为不分配它的理由。
-core = agentteams, alert, container, control,
+core = agentteams, alert, aiops, container, control,
         dataguard, device,
         higress, knowledge, loop, middleware,
         migrate, migrator, observability

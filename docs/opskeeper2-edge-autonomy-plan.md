@@ -73,7 +73,7 @@
 |---|---|---|
 | 审计端口抽出、解开反向依赖 | 完成 | 声明边已切 34 / 34 |
 | 多集群联邦 | 完成 | `core/floor/federation`（4 MiB 上限、摘要先验后解包、签名 gate）、`core/floor/tunnel/federation.go` 的 `cluster.hello` / `cluster.policy` / `cluster.state` |
-| **manager 本体拆分** | **未开始** | 未搬 **1037 个 Go 文件 / 261298 行**（**L4 语义降噪删除重取**：-1 文件 / -1,026 行，删掉的是 `biz/alert/semantic_dedup.go`（614 行）与其测试（688 行）——零生产调用者的完整实现，按告警插件化方案 §9.3 的裁决删除；留在树里的 L0 静态规则与 source linker 用例拆进 `biz/alert/static_rules_v1_test.go`（119 行）与 `biz/alert/source_linker_test.go`（+162 行），另删掉 `biz/chatdiagnose/kb_lookup.go` 里零调用者的 `WithThreshold`（-5 行，它此前只因被删测试里的同名方法而被记成 test-only）；分母第十九次因为删死码而变小，方向不变；**插件闸门固化重取**：+1 文件 / +243 行，全部是 `middleware/toolset/adapter_plan_manifests_test.go`——把 adapter 方案三份草案的准入验证从一次性跑过固化成仓内测试；分母第十八次因为补守卫而变大，方向不变）（口径就是台账第 15 条闸门跑的那两条命令；`scripts/ledgercheck` 现在**同时**核对本文档这一句，见 8.2） |
+| **manager 本体拆分** | **未开始** | 未搬 **1041 个 Go 文件 / 262476 行**（**L4 语义降噪删除重取**：-1 文件 / -1,026 行，删掉的是 `biz/alert/semantic_dedup.go`（614 行）与其测试（688 行）——零生产调用者的完整实现，按告警插件化方案 §9.3 的裁决删除；留在树里的 L0 静态规则与 source linker 用例拆进 `biz/alert/static_rules_v1_test.go`（119 行）与 `biz/alert/source_linker_test.go`（+162 行），另删掉 `biz/chatdiagnose/kb_lookup.go` 里零调用者的 `WithThreshold`（-5 行，它此前只因被删测试里的同名方法而被记成 test-only）；分母第十九次因为删死码而变小，方向不变；**插件闸门固化重取**：+1 文件 / +243 行，全部是 `middleware/toolset/adapter_plan_manifests_test.go`——把 adapter 方案三份草案的准入验证从一次性跑过固化成仓内测试；分母第十八次因为补守卫而变大，方向不变）（口径就是台账第 15 条闸门跑的那两条命令；`scripts/ledgercheck` 现在**同时**核对本文档这一句，见 8.2） |
 
 ---
 

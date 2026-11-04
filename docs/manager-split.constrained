@@ -35,7 +35,7 @@
 #
 #   候选                              组内 import   跨组 import   切断的硬约束
 #   docs/manager-split.proposed 50 6 0 / 0
-#   docs/manager-split.constrained 53 3 0 / 0
+#   docs/manager-split.constrained 54 3 0 / 0
 #
 # 机制不难理解，但方向值得写清楚，因为它是本文件存在的全部理由：
 # 那三个域不是跨组边的**消费者**，是**生产者**。它们在 apps，而它们依赖的东西
@@ -62,7 +62,7 @@
 # 与 `service/federationlink`（哪个已认证调用方可以代表哪个子集群）成对；
 # 提案自己给 federationlink 放 apps 的理由是「这一层讲的是控制面怎么把一份
 # 签好的策略送到另一个控制面手里」，`federationchild` 讲的是同一件事的另一半，
-# 所以它在 apps。本版 58 个域全部分配，定价器不再报「1 domain(s) the grouping
+# 所以它在 apps。本版 59 个域全部分配，定价器不再报「1 domain(s) the grouping
 # does not mention」。
 #
 # —— 这份方案仍然回答不了的那一问（不因为更便宜就消失）——
@@ -99,9 +99,17 @@
 # 已经是 core/extension 这个独立 module。把它放 apps 会凭空造出一条
 # aiops → container 的跨组缝，而这条缝在真实切法里根本不存在（决策 271 已经
 # 用一个 Go module 把它从 manager 里搬出去了）。
+# notifier 切片之后多了一个 notify：六个内置通知渠道的内核胶水（OpenSpec change
+# `notifier-builtin-kernel-migration`）。它进 core 组只有一个理由：它的准入策略是
+# 从 `aiopsdatasource.ManagerPolicy()` **派生**的——宿主一份 policy，notifier 只加
+# 两个 delta（notifier 的 L3 天花板与 `alert.write`）——所以 `notify → aiops` 是一条
+# **生产 import 的域边**。放在 core 组里这条 import 是组内的，不产生缝；放 apps 会
+# 凭空多一条缝，而这条缝在真实切法里并不存在：两个域本来就要一起发版，因为改一份
+# 准入策略必须同时看另一份。
 core = aiops, container, device, edge, alert, topology, loop, hitl, approval, audit, mcp,
         chatdiagnose, frontierbound, middleware,
-        monitor, setting, skill, knowledge, report, proposal, incident
+        monitor, setting, skill, knowledge, report, proposal, incident,
+        notify
 
 # 应用面：入口层与适配层。彼此几乎不依赖（L0 占 36 个域），打包代价低。
 #
