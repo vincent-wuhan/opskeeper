@@ -16,10 +16,13 @@ package hitl
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -124,13 +127,13 @@ func probeCert(host string, warnDays int) patrolCheck {
 	days := int(time.Until(validTo).Hours() / 24)
 	switch {
 	case days < 0:
-		d := fmt.Sprintf("证书已过期 %d 天", -days)
+		d := fmt.Sprintf("证书已过期 %d 天 (%s)", -days, host)
 		return patrolCheck{Name: "cert-expiry", Result: "fail", Detail: &d, Layer: "live"}
 	case days <= warnDays:
-		d := fmt.Sprintf("证书仅剩 %d 天", days)
+		d := fmt.Sprintf("证书仅剩 %d 天 (%s)", days, host)
 		return patrolCheck{Name: "cert-expiry", Result: "degraded", Detail: &d, Layer: "live"}
 	default:
-		d := fmt.Sprintf("证书剩 %d 天", days)
+		d := fmt.Sprintf("证书剩 %d 天 (%s)", days, host)
 		return patrolCheck{Name: "cert-expiry", Result: "pass", Detail: &d, Layer: "live"}
 	}
 }
@@ -178,6 +181,89 @@ func PatrolUplinkLoop(ctx context.Context, up *PaperclipUplink, targets []Patrol
 		case <-t.C:
 			report := PatrolOnce(targets, 14, nil, time.Now())
 			up.PostPatrolComment(ctx, report, log)
+			maybePrefileRenewal(up, report, log)
 		}
 	}
+}
+
+// certRenewalPrefile 证书到期自动提单（BENY-930 ①）：
+// 巡检发现证书 ≤ prefileDays（默认 30）天时，自动向 paperclip 提交
+// change-proposal（verb=cert-renewal，90 天授权窗口建议，auto-eligible），
+// 人批一次 = 批一个季度的轮换额度。季度幂等（进程内记录已提季度）。
+const (
+	certPrefileDays = 30
+	certWindowDays  = 90
+)
+
+var prefiledQuarters = map[string]bool{}
+
+// BuildRenewalProposal 构造证书轮换周期授权提案契约块（纯函数，测试用）。
+func BuildRenewalProposal(host string, daysLeft int, now time.Time) string {
+	ref := fmt.Sprintf("prp:cert-renewal:%s:%dQ%d", host, now.Year(), (int(now.Month())-1)/3+1)
+	var b strings.Builder
+	b.WriteString("# ==== change-proposal v1 ====\n")
+	b.WriteString("schema: change-proposal/1\n")
+	fmt.Fprintf(&b, "proposed_at: %s\n", now.UTC().Format(time.RFC3339))
+	b.WriteString("proposer: opskeeper:cert-patrol\n")
+	fmt.Fprintf(&b, "proposal_ref: %s\n", ref)
+	fmt.Fprintf(&b, "incident_ref: inc:cert:%s\n", host)
+	fmt.Fprintf(&b, "target_ref: cert:%s\n", host)
+	fmt.Fprintf(&b, "action: { verb: cert-renewal, object: %s, params: {}, blast_radius: 证书轮换（ACME 续期+部署+重载网关，仅 %s 域名） }\n", host, host)
+	fmt.Fprintf(&b, "safety: { reversible: true, rollback_ref: runbook:cert-renewal#rollback, dry_run_available: true }\n")
+	fmt.Fprintf(&b, "approval_request: { approver_role: owner, expires_at: %s }\n", now.Add(7*24*time.Hour).UTC().Format(time.RFC3339))
+	fmt.Fprintf(&b, "proposal_hash: %s\n", CertRenewalHash(ref))
+	fmt.Fprintf(&b, "evidence_refs: [patrol:cert-expiry]\n")
+	fmt.Fprintf(&b, "flags: [auto-eligible]\n")
+	fmt.Fprintf(&b, "detail: 证书剩余 %d 天，申请 %d 天周期轮换授权（窗口内自动执行，不再逐次审批）\n", daysLeft, certWindowDays)
+	b.WriteString("# ==== end change-proposal ====")
+	return b.String()
+}
+
+// CertRenewalHash 周期授权提案指纹（生产方 canonical：verb+object+周期 ref）。
+func CertRenewalHash(ref string) string {
+	sum := sha256Sum("cert-renewal|" + ref)
+	return sum
+}
+
+// maybePrefileRenewal 巡检后检查证书结果并按需提单（季度幂等）。
+func maybePrefileRenewal(up *PaperclipUplink, contractYAML string, log interface {
+	Info(msg string, args ...any)
+	Warn(msg string, args ...any)
+}) {
+	// 从契约文本提取证书剩余天数（"证书剩 N 天"/"证书仅剩 N 天"）
+	for _, m := range certDaysRe.FindAllStringSubmatch(contractYAML, -1) {
+		days := atoiSafe(m[1])
+		if days > certPrefileDays {
+			continue
+		}
+		host := m[2]
+		q := fmt.Sprintf("%s-%dQ%d", host, time.Now().Year(), (int(time.Now().Month())-1)/3+1)
+		if prefiledQuarters[q] {
+			continue
+		}
+		prefiledQuarters[q] = true
+		log.Info("cert patrol: prefile quarterly renewal proposal", "host", host, "days_left", days)
+		up.PostPatrolProposal(context.Background(), BuildRenewalProposal(host, days, time.Now()), log)
+	}
+}
+
+var certDaysRe = regexpMustCompile(`证书(仅)?剩 (\d+) 天 \(([^)]+)\)`)
+
+// --- 小工具（避免多 import） ---
+func regexpMustCompile(re string) *regexp.Regexp { return regexp.MustCompile(re) }
+
+func atoiSafe(s string) int {
+	n := 0
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return 0
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n
+}
+
+func sha256Sum(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
 }

@@ -46,3 +46,22 @@ func TestParsePatrolTargets(t *testing.T) {
 		t.Fatalf("parse = %+v", ts)
 	}
 }
+
+func TestBuildRenewalProposal(t *testing.T) {
+	now := time.Date(2026, 11, 5, 8, 0, 0, 0, time.UTC)
+	yaml := BuildRenewalProposal("opc.yueming.xin", 28, now)
+	for _, want := range []string{
+		"prp:cert-renewal:opc.yueming.xin:2026Q4",
+		"target_ref: cert:opc.yueming.xin",
+		"flags: [auto-eligible]",
+		"证书剩余 28 天",
+	} {
+		if !strings.Contains(yaml, want) {
+			t.Errorf("renewal proposal missing %q\n%s", want, yaml)
+		}
+	}
+	// 指纹确定性
+	if CertRenewalHash("x") != CertRenewalHash("x") || len(CertRenewalHash("x")) != 64 {
+		t.Fatal("hash must be deterministic 64-hex")
+	}
+}
