@@ -10,10 +10,10 @@ import (
 // 未配置 env 时行为与 requireAdmin 一致。
 func TestWalkerTokenAuth(t *testing.T) {
 	cases := []struct {
-		name    string
-		env     string
-		auth    string
-		expect  bool // requireAdminOrWalkerToken 返回值（env 空时无 JWT 必然 false）
+		name   string
+		env    string
+		auth   string
+		expect bool // requireAdminOrWalkerToken 返回值（env 空时无 JWT 必然 false）
 	}{
 		{"token match", "s3cret", "Bearer s3cret", true},
 		{"token mismatch", "s3cret", "Bearer wrong", false}, // 无 JWT → admin 鉴权失败

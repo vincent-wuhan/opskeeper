@@ -339,3 +339,9 @@ func writeError(w http.ResponseWriter, err error) {
 	}
 	writeJSON(w, status, nil)
 }
+
+// PatrolUplinkFromEnv 暴露托管拨测上行客户端（main 的 patrol loop 用，
+// 与 decideExternal 共用 OPSKEEPER_PAPERCLIP_* 配置）。
+func PatrolUplinkFromEnv(log interface{ Warn(msg string, args ...any) }) *bizhitl.PaperclipUplink {
+	return bizhitl.NewPaperclipUplinkFromEnv(log)
+}

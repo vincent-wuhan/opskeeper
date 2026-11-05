@@ -1294,6 +1294,12 @@ func main() {
 	hitlProposalRepo := managerdatahitlstore.NewRepo(db)
 	hitlProposalSvc := managerbizhitl.NewService(hitlProposalRepo)
 	hitlProposalHandler := managerserverhitl.NewHandler(hitlProposalSvc)
+	// BENY-929：托管平台例行拨测（执行层产信号，paperclip 只消费契约；
+	// 定位修正：例行证书/拨测属运营层例行，执行归 opskeeper，决策面只见周期流程审批）
+	if patrolTargets := managerbizhitl.ParsePatrolTargets(os.Getenv("OPSKEEPER_PATROL_TARGETS")); len(patrolTargets) > 0 {
+		go managerbizhitl.PatrolUplinkLoop(context.Background(), managerserverhitl.PatrolUplinkFromEnv(log), patrolTargets, patrolIntervalFromEnv(), log)
+		log.Info("hitl: managed patrol uplink started", "targets", len(patrolTargets))
+	}
 	toolsReg.SetRecoveryAuditRepo(hitlRecoveryAuditRepo{repo: hitlProposalRepo})
 	toolsReg.SetRepairPreviewGate(repairpreviewcontrol.NewGate(
 		repairPreviewRepository,
@@ -3462,6 +3468,16 @@ func (r *llmResolverFunc) Resolve(ctx context.Context) (string, string, string, 
 // nesting ternaries.
 // hypothesisAnglesFromEnv 解析 OPSKEEPER_INVESTIGATOR_HYPOTHESES：
 // "default" → 内置四角度；逗号分隔 → 自定义；空/未设 → nil（单 worker）。
+// patrolIntervalFromEnv 解析 OPSKEEPER_PATROL_INTERVAL（Go duration，默认 5m）。
+func patrolIntervalFromEnv() time.Duration {
+	if v := strings.TrimSpace(os.Getenv("OPSKEEPER_PATROL_INTERVAL")); v != "" {
+		if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			return d
+		}
+	}
+	return 5 * time.Minute
+}
+
 func hypothesisAnglesFromEnv() []string {
 	v := strings.TrimSpace(os.Getenv("OPSKEEPER_INVESTIGATOR_HYPOTHESES"))
 	if v == "" {

@@ -12,12 +12,12 @@ import (
 func TestBuildProposalContract(t *testing.T) {
 	now := time.Date(2026, 11, 3, 2, 0, 0, 0, time.UTC)
 	payload := AgentTeamsPayload{
-		RequestID:  "prp:uplink-001",
-		IncidentID: "inc:uplink-001",
-		Action:     model.RecoveryActionResizePool,
-		Resource:   "pg:pool-fixture",
+		RequestID:   "prp:uplink-001",
+		IncidentID:  "inc:uplink-001",
+		Action:      model.RecoveryActionResizePool,
+		Resource:    "pg:pool-fixture",
 		BlastRadius: "single_device",
-		ExpiresAt:  now.Add(time.Hour),
+		ExpiresAt:   now.Add(time.Hour),
 	}
 	hash := strings.Repeat("a", 64)
 	got := BuildProposalContract("uuid-1234", payload, hash, now)

@@ -141,7 +141,7 @@ func TestDecideExternalRejectNoExecute(t *testing.T) {
 	snap, err := svc.DecideExternal(context.Background(), ExternalDecisionInput{
 		ProposalID: id, ProposalRef: ref, TargetRef: "tgt:aliyun/pg-main",
 		Decision: model.StateRejected,
-		Reason: "影响面评估不足", DecidedAt: now,
+		Reason:   "影响面评估不足", DecidedAt: now,
 	})
 	if err != nil {
 		t.Fatalf("reject: %v", err)
