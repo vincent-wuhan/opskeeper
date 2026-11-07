@@ -224,6 +224,10 @@ type Incident struct {
 	Summary         string         `gorm:"column:summary;type:text;not null"`
 	Description     string         `gorm:"column:description;type:text;not null"`
 	DedupeKey       string         `gorm:"column:dedupe_key;size:191;not null;default:'';uniqueIndex"`
+	// AggGroupID 告警聚合组（BENY-915）：同设备 10min 窗口内的多个
+	// incident 归入同一组，组 ID = 组内最早 incident 的 ID。同因不同名
+	// 的告警风暴在视图/通知/上行契约中以组呈现。
+	AggGroupID      *uint64        `gorm:"column:agg_group_id;index:idx_alert_incidents_agg_group"`
 	Value           *float64       `gorm:"column:value"`
 	Threshold       *float64       `gorm:"column:threshold"`
 	LabelsJSON      string         `gorm:"column:labels_json;type:text;not null"`

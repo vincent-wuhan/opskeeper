@@ -57,6 +57,8 @@ type Repo interface {
 	// Firing path.
 	GetIncidentByDedupeKey(ctx context.Context, dedupeKey string) (*model.Incident, error)
 	CreateIncident(ctx context.Context, in *model.Incident) error
+	// UpdateIncidentAggGroup 写聚合组（BENY-915）。
+	UpdateIncidentAggGroup(ctx context.Context, id, groupID uint64) error
 	BumpIncidentFiring(ctx context.Context, id uint64, firedAt time.Time, summary string, value, threshold *float64) error
 	ReopenIncident(ctx context.Context, id uint64, firedAt time.Time, summary string, value, threshold *float64) error
 	MarkIncidentNotified(ctx context.Context, id uint64, at time.Time) error

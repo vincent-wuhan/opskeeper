@@ -337,6 +337,12 @@ func (r *Repo) CreateIncident(ctx context.Context, in *model.Incident) error {
 	return r.CreateAlertIncident(ctx, in)
 }
 
+// UpdateIncidentAggGroup 写聚合组 ID（BENY-915）。
+func (r *Repo) UpdateIncidentAggGroup(ctx context.Context, id, groupID uint64) error {
+	return r.db.WithContext(ctx).Model(&model.Incident{}).Where("id = ?", id).
+		Update("agg_group_id", groupID).Error
+}
+
 // ListActiveSilences returns silences with status=active whose [starts_at, ends_at)
 // window covers `at`. Caller filters by scope/edge/rule in-memory.
 func (r *Repo) ListActiveSilences(ctx context.Context, at time.Time) ([]*model.Silence, error) {

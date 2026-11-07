@@ -52,7 +52,8 @@ func (f *fakeNotifier) SendVia(_ context.Context, msg notify.Message, sender not
 // every alert test. Only the subset RecordFiring + maybeNotify touches is
 // implemented; ListIncidents et al. return empty.
 type fakeRepo struct {
-	now func() time.Time
+	aggGroups map[uint64]uint64
+	now       func() time.Time
 
 	incidents      map[uint64]*model.Incident
 	byDedupe       map[string]*model.Incident
@@ -534,4 +535,12 @@ func hasEventType(events []*model.Event, t string) bool {
 		}
 	}
 	return false
+}
+
+func (r *fakeRepo) UpdateIncidentAggGroup(_ context.Context, id, groupID uint64) error {
+	if r.aggGroups == nil {
+		r.aggGroups = map[uint64]uint64{}
+	}
+	r.aggGroups[id] = groupID
+	return nil
 }

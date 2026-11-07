@@ -446,6 +446,14 @@ func (u *Usecase) RecordFiring(ctx context.Context, in FiringInput) (*FiringResu
 		} else {
 			incident = newInc
 			isNew = true
+			// BENY-915：新 incident 归入聚合组（同设备 10min 窗口）。
+			// 失败不阻塞 firing 主流程（聚合是降噪增强，非一致性关键）。
+			if _, aggErr := AssignAggregation(ctx, u.repo, incident, occurredAt); aggErr != nil {
+				// u.log 可能为 nil（部分装配路径），双保险
+				if u.log != nil {
+					u.log.Warn("alert: aggregation assign failed", "incident_id", incident.ID, "err", aggErr.Error())
+				}
+			}
 		}
 	}
 	if incident == nil {
