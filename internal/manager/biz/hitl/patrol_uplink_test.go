@@ -65,3 +65,18 @@ func TestBuildRenewalProposal(t *testing.T) {
 		t.Fatal("hash must be deterministic 64-hex")
 	}
 }
+
+func TestCertDaysRegexCapture(t *testing.T) {
+	for _, c := range []string{
+		"证书剩 15 天 (opskeeper.yueming.xin)",
+		"证书仅剩 9 天 (foo.example)",
+	} {
+		m := certDaysRe.FindStringSubmatch(c)
+		if len(m) != 4 {
+			t.Fatalf("capture groups = %d for %q", len(m), c)
+		}
+		if atoiSafe(m[2]) <= 0 || strings.ContainsAny(m[3], " 0123456789天") {
+			t.Fatalf("mismatch m=%q (want m[2]=days m[3]=host)", m)
+		}
+	}
+}

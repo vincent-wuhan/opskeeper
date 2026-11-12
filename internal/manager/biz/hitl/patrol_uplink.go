@@ -232,11 +232,12 @@ func maybePrefileRenewal(up *PaperclipUplink, contractYAML string, log interface
 }) {
 	// 从契约文本提取证书剩余天数（"证书剩 N 天"/"证书仅剩 N 天"）
 	for _, m := range certDaysRe.FindAllStringSubmatch(contractYAML, -1) {
-		days := atoiSafe(m[1])
+		// 注意 m[1] 是可选组（仅)? 的捕获（可为空串），days/host 在 m[2]/m[3]
+		days := atoiSafe(m[2])
 		if days > certPrefileDays {
 			continue
 		}
-		host := m[2]
+		host := m[3]
 		q := fmt.Sprintf("%s-%dQ%d", host, time.Now().Year(), (int(time.Now().Month())-1)/3+1)
 		if prefiledQuarters[q] {
 			continue
