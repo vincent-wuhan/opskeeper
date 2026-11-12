@@ -202,27 +202,32 @@ func (u *PaperclipUplink) PostPatrolProposal(ctx context.Context, contractYAML s
 	Info(msg string, args ...any)
 	Warn(msg string, args ...any)
 }) {
+	_ = u.PostPatrolProposalE(ctx, contractYAML)
+}
+
+// PostPatrolProposalE 发送并返回错误（调用方据此决定是否重试/标记季度）。
+func (u *PaperclipUplink) PostPatrolProposalE(ctx context.Context, contractYAML string) error {
 	if u == nil {
-		return
+		return fmt.Errorf("uplink nil")
 	}
 	ref := extractProposalRef(contractYAML)
 	body := fmt.Sprintf(`{"title":%q,"description":%q}`, "[change-proposal] "+ref+" cert-renewal 周期授权", contractYAML)
 	url := fmt.Sprintf("%s/api/companies/%s/issues", u.baseURL, u.company)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(body))
 	if err != nil {
-		return
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+u.token)
 	resp, err := u.client.Do(req)
 	if err != nil {
-		log.Warn("patrol proposal uplink: post failed", "err", err.Error())
-		return
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		log.Warn("patrol proposal uplink: non-2xx", "status", resp.StatusCode)
+		return fmt.Errorf("non-2xx: %d", resp.StatusCode)
 	}
+	return nil
 }
 
 func extractProposalRef(contractYAML string) string {

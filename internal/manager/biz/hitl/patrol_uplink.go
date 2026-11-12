@@ -241,9 +241,14 @@ func maybePrefileRenewal(up *PaperclipUplink, contractYAML string, log interface
 		if prefiledQuarters[q] {
 			continue
 		}
-		prefiledQuarters[q] = true
 		log.Info("cert patrol: prefile quarterly renewal proposal", "host", host, "days_left", days)
-		up.PostPatrolProposal(context.Background(), BuildRenewalProposal(host, days, time.Now()), log)
+		if err := up.PostPatrolProposalE(context.Background(), BuildRenewalProposal(host, days, time.Now())); err != nil {
+			// 上行失败不标记季度——下轮巡检自动重试（修复：原先先标记后发送，
+			// 首轮网络失败会把整季误标"已提"且不再重试）
+			log.Warn("cert patrol: prefile post failed, will retry next round", "host", host, "err", err.Error())
+			continue
+		}
+		prefiledQuarters[q] = true
 	}
 }
 
