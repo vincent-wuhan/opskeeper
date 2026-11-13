@@ -25,7 +25,11 @@ import (
 	"time"
 )
 
-// CertExecutor 证书轮换执行器（白名单动作 + 窗口校验）。
+// CertExecutor 证书轮换执行器。现实形态（80 口不可达，HTTP-01 不可行）：
+// 签发由人在阿里云控制台完成（免费 DV，DNS 自动验证），证书下载后放到
+// OPSKEEPER_CERT_INBOX 目录；本执行器在授权窗口内执行"部署"：
+// 复制 crt/key 到 TLS 终结容器（agentteams-https）的挂载目录并重启该容器。
+// 窗口校验不变（fail-closed）。
 type CertExecutor struct {
 	up        *PaperclipUplink
 	certbot   string
@@ -106,4 +110,32 @@ func truncateStr(s string, n int) string {
 		return s
 	}
 	return s[:n]
+}
+
+// DeployCert 部署型轮换：从 inbox 目录取 {host}.crt/{host}.key 复制到
+// TLS 终结容器的证书挂载目录，然后重启该容器完成生效。白名单：仅 cp + docker restart。
+func (e *CertExecutor) DeployCert(ctx context.Context, host string) (string, error) {
+	inbox := envOr("OPSKEEPER_CERT_INBOX", "/opt/opskeeper/certs")
+	dest := envOr("OPSKEEPER_CERT_DEST", "/opt/opskeeper/agentteams-https-persistent")
+	tlsContainer := envOr("OPSKEEPER_CERT_TLS_CONTAINER", "agentteams-https")
+	cctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	// 1. 预检：证书文件存在且可解析（防部署半成品）
+	src := fmt.Sprintf("%s/%s", inbox, host)
+	if _, err := e.run(cctx, "openssl", "x509", "-in", src+".crt", "-noout", "-enddate"); err != nil {
+		return "", fmt.Errorf("cert-exec: inbox 证书缺失或无效 (%s.crt): %w", src, err)
+	}
+	// 2. 落位（原子性靠 cp 到同目录 .new 再 mv？容器挂载目录简单 cp 即可，重启失败可回滚文件）
+	if out, err := e.run(cctx, "cp", src+".crt", dest+"/"+host+".crt"); err != nil {
+		return out, fmt.Errorf("cert-exec: copy crt: %w", err)
+	}
+	if out, err := e.run(cctx, "cp", src+".key", dest+"/"+host+".key"); err != nil {
+		return out, fmt.Errorf("cert-exec: copy key: %w", err)
+	}
+	// 3. 重启 TLS 终结容器
+	if out, err := e.run(cctx, "docker", "restart", tlsContainer); err != nil {
+		return out, fmt.Errorf("cert-exec: restart %s: %w", tlsContainer, err)
+	}
+	e.log.Info("cert-exec: deployed", "host", host)
+	return "deployed", nil
 }

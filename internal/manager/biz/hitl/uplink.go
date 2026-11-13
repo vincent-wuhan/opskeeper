@@ -34,6 +34,9 @@ type PaperclipUplink struct {
 	client  *http.Client
 	log     interface{ Warn(msg string, args ...any) }
 	nowFunc func() time.Time
+	// patrolIssueID 进程内缓存桥接 issue（避免每轮全量 list——曾导致
+	// 双桥接 issue 与 3 跳隧道下的 list 超时）
+	patrolIssueID string
 }
 
 // NewPaperclipUplinkFromEnv 从 OPSKEEPER_PAPERCLIP_URL/TOKEN/COMPANY_ID 构造；
@@ -151,7 +154,10 @@ func (u *PaperclipUplink) findOrCreatePatrolIssue(ctx context.Context, log inter
 	Info(msg string, args ...any)
 	Warn(msg string, args ...any)
 }) string {
-	listURL := fmt.Sprintf("%s/api/companies/%s/issues", u.baseURL, u.company)
+	if u.patrolIssueID != "" {
+		return u.patrolIssueID
+	}
+	listURL := fmt.Sprintf("%s/api/companies/%s/issues?limit=30", u.baseURL, u.company)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
 	req.Header.Set("Authorization", "Bearer "+u.token)
 	if resp, err := u.client.Do(req); err == nil {
@@ -192,6 +198,7 @@ func (u *PaperclipUplink) findOrCreatePatrolIssue(ctx context.Context, log inter
 	if json.NewDecoder(resp2.Body).Decode(&created) != nil || created.ID == "" {
 		return ""
 	}
+	u.patrolIssueID = created.ID
 	log.Info("patrol uplink: bridge issue created", "issue", created.ID)
 	return created.ID
 }
