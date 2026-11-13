@@ -4,10 +4,14 @@
 - [ ] 1.1 执行 `git fetch origin main` 并确认远端 `main` 后，从该 commit 拉出 `codex/plugin-architecture-recovery-plan` 分支，记录基线 commit、环境变量清单和当前部署差异，不修改生产配置。
 - [ ] 1.2 修复 `/admin/runtime` 对 `skills: null`、空 dependencies 和空 recovery phases 的兼容，避免能力清单白屏。
 - [ ] 1.3 为 Runtime 页面补充 API 空值、空数组和错误响应测试，覆盖标准用户与管理员视角。
-- [ ] 1.4 核对 TeamHarness `1.0.75`、五个 SRE 插件包、94 个 manifest 工具与 Makefile/文档描述的一致性。
-- [ ] 1.5 梳理 `VERSION`、`RELEASE_VERSION.json`、release scope、backend commit、web hash 和插件版本的漂移清单，形成新版本命名建议。
-- [ ] 1.6 运行 `make module-check`、`make pi-plugin-guard`、`go test ./scripts/ledgercheck`，并记录结果与失败处理。
-- [ ] 1.7 冻结 P0 基线，在 OPC 中创建总里程碑和阶段闸门。
+- [x] 1.4 核对 TeamHarness `1.0.75`、五个 SRE 插件包、94 个 manifest 工具与 Makefile/文档描述的一致性。
+  - 产出：`p0-baseline-freeze.md` §2。manifest 侧自洽（TeamHarness 1.0.75 七处载体一致、5 包版本 0.2.0、工具去重后 94、真二进制闸门逐条对上）；描述侧 2 处漂移：D-1（Makefile 与架构文档仍写「90 个工具」，实测 94）、D-2（readonly `min_edge_version: 0.7.0`，全仓其余为 0.8.0）。D-2 沿用 4.10 台账 §4.3 既有处置，不新开决策。
+- [x] 1.5 梳理 `VERSION`、`RELEASE_VERSION.json`、release scope、backend commit、web hash 和插件版本的漂移清单，形成新版本命名建议。
+  - 产出：`p0-baseline-freeze.md` §3。漂移清单 V-1…V-14 逐项给出处置建议与阻塞级别（含 web_hash、teamharness_source_tree、teamharness_version、backend_commit 落后 591 提交、远端 7 个 tag 全部不匹配现行语法、`release/20260922` 仍在移动且含 14 个不在 main 上的提交、scope 含已不存在的 `internal`/`db`、校验脚本硬编码 9 月值）。命名建议 `v2026.11.0-rc.1` → `v2026.11.0`，附选项 A/B 取舍。
+- [x] 1.6 运行 `make module-check`、`make pi-plugin-guard`、`go test ./scripts/ledgercheck`，并记录结果与失败处理。
+  - 产出：`p0-baseline-freeze.md` §4。三道必跑闸门全部通过并记录原文输出；附加复跑 `audit-open-source`、`pig-tool-scoping-check`、`tag-format-check` 通过。`make version-check` 按发布期设计为红，5 条 finding 逐条对应 §3 漂移项；失败处理记两条经验：浅克隆造成的祖先关系假阳性必须先证伪、tag 语法须从 workflow 读回而非用历史 tag 反推。
+- [x] 1.7 冻结 P0 基线，在 OPC 中创建总里程碑和阶段闸门。
+  - 产出：`p0-baseline-freeze.md` §5。冻结锚点（基线 commit `ff1b7e4…`、回滚锚点 `release-v2026.09.20-patch.2`）、环境变量清单（`.env.example` 62 个活跃变量名按 11 组归类，秘密只列名）、冻结/不冻结范围、A–D 四档阶段闸门与出口证据要求。
 
 ## 2. P0 Runtime 治理首切片
 

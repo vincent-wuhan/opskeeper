@@ -477,7 +477,27 @@ func TestTheShippedTreeIsADagFourLevelsDeep(t *testing.T) {
 	// the depth is one domain (device) that something depends on, and it
 	// depends on exactly one thing. Read the in-degree column for this
 	// number; the level count is downstream of it.
-	if max+1 != 2 {
+	//
+	// The notifier migration took it from two to three, and it is the first
+	// time since decision 118 that the mechanism is an *added* edge rather
+	// than a cut one. `core/manager/biz/notify` derives the manager's
+	// admission policy from `aiopsdatasource.ManagerPolicy()` — one policy per
+	// host, so the notifier's two deltas (the L3 notifier ceiling and
+	// `alert.write`) are added to the datasource policy instead of being
+	// written out a second time where the two could drift apart. That
+	// derivation is a production import across a domain boundary, so
+	// `notify -> aiops` is a declared edge and aiops no longer has in-degree
+	// zero.
+	//
+	// The depth moved the way it moves when a domain gains a consumer: a
+	// domain's level is set by what depends on it, so aiops leaves level 0
+	// for level 1 and the three domains that depend on it (alert, device,
+	// loop) follow it up to level 2. The chain that is now three deep is
+	// notify -> aiops -> alert, and it is three deep in the direction that
+	// matters to a split: a change to the datasource admission policy now
+	// reaches the notifier, so the two are released together. Naming that in
+	// a declared edge is the whole point of the edge table.
+	if max+1 != 3 {
 		t.Errorf("the tree is %d levels deep, want 3: a level appearing or disappearing changes what a split costs", max+1)
 	}
 	var buf bytes.Buffer
@@ -592,7 +612,13 @@ func TestTheShippedTreeIsADagFourLevelsDeep(t *testing.T) {
 	// A cut edge lowers this number the same way an added one raises it,
 	// which is the whole reason this assertion is written as a number and
 	// not as a direction.
-	if !strings.Contains(buf.String(), "8 edges") {
+	//
+	// The notifier migration is the first added edge since decision 118, and
+	// it is `notify -> aiops`: the notifier's admission policy is derived
+	// from the datasource admission policy rather than written out a second
+	// time, and that derivation is a production import across a domain
+	// boundary. Nine is the reading that follows.
+	if !strings.Contains(buf.String(), "9 edges") {
 		t.Errorf("the edge count moved; the ledger in docs/opskeeper2-architecture.md is now wrong:\n%s", firstLines(buf.String(), 6))
 	}
 }
