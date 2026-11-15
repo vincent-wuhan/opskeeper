@@ -738,6 +738,13 @@ var Verdicts = []Verdict{
 	{File: "core/manager/server/report/http.go", Route: "/v1/tasks/{id}/run", Handler: "h.rerunTask"},
 	{File: "core/manager/server/report/http.go", Route: "/v1/tasks/{id}", Handler: "h.deleteTask"},
 	{File: "core/manager/server/webshell/http.go", Route: "/v1/webshell/sessions/{id}", Handler: "h.killSession"},
+
+	// 决策 449（runtime-management-gap §1.2 首切片）：运行时治理面三条
+	// mutating 路由。三条都已 SetAuditEvent（server/runtimemgmt/audit.go），
+	// 但有一条带着 backlog 理由——心跳。
+	{File: "core/manager/server/runtimemgmt/http.go", Route: "/v1/runtimes", Handler: "h.register"},
+	{File: "core/manager/server/runtimemgmt/http.go", Route: "/v1/runtimes/{id}/heartbeat", Handler: "h.heartbeat"},
+	{File: "core/manager/server/runtimemgmt/http.go", Route: "/v1/runtimes/{id}/commands/{cid}/ack", Handler: "h.ackCommand"},
 }
 
 // Result is what one run found.
