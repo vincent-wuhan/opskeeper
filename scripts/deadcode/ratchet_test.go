@@ -376,20 +376,20 @@ import (
 // 提到过它**——名字相同不等于调用关系相同，而这正是本报告按名匹配的那一处
 // 模糊性。留着一个只为保住计数而存在的符号，就是让棘轮去度量噪声。
 //
-// 908 → 906 / 601 → 600 / 307 → 306：运行时治理首切片（决策 449），三格同向
-// 下降，无一格上调，预算不动。下降的两格不是删除，是上一段描述的按名匹配
-// 假象落到了实处：本切片的 `server/runtimemgmt.ReadonlyRuntimeSource` 端口
-// 声明了一个 `Describe()` 方法，五个观察者在装配根实现它；本报告按裸名匹配，
-// 于是仓里另外两个**本就存在、此前计为不可达**的 `Describe` 方法
-// （`core/edge/policygate` 与 `core/floor/pluginmanifest`）也被这次声明顺带
-// "点亮"，从 dead 与 test-only 两类转入可达。没有任何符号离开这棵树，也没有
-// 任何新豁免；这正是 falsePositives 里按名匹配那一项的镜像案例——上面那行
-// 是"同名让它假活后被删"，这里是"同名让它假活且它本来就在"。预算仍留
-// 909/601/308，给这两个符号在被真正接线前留计数余量，不为此下调。
+// 909 → 910 / 601 → 604 / 308 → 306：运行时治理首切片（决策 449），实测读数
+// 与交付时的预估不符，本条按闸门第三条如实上调并记录原因。`+3` dead 的构成：
+// `model/runtimemgmt.ErrClaimLost`（哨兵错误，等 2.4 任务生命周期接线时才有
+// 生产调用方）与其余两个首切片先行符号——注册/心跳/inventory API 与五份只读
+// 观察者先于其第一个生产消费者落地，消费者在 923（inventory 视图接线）与
+// `runtime-management-gap` 2.4（claim/lease 接线）中到达。预估段（"三格同向
+// 下降"）保留在 git 历史里作为教训：按名匹配的"点亮"效应在沙箱预估时被
+// 双重计入，合并后的真实树才是唯一裁判。test-only 反而 -2，是观察者装配
+// 根代码让两个此前仅测试可达的符号进入了生产调用图。接线落地后应优先
+// 把这批符号转入真实生产调用边并回调预算。
 const (
-	unreachableBudget    = 909
-	deadSymbolBudget     = 601
-	testOnlySymbolBudget = 308
+	unreachableBudget    = 910
+	deadSymbolBudget     = 604
+	testOnlySymbolBudget = 306
 )
 
 // TestTheUnreachableSymbolCountNeverGrows is the gate decision 199 declined to
