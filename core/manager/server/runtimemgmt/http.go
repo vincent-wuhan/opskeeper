@@ -181,6 +181,8 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 			Kind:         kind,
 			RegisteredAt: now,
 			Health:       model.RuntimeHealthStarting,
+			// TEXT 列无数据库默认值（MySQL 1101），JSON 列创建时代码侧初始化。
+			PendingCommandAcksJSON: "{}",
 		}
 	}
 	rec.Kind = kind

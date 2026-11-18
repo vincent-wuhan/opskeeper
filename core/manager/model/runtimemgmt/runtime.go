@@ -107,7 +107,7 @@ type RuntimeRecord struct {
 	Profile            string `gorm:"size:64;not null;default:''"`
 	Owner              string `gorm:"size:64;not null;default:''"`
 	DeploymentLocation string `gorm:"size:128;not null;default:''"`
-	LabelsJSON         string `gorm:"type:text;not null;default:'{}'"`
+	LabelsJSON         string `gorm:"type:text;not null"`
 
 	// 读回：版本必须来自 manifest 或 release_metadata（IsVersionSource），
 	// 空版本合法（spec 允许“还无法读出”），空不等于硬编码。
@@ -115,7 +115,7 @@ type RuntimeRecord struct {
 	VersionSource    VersionSource `gorm:"size:32;not null;default:''"`
 	ArtifactDigest   string        `gorm:"size:64;not null;default:''"`
 	CapabilityDigest string        `gorm:"size:64;not null;default:''"`
-	CapabilitiesJSON string        `gorm:"type:text;not null;default:'{}'"`
+	CapabilitiesJSON string        `gorm:"type:text;not null"`
 
 	// 健康三列：Health 是最近一次写入时推导的观察值；真实健康由
 	// EvaluateHealth 按 now 与 LastHeartbeatAt 惰性推导，行内值只作
@@ -131,7 +131,7 @@ type RuntimeRecord struct {
 
 	// PendingCommandAcksJSON 记录 ack 契约形状（ADR §4.3：首切片 ack 只
 	// 落一行记录，命令下发是 2.4–2.6 的事；不为此单独建表）。
-	PendingCommandAcksJSON string `gorm:"type:text;not null;default:'{}'"`
+	PendingCommandAcksJSON string `gorm:"type:text;not null"`
 
 	// CommandAckCount / LastCommandAckAt 是 ack 计数与最近时戳。
 	CommandAckCount  int        `gorm:"not null;default:0"`
