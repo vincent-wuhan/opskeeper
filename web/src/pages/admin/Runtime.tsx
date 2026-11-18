@@ -4,6 +4,7 @@ import {
   Activity,
   AlertTriangle,
   Bot,
+  Boxes,
   CheckCircle2,
   Database,
   GitBranch,
@@ -17,6 +18,7 @@ import { Card } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { cn } from '@/lib/cn';
 import { useI18n } from '@/i18n/locale';
+import { usePermissions } from '@/store/me';
 import {
   getVersionDeployment,
   type DeploymentResponse,
@@ -26,6 +28,11 @@ import {
   type SkillVersion,
   type TimelinePhaseLite,
 } from '@/api/versionDeployment';
+import {
+  getRuntimeInventory,
+  type InventoryResponse,
+  type RuntimeView,
+} from '@/api/runtimeInventory';
 import { ApiError } from '@/api/client';
 
 const POLL_MS = 10_000;
@@ -44,10 +51,14 @@ const STATUS_TONE: Record<string, string> = {
 
 export default function RuntimePage() {
   const { tr } = useI18n();
+  const { isAdmin } = usePermissions();
   const [resp, setResp] = useState<DeploymentResponse | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [inventory, setInventory] = useState<InventoryResponse | null>(null);
+  const [inventoryErr, setInventoryErr] = useState<string | null>(null);
+  const [inventoryLoading, setInventoryLoading] = useState(true);
 
   const load = useCallback(async (silent = false) => {
     try {
@@ -64,13 +75,39 @@ export default function RuntimePage() {
     }
   }, []);
 
-  useEffect(() => { void load(false); }, [load]);
-  useEffect(() => {
-    const id = window.setInterval(() => { void load(true); }, POLL_MS);
-    return () => window.clearInterval(id);
-  }, [load]);
+  // Inventory polls independently: it is the authoritative runtime list
+  // (registration + live projections), while the deployment view below is
+  // a different, version-composition readback. One failing must not blank
+  // the other, which is why each keeps its own error state.
+  const loadInventory = useCallback(async (silent = false) => {
+    try {
+      if (!silent) setInventoryLoading(true);
+      const data = await getRuntimeInventory();
+      setInventory(data);
+      setInventoryErr(null);
+    } catch (e) {
+      setInventoryErr(e instanceof ApiError ? e.message : (e as Error).message);
+    } finally {
+      setInventoryLoading(false);
+    }
+  }, []);
 
-  if (loading && !resp) {
+  useEffect(() => { void load(false); }, [load]);
+  useEffect(() => { void loadInventory(false); }, [loadInventory]);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      void load(true);
+      void loadInventory(true);
+    }, POLL_MS);
+    return () => window.clearInterval(id);
+  }, [load, loadInventory]);
+
+  const refreshAll = useCallback(() => {
+    void load(false);
+    void loadInventory(false);
+  }, [load, loadInventory]);
+
+  if ((loading && !resp) || (inventoryLoading && !inventory)) {
     return (
       <div className="px-6 py-5">
         <PageHeader title={tr('运行时版本', 'Runtime / Version')} />
@@ -90,21 +127,29 @@ export default function RuntimePage() {
         title={tr('运行时版本与部署', 'Runtime / Version')}
         subtitle={(
           <span className="text-xs text-zinc-500">
-            {tr('Manager / Worker / 插件 / 服务端组合 + 健康检查 + 部署依赖 + 一次完整恢复操作',
-                'Manager / Worker / plugin / server composition + health + deploy deps + one worked recovery')}
+            {tr('运行时清单（注册 + 实时投影）+ Manager / Worker / 插件 / 服务端组合 + 健康检查 + 部署依赖 + 一次完整恢复操作',
+                'Runtime inventory (registry + live projections) + Manager / Worker / plugin / server composition + health + deploy deps + one worked recovery')}
           </span>
         )}
         actions={(
           <button
             type="button"
             className="flex items-center gap-1 px-2.5 py-1 text-xs text-zinc-300 border border-zinc-700 rounded hover:bg-zinc-800"
-            onClick={() => load(false)}
+            onClick={refreshAll}
           >
             <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
             {tr('刷新', 'Refresh')}
           </button>
         )}
       />
+
+      {inventoryErr && (
+        <Card className="text-center text-xs text-red-400 mb-4">
+          <div className="py-3">{tr('运行时清单加载失败', 'Failed to load runtime inventory')}: {inventoryErr}</div>
+        </Card>
+      )}
+
+      {inventory && <InventoryCard resp={inventory} isAdmin={isAdmin} />}
 
       {err && (
         <Card className="text-center text-xs text-red-400 mb-4">
@@ -122,6 +167,149 @@ export default function RuntimePage() {
         </>
       )}
     </div>
+  );
+}
+
+// ---- Runtime inventory (authoritative list, spec first requirement) ----
+
+// The five health states the backend may derive, plus unknown for a
+// projection that honestly cannot tell (e.g. edge presence unreadable).
+const HEALTH_BADGE: Record<string, { zh: string; en: string; tone: string }> = {
+  starting: { zh: '启动中', en: 'starting', tone: 'bg-sky-500/15 text-sky-300 border-sky-700/40' },
+  online: { zh: '在线', en: 'online', tone: 'bg-emerald-500/15 text-emerald-300 border-emerald-700/40' },
+  degraded: { zh: '降级', en: 'degraded', tone: 'bg-amber-500/15 text-amber-300 border-amber-700/40' },
+  recently_lost: { zh: '最近失联', en: 'recently_lost', tone: 'bg-orange-500/15 text-orange-300 border-orange-700/40' },
+  offline: { zh: '离线', en: 'offline', tone: 'bg-red-500/15 text-red-300 border-red-700/40' },
+  unknown: { zh: '未知', en: 'unknown', tone: 'bg-zinc-700/30 text-zinc-400 border-zinc-700' },
+};
+const HEALTH_FALLBACK = HEALTH_BADGE.unknown;
+
+function InventoryCard({ resp, isAdmin }: { resp: InventoryResponse; isAdmin: boolean }) {
+  const { tr } = useI18n();
+  const items = resp.items ?? [];
+  return (
+    <Card className="mb-4">
+      <div className="flex items-center gap-2 mb-2">
+        <Boxes className="h-4 w-4 text-indigo-400" />
+        <div className="text-sm font-medium">{tr('运行时清单', 'Runtime inventory')}</div>
+        <span className="ml-auto rounded border border-border-soft px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-zinc-500">
+          {tr('只读', 'read-only')} · {resp.total}
+        </span>
+      </div>
+      {items.length === 0 ? (
+        <div className="px-2 py-4 rounded border border-zinc-800/60 bg-zinc-900/40 text-xs text-zinc-500">
+          {tr('暂无已注册或可投影的运行时', 'No registered or projectable runtimes')}
+        </div>
+      ) : (
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-zinc-800/60 bg-zinc-950/40 text-left text-[11px] uppercase tracking-wider text-zinc-500">
+              <th className="text-left py-1">{tr('运行时', 'Runtime')}</th>
+              <th className="text-left py-1">{tr('健康', 'Health')}</th>
+              <th className="text-left py-1">{tr('能力', 'Capabilities')}</th>
+              <th className="text-left py-1">{tr('容量', 'Capacity')}</th>
+              <th className="text-left py-1">{tr('版本', 'Version')}</th>
+              <th className="text-left py-1">digest</th>
+              {isAdmin && <th className="text-left py-1">{tr('治理', 'Governance')}</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((rt) => (
+              <RuntimeRow key={rt.runtime_id} rt={rt} isAdmin={isAdmin} />
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="mt-2 text-[11px] text-zinc-500">
+        {tr('registry 行持有心跳时戳，projection 行是观察者实时投影；两者按 runtime_id 去重，注册行优先。',
+            'registry rows carry heartbeat timestamps, projection rows are live observer snapshots; deduped by runtime_id with the registry row winning.')}
+      </div>
+    </Card>
+  );
+}
+
+function RuntimeRow({ rt, isAdmin }: { rt: RuntimeView; isAdmin: boolean }) {
+  const { tr } = useI18n();
+  const badge = HEALTH_BADGE[rt.health] ?? HEALTH_FALLBACK;
+  const caps = Object.entries(rt.capabilities ?? {});
+  const hasCapacity = rt.total_slots > 0 || rt.free_slots > 0 || rt.active_tasks > 0;
+  const version = rt.observed_version
+    ? `${rt.observed_version}${rt.version_source ? ` (${rt.version_source})` : ''}`
+    : '—';
+  return (
+    <tr className="border-t border-zinc-800/60 align-top">
+      <td className="py-1.5 font-mono">
+        <div className="text-zinc-200">{rt.runtime_id || '—'}</div>
+        <div className="text-[10px] text-zinc-500">
+          {rt.kind || '—'}
+          {rt.source && <span className="ml-1 text-zinc-600">· {rt.source}</span>}
+        </div>
+      </td>
+      <td className="py-1.5">
+        <span
+          className={cn('inline-block px-1.5 py-0.5 text-[10px] rounded border', badge.tone)}
+          title={rt.health_reason || rt.health || 'unknown'}
+        >
+          {tr(badge.zh, badge.en)}
+        </span>
+        {rt.health_reason && (
+          <div className="mt-0.5 max-w-40 truncate text-[10px] text-amber-400/80" title={rt.health_reason}>
+            {truncate(rt.health_reason, 48)}
+          </div>
+        )}
+        {rt.last_heartbeat_at && (
+          <div className="mt-0.5 text-[10px] text-zinc-600">{rt.last_heartbeat_at}</div>
+        )}
+      </td>
+      <td className="py-1.5">
+        {caps.length === 0 ? (
+          <span className="text-zinc-600">—</span>
+        ) : (
+          <div className="flex flex-wrap gap-1 max-w-56">
+            {caps.map(([k, v]) => (
+              <span
+                key={k}
+                className="px-1.5 py-0.5 text-[10px] rounded border border-zinc-700 font-mono text-zinc-400"
+                title={`${k}: ${String(v)}`}
+              >
+                {k}: {String(v)}
+              </span>
+            ))}
+          </div>
+        )}
+      </td>
+      <td className="py-1.5 font-mono text-zinc-300 whitespace-nowrap">
+        {hasCapacity ? (
+          <>
+            {tr('槽位', 'slots')} {rt.free_slots}/{rt.total_slots}
+            <span className="ml-1 text-zinc-500">· {tr('当前任务', 'tasks')} {rt.active_tasks}</span>
+          </>
+        ) : (
+          <span className="text-zinc-600">—</span>
+        )}
+      </td>
+      <td className="py-1.5 font-mono text-zinc-300">{version}</td>
+      <td className="py-1.5 font-mono text-zinc-500">
+        {rt.artifact_digest ? <span title={rt.artifact_digest}>{truncate(rt.artifact_digest, 14)}</span> : '—'}
+      </td>
+      {isAdmin && (
+        <td className="py-1.5">
+          <div className="text-[11px] text-zinc-400">
+            {rt.owner && <div>owner: {rt.owner}</div>}
+            {rt.deployment_location && <div>loc: {rt.deployment_location}</div>}
+          </div>
+          {Object.keys(rt.labels ?? {}).length > 0 && (
+            <div className="mt-0.5 flex flex-wrap gap-1 max-w-40">
+              {Object.entries(rt.labels).map(([k, v]) => (
+                <span key={k} className="px-1 py-0.5 text-[10px] rounded border border-zinc-800 font-mono text-zinc-500" title={`${k}: ${v}`}>
+                  {k}={v}
+                </span>
+              ))}
+            </div>
+          )}
+        </td>
+      )}
+    </tr>
   );
 }
 
