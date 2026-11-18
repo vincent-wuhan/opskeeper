@@ -129,6 +129,9 @@ func TestRegisterHeartbeatInventoryChain(t *testing.T) {
 		"owner":            "node-12",
 		"observed_version": "0.7.43",
 		"version_source":   "release_metadata",
+		"capabilities": map[string]any{
+			"agent_count": 4,
+		},
 	})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("register: code = %d body = %v", rec.Code, body)
@@ -169,6 +172,15 @@ func TestRegisterHeartbeatInventoryChain(t *testing.T) {
 	}
 	if first["last_heartbeat_at"] == nil {
 		t.Fatal("inventory[0].last_heartbeat_at must be present after a heartbeat")
+	}
+	// 注册行携带的 capabilities 经 inventory 读回（2.7 只读视图的数据面，
+	// 裁决方案 A：view 层补映射，不再截断成只有 digest）。
+	caps, ok := first["capabilities"].(map[string]any)
+	if !ok {
+		t.Fatalf("inventory[0].capabilities = %v (%T); want map", first["capabilities"], first["capabilities"])
+	}
+	if got := caps["agent_count"].(float64); got != 4 {
+		t.Fatalf("inventory[0].capabilities[agent_count] = %v; want 4", got)
 	}
 }
 
@@ -298,7 +310,8 @@ func TestInventoryMergesProjectionsWithRegistry(t *testing.T) {
 		fixedSource{obs: []RuntimeObservation{
 			{RuntimeID: "edge:12", Kind: model.RuntimeKindNodeEdge, Health: model.RuntimeHealthOffline},
 			{RuntimeID: "previewpg:pool-fixture", Kind: model.RuntimeKindPoolPreview, Health: model.RuntimeHealthOnline,
-				ObservedVersion: "fp-abc", VersionSource: model.VersionSourceManifest},
+				ObservedVersion: "fp-abc", VersionSource: model.VersionSourceManifest,
+				Capabilities: map[string]any{"pool": "fixture"}},
 		}},
 	}
 	h := NewHandler(store, sources, fixedClock{at: now}.Now)
@@ -330,6 +343,16 @@ func TestInventoryMergesProjectionsWithRegistry(t *testing.T) {
 	}
 	if byID["previewpg:pool-fixture"]["version_source"] != "manifest" {
 		t.Fatalf("projection version_source = %v; want manifest", byID["previewpg:pool-fixture"]["version_source"])
+	}
+	// 投影行的 capabilities map 必须原样带到 inventory（观察者在
+	// runtimemgmt_wiring.go 四处填充的正是这个 map）。
+	pgCaps, ok := byID["previewpg:pool-fixture"]["capabilities"].(map[string]any)
+	if !ok {
+		t.Fatalf("projection capabilities = %v (%T); want map",
+			byID["previewpg:pool-fixture"]["capabilities"], byID["previewpg:pool-fixture"]["capabilities"])
+	}
+	if pgCaps["pool"] != "fixture" {
+		t.Fatalf("projection capabilities[pool] = %v; want fixture", pgCaps["pool"])
 	}
 }
 

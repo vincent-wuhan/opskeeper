@@ -127,6 +127,7 @@ type runtimeView struct {
 	VersionSource      string            `json:"version_source,omitempty"`
 	ArtifactDigest     string            `json:"artifact_digest,omitempty"`
 	CapabilityDigest   string            `json:"capability_digest,omitempty"`
+	Capabilities       map[string]any    `json:"capabilities,omitempty"`
 	Health             string            `json:"health"`
 	HealthReason       string            `json:"health_reason,omitempty"`
 	LastHeartbeatAt    *time.Time        `json:"last_heartbeat_at,omitempty"`
@@ -378,6 +379,7 @@ func viewOf(rec model.RuntimeRecord, now time.Time, source string) runtimeView {
 		VersionSource:      string(rec.VersionSource),
 		ArtifactDigest:     rec.ArtifactDigest,
 		CapabilityDigest:   rec.CapabilityDigest,
+		Capabilities:       unmarshalCaps(rec.CapabilitiesJSON),
 		Health:             string(rec.EvaluateHealth(now)),
 		HealthReason:       rec.HealthReason,
 		LastHeartbeatAt:    rec.LastHeartbeatAt,
@@ -400,6 +402,7 @@ func viewOfObservation(obs RuntimeObservation) runtimeView {
 		VersionSource:      string(obs.VersionSource),
 		ArtifactDigest:     obs.ArtifactDigest,
 		CapabilityDigest:   obs.CapabilityDigest,
+		Capabilities:       obs.Capabilities,
 		Health:             string(obs.Health),
 		HealthReason:       obs.HealthReason,
 		TotalSlots:         obs.TotalSlots,
@@ -407,6 +410,14 @@ func viewOfObservation(obs RuntimeObservation) runtimeView {
 		ActiveTasks:        obs.ActiveTasks,
 		Source:             "projection",
 	}
+}
+
+// unmarshalCaps 把注册行里的 capabilities JSON 反序列化成 map。与 Labels
+// 同一容错策略：坏 JSON / nil 都归一为空 map，读取路径永不因该列失败。
+func unmarshalCaps(raw string) map[string]any {
+	caps := map[string]any{}
+	_ = json.Unmarshal([]byte(raw), &caps)
+	return caps
 }
 
 func isNotFound(err error) bool {
