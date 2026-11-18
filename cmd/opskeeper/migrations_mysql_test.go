@@ -123,7 +123,8 @@ func TestEveryMigratorIsCalledOnEveryBoot(t *testing.T) {
 	// 24 data packages, in startup order. A new one has to be added to
 	// this count in the same change, which is the point: the list is now a
 	// thing with a test on it rather than a literal in a function body.
-	const want = 24
+	// 24 → 25: runtimemgmt_runtimes（runtime-management-gap §1.1 首切片）。
+	const want = 25
 	if got := len(managerMigrators()); got != want {
 		t.Errorf("managerMigrators has %d entries, this test expects %d; "+
 			"a new data package is either not migrated or not covered", got, want)

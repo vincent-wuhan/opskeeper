@@ -204,8 +204,10 @@ import (
 	managerservertraces "github.com/vincent-wuhan/opskeeper/core/domains/server/traces"
 	managerserverversion "github.com/vincent-wuhan/opskeeper/core/domains/server/version"
 	internalagentteams "github.com/vincent-wuhan/opskeeper/core/manager/agentteams"
+	agentteamsstate "github.com/vincent-wuhan/opskeeper/core/manager/biz/agentteams/state"
 	managerbizreport "github.com/vincent-wuhan/opskeeper/core/manager/biz/report"
 	managerreportdata "github.com/vincent-wuhan/opskeeper/core/manager/data/report/store"
+	runtimemgmtstore "github.com/vincent-wuhan/opskeeper/core/manager/data/runtimemgmt/store"
 	internaldataguard "github.com/vincent-wuhan/opskeeper/core/manager/dataguard"
 	internaldataguardheuristic "github.com/vincent-wuhan/opskeeper/core/manager/dataguard/heuristic"
 	internaldataguardlabel "github.com/vincent-wuhan/opskeeper/core/manager/dataguard/label"
@@ -224,6 +226,7 @@ import (
 	managerservermarketplace "github.com/vincent-wuhan/opskeeper/core/manager/server/marketplace"
 	managerservermcp "github.com/vincent-wuhan/opskeeper/core/manager/server/mcp"
 	managerserverreport "github.com/vincent-wuhan/opskeeper/core/manager/server/report"
+	managerserverruntimemgmt "github.com/vincent-wuhan/opskeeper/core/manager/server/runtimemgmt"
 	managerserverskill "github.com/vincent-wuhan/opskeeper/core/manager/server/skill"
 	managerserversystemhealth "github.com/vincent-wuhan/opskeeper/core/manager/server/systemhealth"
 	managerservertopology "github.com/vincent-wuhan/opskeeper/core/manager/server/topology"
@@ -295,6 +298,9 @@ func managerMigrators() []dbx.Migrator {
 		managerflowdata.Migrate,
 		incidentcontrol.Migrate,
 		repairpreviewcontrol.Migrate,
+		// 运行时注册表（runtime-management-gap §1.1）：全新表
+		// runtimemgmt_runtimes，纯增量。
+		runtimemgmtstore.Migrate,
 	}
 }
 
@@ -3905,6 +3911,28 @@ func main() {
 			managerserveraudit.NewHandler(auditUC).Register(protected)
 			reportHandler.Register(protected)
 			flowHandler.Register(protected)
+			// Runtime registry (runtime-management-gap §1.2 首切片，决策
+			// 449)：四条路由挂 protected；五个只读观察者在此装配。
+			// agentteams 的插件注册表与 bearer 子路由用的是同一
+			// OPSKEEPER_PLUGINS_DIR，这里再建一份只读实例，不共享闭包
+			// 内的可变 handler。
+			runtimeRegistryHandler := managerserverruntimemgmt.NewHandler(
+				runtimeStoreAdapter{db: db},
+				buildRuntimeObservationSources(
+					edgeUC,
+					chatRT,
+					agentteamsstate.NewManager(agentteamsLedgerPath()),
+					managerserveragentteams.NewPluginRegistry(os.Getenv("OPSKEEPER_PLUGINS_DIR")),
+					ph,
+					managerPluginsDir,
+					teamHarnessManifestPath(),
+					strings.TrimSpace(os.Getenv("OPSKEEPER_REPAIR_PREVIEW_DSN")) != "",
+					strings.TrimSpace(os.Getenv("OPSKEEPER_REPAIR_PREVIEW_WORKLOAD_FINGERPRINT")),
+					poolFixtureURL,
+				),
+				nil,
+			)
+			runtimeRegistryHandler.Register(protected)
 		})
 
 		// AgentTeams Bearer-auth sub-router: 独立挂在 /api 之下，绕过 JWT 中间件。

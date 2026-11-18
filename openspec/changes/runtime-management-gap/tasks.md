@@ -2,12 +2,18 @@
 
 ## 1. Runtime Inventory and Readback
 
-- [ ] 1.1 Define runtime identity, health, capability, capacity, version, artifact-digest, and deployment-location persistence models.
-- [ ] 1.2 Add manager APIs for runtime registration, heartbeat, command acknowledgement, inventory, and health transition.
-- [ ] 1.3 Implement read-only adapters for Edge Agent, Manager Chat Worker, AgentTeams Worker, TeamHarness/plugin manager, and preview-pg.
-- [ ] 1.4 Make every runtime report version and artifact digest from manifest/release metadata and reject hard-coded authority.
-- [ ] 1.5 Add heartbeat liveness grace, `starting`, `degraded`, `recently_lost`, and `offline` transitions.
-- [ ] 1.6 Add focused model/API/adapter tests and a read-only runtime inventory view.
+- [x] 1.1 Define runtime identity, health, capability, capacity, version, artifact-digest, and deployment-location persistence models.
+  - 已交付：`core/manager/model/runtimemgmt/runtime.go`（`RuntimeRecord` gorm 模型 + `runtimemgmt_runtimes` 表）与 `core/manager/data/runtimemgmt/store/migrate.go`（注册进 `managerMigrators()`，migrations_mysql_test 计数 24 → 25）。刻意不带 TenantID（运行时是平台资产，ADR §4.1 与 Task 的显式差异，由 `TestRuntimeRecordTableShape` 钉住）。
+- [x] 1.2 Add manager APIs for runtime registration, heartbeat, command acknowledgement, inventory, and health transition.
+  - 已交付：`core/manager/server/runtimemgmt/http.go` 四条路由（`POST /v1/runtimes`、`POST /v1/runtimes/{id}/heartbeat`、`POST /v1/runtimes/{id}/commands/{cid}/ack`、`GET /v1/runtimes`），挂 protected 组，写路由经 route-audit 表（3 条 verdict）与审计端口（`runtime_register` / `runtime_heartbeat` / `runtime_command_ack` 三个动作 + `runtime` 资源）。
+- [x] 1.3 Implement read-only adapters for Edge Agent, Manager Chat Worker, AgentTeams Worker, TeamHarness/plugin manager, and preview-pg.
+  - 已交付：`cmd/opskeeper/runtimemgmt_wiring.go` 五份观察者（观察者在装配根而非 runtimemgmt 域内，域内只见 `ReadonlyRuntimeSource` 单方法端口——零条新跨域边）。只读性由编译期（单 Describe 方法）+ 测试期双读比对（`runtimemgmt_wiring_test.go`）共同保证；探不到的读数返回空投影或 `health=unknown`。
+- [x] 1.4 Make every runtime report version and artifact digest from manifest/release metadata and reject hard-coded authority.
+  - 已交付：注册面只接受 `manifest` / `release_metadata` 两个 `VersionSource`（`TestRegistrationRejectsUnknownKindAndSource` 钉住拒绝 `hardcoded`/`script_constant`）；五个观察者的版本来源分别是心跳自报（release_metadata 同源）、manager build version（ldflags 注入）、plugin.yaml metadata.version、pluginmanifest.Metadata.Version + TreeDigest（sha256）、workload spec fingerprint（manifest 等价物，ADR §4.4 表格）。拿不到时留空——空合法，猜测不合法。
+- [x] 1.5 Add heartbeat liveness grace, `starting`, `degraded`, `recently_lost`, and `offline` transitions.
+  - 已交付：`RuntimeRecord.EvaluateHealth` 惰性推导（读时推导，无后台 sweeper、零新 goroutine），窗口常量 `DefaultHeartbeatInterval=30s` / `ReconnectGrace=2×` / `OfflineAfter=5×`；九格转移表由 `TestEvaluateHealthTransitionTable` 钉死，心跳漂移降级但存活仍被接受（`TestHeartbeatDriftDegradesButAcceptsLiveness`）。
+- [x] 1.6 Add focused model/API/adapter tests and a read-only runtime inventory view.
+  - 已交付：三层测试——`runtime_health_test.go`（模型）、`http_test.go`（API 契约 12 条，含空部署返回 `{"total":0,"items":[]}` 的零行为断言、注册表行覆盖投影行的合并语义、惰性健康推导）、`runtimemgmt_wiring_test.go`（适配器只读断言 + 五源齐备断言）。默认部署零注册零心跳时 GET `/v1/runtimes` 返回空数组。
 
 ## 2. Durable Task Lifecycle
 
