@@ -75,6 +75,14 @@ var stateDirAllowlisted = map[string]string{
 		"openSQLite is never reached on this path; the same manifest tells " +
 		"an operator switching to sqlite to add the mount themselves, " +
 		"next to the line it already carries about the data volume",
+	"agentteams": "the manager names this path only as the read side of the " +
+		"runtime-inventory observer (runtimemgmt_wiring.go agentteamsLedgerPath, " +
+		"decision 449); the manager process writes nothing there — the observer " +
+		"is double-read compared in runtimemgmt_wiring_test.go — and the ledger's " +
+		"writer, the agentteams worker / agentteams-state CLI, is a separate " +
+		"deployment that owns its own volume. A mount is the writer's to declare, " +
+		"and until that writer ships in this install shape the directory is a " +
+		"read that legitimately finds nothing (the observer reports unknown).",
 }
 
 func stateRoots(t *testing.T) []string {

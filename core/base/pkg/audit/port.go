@@ -720,6 +720,23 @@ const (
 	// credentials in it; ending one is not a state change, it is an act, and
 	// the audit trail should read that way.
 	ActionWebshellSessionKill = "webshell_session_kill"
+
+	// The runtime governance surface (决策 449, runtime-management-gap §1.2).
+	//
+	// Three actions rather than one `runtime_*` with a payload verb, for the
+	// same reason the edge register/delete pair of decision 334 is two rows:
+	// an operator asking "who admitted this runtime into the inventory" is
+	// asking the register row, and "did the runtime answer its command" is
+	// the ack row — questions asked apart, so not one filter entry.
+	//
+	// Heartbeat is deliberately its own action rather than folded into
+	// register: it is the high-frequency liveness write, and the judgement
+	// about whether it writes a row per beat is a routeaudit verdict, not a
+	// naming decision. Keeping the name in the closed list means whichever
+	// way that verdict lands, the row (or its absence) has a filter entry.
+	ActionRuntimeRegister   = "runtime_register"
+	ActionRuntimeHeartbeat  = "runtime_heartbeat"
+	ActionRuntimeCommandAck = "runtime_command_ack"
 )
 
 // ResourceType buckets used in the resource_type column. Same flat-list
@@ -843,6 +860,15 @@ const (
 	// unknown caller is using my tools" and "my fleet is using my tools",
 	// which are different pages.
 	ResourceAgentTool = "agent_tool"
+
+	// ResourceRuntime buckets the runtime governance rows (决策 449). The
+	// resource id is the caller-chosen runtime id (`edge:12`,
+	// `pluginmgr:manager`), which is the only name every one of the five
+	// first-slice runtimes already guarantees to be stable. It is not folded
+	// into ResourceEdge: that bucket is the numeric node id, and an operator
+	// filtering "what runtimes are in my inventory" should not sweep in node
+	// CRUD rows from a different surface.
+	ResourceRuntime = "runtime"
 )
 
 // The write side: what a bounded context holds to declare that something

@@ -209,6 +209,14 @@ const (
 	ActionEdgeRegister     = auditport.ActionEdgeRegister
 	ActionEdgeDelete       = auditport.ActionEdgeDelete
 
+	// 决策 449：运行时治理三动词——谁把这个 runtime 放进 inventory（register）、
+	// 它是否还活着（heartbeat）、它有没有应答控制面命令（command_ack）。
+	// 三个独立 action 而非一个带动词载荷的 `runtime_*`，与决策 334 的节点
+	// 生命周期两行同理：问题分开问，过滤项就分开开。
+	ActionRuntimeRegister    = auditport.ActionRuntimeRegister
+	ActionRuntimeHeartbeat   = auditport.ActionRuntimeHeartbeat
+	ActionRuntimeCommandAck  = auditport.ActionRuntimeCommandAck
+
 	// 决策 335：编排面。flow_run 与 flow_test_node 是整个平台后果最重的两行——
 	// 一份编排是一串工具调用，按一次就真的发生。
 	ActionFlowCreate   = auditport.ActionFlowCreate
@@ -337,6 +345,7 @@ const (
 	ResourceAuth             = auditport.ResourceAuth
 	ResourcePlugin           = auditport.ResourcePlugin
 	ResourceEdge             = auditport.ResourceEdge
+	ResourceRuntime          = auditport.ResourceRuntime
 	ResourceAuditChain       = auditport.ResourceAuditChain
 	ResourceApproval         = auditport.ResourceApproval
 	ResourceIMApp            = auditport.ResourceIMApp
