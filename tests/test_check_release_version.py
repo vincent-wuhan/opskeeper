@@ -29,10 +29,10 @@ import pytest
 GATE_REL = Path("scripts/check_release_version.py")
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-VERSION = "2026.09.14-rc4"
-TAG = "v2026.09.14-rc4"
-BASELINE = "release/20260922@d2920895363edca87e34ee00fcb33eb1c6090723"
-BACKEND_COMMIT = "305bec8417ef25234f3fa10734ddd8761e25c398"
+VERSION = "2026.11.0-rc.1"
+TAG = "v2026.11.0-rc.1"
+BASELINE = "main@aa2bb013f8c0c79c6ad49b946ee01ea50bc86004"
+BACKEND_COMMIT = "aa2bb013f8c0c79c6ad49b946ee01ea50bc86004"
 
 
 def load_gate():
@@ -48,13 +48,13 @@ def scaffold(root: Path, *, manifest_overrides: dict | None = None) -> Path:
     The version constants are the gate's own, so a case that means to fail on
     a drift fails on the drift it planted rather than on a scaffolding gap.
     """
-    harness_version = "1.0.59"
+    harness_version = "1.0.75"
     installer_version = "1.4.3"
 
     (root / "scripts").mkdir(parents=True, exist_ok=True)
     (root / "VERSION").write_text(f"{TAG}\n", encoding="utf-8")
     (root / "CHANGELOG.md").write_text(
-        f"## {VERSION} — 2026-09-14\n\n{BACKEND_COMMIT} teamharness {harness_version}\n",
+        f"## {VERSION} — 2026-11-18\n\n{BACKEND_COMMIT} teamharness {harness_version}\n",
         encoding="utf-8",
     )
     manifest = {
@@ -140,7 +140,7 @@ def test_every_drift_is_reported_not_only_the_first(tmp_path, capsys):
     root = scaffold(
         tmp_path / "repo",
         manifest_overrides={
-            "teamharness_version": "1.0.59",
+            "teamharness_version": "1.0.75",
             "web_hash": "a-web-tree-that-is-not-the-ones-head-web",
             "teamharness_source_tree": "a-plugin-tree-that-is-not-the-one",
             "release_candidate": False,
@@ -175,7 +175,7 @@ def test_a_finding_names_what_it_expected_and_what_it_found(tmp_path, capsys):
     The two facts a signing session needs are the manifest's value and the
     tree's value; printing only the message sends the reader to git.
     """
-    root = scaffold(tmp_path / "repo", manifest_overrides={"teamharness_version": "1.0.59"})
+    root = scaffold(tmp_path / "repo", manifest_overrides={"teamharness_version": "1.0.75"})
     (root / "plugins/opskeeper-teamharness/plugin.yaml").write_text(
         "metadata:\n  version: 1.0.70\n  name: teamharness\n", encoding="utf-8"
     )
@@ -184,7 +184,7 @@ def test_a_finding_names_what_it_expected_and_what_it_found(tmp_path, capsys):
     assert module.main(root) == 1
 
     out = capsys.readouterr().out
-    assert "expected '1.0.59'" in out
+    assert "expected '1.0.75'" in out
     assert "found '1.0.70'" in out
 
 
@@ -259,7 +259,7 @@ def test_preview_names_the_values_signing_would_have_to_write(tmp_path, capsys):
     assert module.main(root, preview=True) == 0
 
     out = capsys.readouterr().out
-    assert "1.0.70" in out and "1.0.59" in out
+    assert "1.0.70" in out and "1.0.75" in out
     assert "signing must set this to the tree's value" in out
     web_tree = subprocess.run(
         ["git", "rev-parse", "HEAD:web"], cwd=root, check=True, capture_output=True, text=True

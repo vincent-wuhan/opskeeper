@@ -219,12 +219,12 @@ def main(root: Path = ROOT, preview: bool = False) -> int:
         (root / "plugins/agentteams-plugin-installer/dashboard/public/plugin.json").read_text(encoding="utf-8")
     )
 
-    expected_version = "2026.09.14-rc4"
-    expected_tag = "v2026.09.14-rc4"
+    expected_version = "2026.11.0-rc.1"
+    expected_tag = "v2026.11.0-rc.1"
     require(manifest["version"] == expected_version, "manifest version drifted", expected=expected_version, actual=manifest["version"])
     require(manifest["release_tag"] == expected_tag, "manifest release tag drifted", expected=expected_tag, actual=manifest["release_tag"])
     require(manifest["release_candidate"] is True, "manifest release candidate flag drifted", expected=True, actual=manifest["release_candidate"])
-    expected_baseline = "release/20260922@d2920895363edca87e34ee00fcb33eb1c6090723"
+    expected_baseline = "main@aa2bb013f8c0c79c6ad49b946ee01ea50bc86004"
     require(
         manifest["release_baseline_ref"] == expected_baseline,
         "manifest main baseline drifted",
@@ -239,7 +239,7 @@ def main(root: Path = ROOT, preview: bool = False) -> int:
     )
     require(root_version == expected_tag, "VERSION drifted from the release tag", expected=expected_tag, actual=root_version)
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
-    require(f"## {expected_version} — 2026-09-14" in changelog, "release changelog entry is missing")
+    require(f"## {expected_version} — 2026-11-18" in changelog, "release changelog entry is missing")
     require(manifest["backend_commit"] in changelog, "release changelog backend binding is missing")
     require(manifest["teamharness_version"] in changelog, "release changelog plugin binding is missing")
     require(re.fullmatch(r"[0-9a-f]{40}", manifest["backend_commit"]) is not None, "backend commit is invalid", actual=manifest["backend_commit"])
