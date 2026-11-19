@@ -2,6 +2,10 @@
 
 本文件记录 opskeeper 各版本的主要变更。最新在上。
 
+## 2026.11.0-rc.1 — 2026-11-18
+
+- Bind the release to TeamHarness `1.0.75` and installer `1.4.3`, with the source boundary at backend/plugin source `aa2bb013f8c0c79c6ad49b946ee01ea50bc86004` and the two source trees recorded in `RELEASE_VERSION.json`.
+
 ## 2026.09.14-rc4 — 2026-09-14
 
 - Rebind the release candidate to TeamHarness `1.0.59`, projecting stable OpsKeeper stages into Matrix `agentteams.workflow` events for synchronized Element notices and AgentTeams Dashboard task-board progression; the `1.0.58` binding is superseded.
