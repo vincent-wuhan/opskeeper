@@ -37,6 +37,17 @@ import (
 // localReplaceRE reads one `module => ./path` line out of a replace block.
 var localReplaceRE = regexp.MustCompile(`^\s*([\w./-]+)\s+=>\s+\./(\S+)\s*$`)
 
+// singleReplaceRE reads a one-line `replace module => ./path` directive.
+//
+// This form is not an alternative spelling of the block — it is a different
+// statement to the Go toolchain, and a module declared this way is as real as
+// one inside the block. The gate used to read only the block, which is how
+// `core/faults` reached the tree with a replace directive the gate never saw:
+// the image build then died on `reading core/faults/go.mod: no such file or
+// directory`, in a repository whose whole point is that such a build should
+// have been caught before it was run.
+var singleReplaceRE = regexp.MustCompile(`^replace\s+([\w./-]+)(?:\s+v\S+)?\s+=>\s+\./(\S+)\s*$`)
+
 // dockerfileCopyRE reads `COPY <src> <dest>` where the source is a go.mod that
 // belongs to a local module. The destination is what makes it a layout-
 // preserving copy: `COPY core/edge/go.mod ./core/edge/` puts the file where the
@@ -58,12 +69,18 @@ func replacedModules(t *testing.T) map[string]string {
 			continue
 		}
 		if inBlock && trimmed == ")" {
-			break
-		}
-		if !inBlock {
+			// The block is closed, but the file may still carry one-line
+			// replace directives after it. Keep reading.
+			inBlock = false
 			continue
 		}
-		if m := localReplaceRE.FindStringSubmatch(line); m != nil {
+		if inBlock {
+			if m := localReplaceRE.FindStringSubmatch(line); m != nil {
+				out[m[2]] = m[1]
+			}
+			continue
+		}
+		if m := singleReplaceRE.FindStringSubmatch(trimmed); m != nil {
 			out[m[2]] = m[1]
 		}
 	}
