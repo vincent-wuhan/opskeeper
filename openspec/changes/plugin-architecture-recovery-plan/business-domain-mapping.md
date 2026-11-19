@@ -1,6 +1,6 @@
-# 4.1 旧 release 业务板块 → 六扩展点映射表（初稿）
+# 4.1 旧 release 业务板块 → 六扩展点映射表
 
-> 状态：**初稿，待评审**。对应 `tasks.md` 4.1；评审通过前不勾选 4.1。
+> 状态：**已评审通过（2026-10-19）**，评审结论见 §7。对应 `tasks.md` 4.1。
 >
 > 基线：旧 release `release-v2026.09.20-patch.2`（commit `8774f7b3`）对比当前 `main`（commit `86dff884`，2026-10-18）。
 >
@@ -122,8 +122,8 @@
 | 运维工具集 | `biz/aiops/tools` | `aiops/tools` 子包 + `toolregistry`；`plugins/pig-ops` 5 包 | `tool` | 已接入 | 迁移为插件（进行中） | 4.8、4.9 |
 | 7 角色 Worker / persona | `agents/*.md`、`plugins/opskeeper-teamharness` | TeamHarness 插件；PiG 包 `agents`/`skills` 资源 | —（包资源，非内核 kind） | 已包化 | 迁移为插件 | `pig-runtime-adapter` 3.x |
 | 工作流 Flow | `biz/flow` | `core/domains/biz/flow` | —（消费 `tool`） | 宿主保留，已独立成域 | 保留 core | — |
-| 技能 Skill | `internal/skill` | `core/floor/skill`；Discover 页 | 可执行部分走 `tool` | 部分 | 待 4.2 | 4.2 |
-| 外部 MCP 服务 | `biz/mcp` | `core/manager/biz/mcp` | `tool`（经 basetool 暴露） | 宿主内注册，未经内核 | 待 4.2 | 4.2 |
+| 技能 Skill | `internal/skill` | `core/floor/skill`；Discover 页 | 可执行部分走 `tool` | 部分 | 待 4.2（本期宿主内管理，§7 结论 4） | 4.2 |
+| 外部 MCP 服务 | `biz/mcp` | `core/manager/biz/mcp` | `tool`（经 basetool 暴露） | 宿主内注册，未经内核 | 待 4.2（本期宿主内管理，§7 结论 4） | 4.2 |
 | 插件 / 技能市场 | `biz/marketplace` | `marketplace`、`pluginimport`、`core/domains/service/plugin`、`sdk`；插件市场与插件发布页 | —（治理面） | 宿主保留 | 保留 core | 4.10、4.11 |
 | AgentTeams Worker 运行时 | `internal/agentteams` | `core/manager/agentteams` | —（runtime adapter，非 kind） | 未纳入统一运行时 | 保留 core | `runtime-management-gap` 1.3、2.5 |
 | 团队记忆 / 事件群聊 / 值班 | release 无 | 未实现 | — | 未开始 | 保留 core | 5.10–5.13 |
@@ -152,7 +152,7 @@
 
 | 能力 | release 载体 | main 载体 | 扩展点 | 现状 | 归属初判 | 后续任务 |
 |---|---|---|---|---|---|---|
-| 告警规则 / 草稿 / 降噪 | `biz/alert`、`aiops/{alertconfig,alertdraft}` | `core/manager/biz/alert`、`core/manager/biz/aiops/{alertconfig,alertdraft}` | `tool`（§九：可插件化为 extension tool + command） | 未接入 | 迁移为插件（候选） | 需在权威 change 补任务 |
+| 告警规则 / 草稿 / 降噪 | `biz/alert`、`aiops/{alertconfig,alertdraft}` | `core/manager/biz/alert`、`core/manager/biz/aiops/{alertconfig,alertdraft}` | `tool`（§九：可插件化为 extension tool + command） | 未接入 | 迁移为插件（候选） | 4.12（§7 结论 5） |
 | 告警外发通知 | `pkg/notify`（硬编码分支） | `core/base/pkg/notify`（`ChannelFactory` 注册表） | `notifier` | 宿主注册表已有，未接内核 | 迁移为插件 | 4.5 |
 | Incident 事件 / 指标 / Runbook | `control/incident`、`server/incident` | `core/domains/control/incident`、`core/domains/server/incident`、`shared/incident-command` | — | 宿主保留，已独立成域；新增 Incident Command UI | 保留 core | 5.3（Paperclip 只读同步） |
 | 闭环 Loop 编排 | `biz/loop` | `core/manager/biz/loop` | —（消费 `tool` / `adapter`） | 宿主保留 | 保留 core | `runtime-management-gap` 2.4 |
@@ -185,7 +185,7 @@
 | 代码仓库 GitArtifact | `internal/knowledge/gitartifact` | `core/manager/knowledge/gitartifact` | `adapter`：git（git 源已注册） | 部分 | 待 4.2 | 4.4 |
 | 知识检索工具 | `query_knowledge` basetool | `aiops/tools` 内编译 | `tool` | 编译内，未包化 | 待 4.2 | 4.8 |
 | 复盘沉淀 / 结晶 | `biz/report` | `core/manager/biz/aiops/crystallize`、Crystallized 页 | — | 宿主保留（main 新增） | 保留 core | — |
-| 嵌入模型 | `pkg/embedding` | `core/base/pkg/embedding` | 待定（`provider` 当前仅定义为对话补全） | 未接入 | 待定 | 见 §7 问题 3 |
+| 嵌入模型 | `pkg/embedding` | `core/base/pkg/embedding` | —（本期不挂扩展点，§7 结论 3） | 未接入 | 保留 core（本期） | 4.6（记录为后续扩展） |
 
 ### ⑨ 企业集成
 
@@ -260,7 +260,7 @@
 | `notifier` 未接内核，通知渠道只能编译内增加 | 事件、企业集成 | 4.5 |
 | `collector` 无贡献，内置采集器仍编译内 | 观测、Edge | 4.7 |
 | `adapter` / `datasource` 只有一方贡献，没有第三方包 | 观测、企业集成 | 4.3、4.4 |
-| 告警规则 / 草稿、拓扑、知识检索仍以编译内工具存在 | 事件、资产与拓扑、知识 | 4.8；告警部分需在权威 change 补任务 |
+| 告警规则 / 草稿、拓扑、知识检索仍以编译内工具存在 | 事件、资产与拓扑、知识 | 4.8、4.12（§7 结论 5） |
 | 修复预览、只读诊断未接共享任务生命周期 | 修复、事件 | `runtime-management-gap` 2.4 |
 | 外部审批桥、ITSM / CMDB 均未开始 | 审批、企业集成 | 4.4、5.5–5.9 |
 | 团队记忆与事件协同未开始 | 协同 | 5.10–5.13 |
@@ -270,13 +270,15 @@
 - `runtime-management-gap` 的 2.1（任务生命周期八类模型）已在 #98 落入 `core/manager/model/runtimemgmt`，但该 change 的 `tasks.md` 仍为 0/41 未勾选。
 - 旧 release tag 内 `VERSION` 为 `v2026.09.14-rc4`，与 tag 名不一致，属于 1.5 已列出的版本元数据漂移。
 
-## 7. 待评审问题
+## 7. 评审结论（2026-10-19，用户逐项确认）
 
-1. 4.1 原文的“协同”指智能体协同、团队协同，还是两者都包含？本稿按两者都包含处理。
-2. “资产与拓扑”在 4.1 原文中缺席，是否作为第九个板块纳入？本稿已补入。
-3. 嵌入模型是否归入 `provider`？当前 `KindProvider` 只定义为对话补全。
-4. 外部 MCP 服务、技能（Skill）是否需要经内核注册，还是继续由宿主内注册表管理？
-5. 告警规则 / 草稿插件化尚无权威 change 承接，需要新开 change，还是并入既有 change？
+| # | 问题 | 结论 |
+|---|---|---|
+| 1 | 4.1 原文的"协同"指智能体协同、团队协同，还是两者都包含？ | **两者都包含**，维持本稿口径：②板块同时覆盖智能体协同与团队协同（5.10–5.13）。 |
+| 2 | "资产与拓扑"在 4.1 原文中缺席，是否作为第九个板块纳入？ | **纳入为第九板块**，维持本稿处理。 |
+| 3 | 嵌入模型是否归入 `provider`？ | **本期维持编译内**（`core/base/pkg/embedding`）。`KindProvider` 契约明确为对话补全且内核 Kind 集合封闭，不动内核语义；在 4.6 方案中记录为后续扩展项。 |
+| 4 | 外部 MCP 服务、技能（Skill）是否需要经内核注册？ | **本期继续宿主内注册表管理**。插件容器已明确 `.mcp.json` 为 `mcp_unsupported`（仅诊断），技能已有宿主 `biz/skill` 治理；在 4.2 盘点中标记为待定，不扩大内核改造范围。 |
+| 5 | 告警规则 / 草稿插件化尚无权威 change 承接？ | **并入本计划第 4 节**，新增任务 4.12 承接，由 4.2 盘点后细化方案。 |
 
 ## 附：统计口径
 

@@ -87,14 +87,19 @@
 
 ## 6. P2 发布准备与全量验证
 
-- [ ] 6.1 更新 `VERSION`、`RELEASE_VERSION.json`、release scope、TeamHarness 版本、插件版本和 artifact digest。
+- [x] 6.1 更新 `VERSION`、`RELEASE_VERSION.json`、release scope、TeamHarness 版本、插件版本和 artifact digest。
+  - 产出：PR #123（`b4c443bf`，2026-11-19 合并），V-1…V-14 同 PR 处置；评审侧在干净检出上独立复跑 `version-check` / `tag-format-check` / `pytest tests/test_check_release_version.py`（17 passed）。
 - [ ] 6.2 建立新的 release tag 命名和签名流程，不再复用 9 月 RC 元数据。
-- [ ] 6.3 运行完整 Go module test、race、integration、插件测试、Web test/typecheck/build 和 protocol validate。
+  - 部分：命名按 §3.2 选项 A 落定（`v2026.11.0-rc.1`，三段式 + rc，历史 7 tag 不动），发布源钉不可变 `main@aa2bb013`；**artifact 签名流程仍未建立**，正式版前需补。
+- [x] 6.3 运行完整 Go module test、race、integration、插件测试、Web test/typecheck/build 和 protocol validate。
+  - 产出：发布执行任务的交付矩阵——36 个 Go 模块 test/race/integration 全绿（0 DATA RACE）、插件 dashboard 97/97 + pytest 274 + installer self-check 34、Web typecheck + 317 tests + vite build、protocol-validate PASS，均在 `aa2bb013` 干净检出上执行。
 - [ ] 6.4 运行 fake 模式 E2E、真实推理链路 E2E、公网 staging E2E 和 Paperclip E2E。
+  - 部分：fake 模式 E2E 除 4 个依赖 `docker.io/singchia/frontier:1.2.5` 镜像的用例外全绿，该 4 例如实标 UNVERIFIED（镜像源 403，非静默跳过），列为正式版前置 R-2。
 - [ ] 6.5 完成安全审查：secret、日志脱敏、越权、跨租户、prompt injection、审批绕过、审计缺失和网络出口。
 - [ ] 6.6 完成部署演练、数据迁移演练、插件回滚演练和上一版本回滚演练。
 - [ ] 6.7 更新架构图、业务板块图、能力矩阵、运维手册和升级手册。
-- [ ] 6.8 形成 release readiness 报告，列出已通过闸门、剩余风险、回滚条件和观察窗口。
+- [x] 6.8 形成 release readiness 报告，列出已通过闸门、剩余风险、回滚条件和观察窗口。
+  - 产出：`release-readiness-v2026.11.0-rc.1.md`（发布执行任务附件，R-1…R-4 风险、回滚触发条件、48 小时观察窗口）。
 
 ## 7. OPC 小队执行交接与线上落地
 
