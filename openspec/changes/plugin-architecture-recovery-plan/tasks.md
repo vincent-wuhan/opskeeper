@@ -97,6 +97,7 @@
   - 部分：fake 模式 E2E 除 4 个依赖 `docker.io/singchia/frontier:1.2.5` 镜像的用例外全绿，该 4 例如实标 UNVERIFIED（镜像源 403，非静默跳过），列为正式版前置 R-2。
 - [ ] 6.5 完成安全审查：secret、日志脱敏、越权、跨租户、prompt injection、审批绕过、审计缺失和网络出口。
 - [ ] 6.6 完成部署演练、数据迁移演练、插件回滚演练和上一版本回滚演练。
+  - 部分（rc.1 精简档）：生产部署已执行（阿里云 8.130.126.29，compose 换镜像 `opskeeper:v2026.11.0-rc.1`，healthz 200、`/api/v1/version` 回读 `v2026.11.0-rc.1`、`/api/v1/runtimes` 4 项，2026-11-19）；上一版本回滚演练已执行（切回 `ab9e94f-prefile-fix2-1.0.79` → 健康 → 切回 rc.1 → 健康）。数据迁移演练、插件回滚演练未做，留给正式版。部署时发现并处置：vecstore 默认落内嵌 chromem（`/data` 不可写导致 crash-loop），已在生产 compose 显式设 `OPSKEEPER_VECTOR_BACKEND=qdrant`（向量数据延续既有 qdrant，非新建空库）。
 - [ ] 6.7 更新架构图、业务板块图、能力矩阵、运维手册和升级手册。
 - [x] 6.8 形成 release readiness 报告，列出已通过闸门、剩余风险、回滚条件和观察窗口。
   - 产出：`release-readiness-v2026.11.0-rc.1.md`（发布执行任务附件，R-1…R-4 风险、回滚触发条件、48 小时观察窗口）。
