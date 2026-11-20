@@ -52,6 +52,10 @@
 ## 7. 明确不在本切片
 
 - [ ] 7.1 5.1–5.4 的 manifest 增量（S-2/S-3）
+       状态（2026-11-20）：S-2/S-3 的真实待做（`plugin-gap-plan` §5.1–5.4 已写定归属、签名与 scope 对照），已派发为两个独立子任务，各自另开 change + PR。
 - [ ] 7.2 "已声明但依赖缺失"的就地降级（S-3）
-- [ ] 7.3 反向断言与 §7 工具的 manifest 收录
-- [ ] 7.4 闭包注册表的任何新条目
+       状态（2026-11-20）：随 S-3 切片（同上）。
+- [x] 7.3 反向断言与 §7 工具的 manifest 收录
+       复核成立（2026-11-20）：对账闸门只做“声明 ⊆ 可服务”单向（`cmd/opskeeper/plugin_gap_gate_test.go`）；`rank_edges` / `correlate_incident` 仍不在任何 manifest（observability 12 项、readonly 20 项均不含）。维持 design §3.3 的裁定：反向断言会把“管理端有工具”判成违规。
+- [x] 7.4 闭包注册表的任何新条目
+       复核成立（2026-11-20）：桥是独立 surface，未给闭包注册表加任何条目——`dispatchAgentTool` 顺序为中间件 family → 桥 → 闭包注册表，桥命中即返回 `basetool` 面。

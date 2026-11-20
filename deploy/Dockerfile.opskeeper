@@ -107,12 +107,17 @@ ENV PATH=/usr/local/go/bin:/go/bin:$PATH \
 # therefore what `make compose-up` did, on every run, until somebody finally ran
 # it on a machine that had Docker.
 #
-# The list below is the replace block in the root go.mod, transcribed. It is
+# The list below is the replace directives in the root go.mod, transcribed — both
+# the `replace (...)` block and any one-line `replace X => ./Y` directive that
+# follows it. (Go treats the two forms as the same kind of statement, and a
+# module declared only in the one-line form is just as real: `core/faults` was
+# added that way, the transcription below did not follow, and the image build
+# died on `reading core/faults/go.mod: no such file or directory`.) It is
 # transcribed rather than derived because a Dockerfile cannot glob seven nested
 # directories while preserving their layout, and a wrong guess is a build that
 # fails with a message about a file nobody remembers adding. So it is
 # transcribed AND gated: scripts/ledgercheck's dockerreplace gate reads the
-# replace block out of go.mod and fails if this list and it disagree, in either
+# replace directives out of go.mod and fails if this list and it disagree, in either
 # direction. A missing entry breaks the build; an extra one is a stale line
 # claiming a module that no longer exists; both are red.
 COPY go.mod go.sum ./
@@ -121,6 +126,7 @@ COPY core/base/go.mod     ./core/base/
 COPY core/domains/go.mod  ./core/domains/
 COPY core/edge/go.mod     ./core/edge/
 COPY core/extension/go.mod ./core/extension/
+COPY core/faults/go.mod   ./core/faults/
 COPY core/floor/go.mod    ./core/floor/
 COPY core/harness/go.mod  ./core/harness/
 COPY core/manager/go.mod  ./core/manager/

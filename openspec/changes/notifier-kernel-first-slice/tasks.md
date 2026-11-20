@@ -37,10 +37,13 @@
 - [x] 5.6 `openspec validate --all --no-interactive` 通过。
 - [x] 5.7 硬约束复核：`kind.go` / `notify/registry.go` / `datasource.go`（含 `ManagerPolicy()`）/ `sources_plugin.go`（含 `adapterPolicy()`）/ 告警派发主流程 / `plugins/` / manifest schema 全部零改动。
 - [x] 5.8 审计口径：入库文件不含任何内部任务号（`scripts/audit_open_source.py` 的「internal task ID」规则）。
-- [ ] 5.9 开 PR（`agent/agent/5e722b292aa9` 分支的脚手架在本地按实现实际写定；详见 `design.md` §6.1）。
+- [x] 5.9 开 PR（`agent/agent/5e722b292aa9` 分支的脚手架在本地按实现实际写定；详见 `design.md` §6.1）。
+       已开并合入：PR #106（`34c4ede`）。上游脚手架 ref `agent/agent/5e722b292aa9` / `fc1d1309` 在 GitHub、本地 clone、共享 git 存储三处核实不存在，按 `design.md` §6.1 本地写定后随该 PR 入库。
 
 ## 6. 不在本 change
 
-- [ ] 6.1 `NotifierPolicy()` 策略派生：按 §2.1 的裁定，在全局 L2 之上给 notifier L3 是一次**放宽**，必须走 `WithWiderKindCeiling`。留待后续切片。
+- [x] 6.1 `NotifierPolicy()` 策略派生：按 §2.1 的裁定，在全局 L2 之上给 notifier L3 是一次**放宽**，必须走 `WithWiderKindCeiling`。留待后续切片。
+       已随后续切片落地：`notifier-builtin-kernel-migration` PR #118（`ff1b7e4`）的 `core/manager/biz/notify/policy.go`——`Policy()` 从 `ManagerPolicy()` 派生并经 `WithWiderKindCeiling(KindNotifier, L3)` 放宽，恰好两个 delta 由 `TestNotifierPolicyIsManagerPolicyPlusExactlyTwoDeltas` 钉住。
 - [ ] 6.2 候选插件包、渠道类型枚举扩展、装配层 Activate 一律不在本 change。
-- [ ] 6.3 与 `notifier-plugin-plan.md` §4.5 字面 `min` 表述的偏差需要评审确认（`design.md` §6.2）。
+- [x] 6.3 与 `notifier-plugin-plan.md` §4.5 字面 `min` 表述的偏差需要评审确认（`design.md` §6.2）。
+       评审确认（2026-11-20）：偏差成立。方案 §4.5 字面 `min` 与 §4.6 草案 `.WithKindCeiling(KindNotifier, L3)` 互相矛盾：按 `min` 实现，该写入是空操作，六个 L3 manifest 在 L2 ceiling 下继续全被拒；按“只能收紧”实现，该写入被收窄入口直接拒掉。维持本 change 的裁定——条目生效、无条目回落全局，写入方向拆成两个入口，写反方向 panic。

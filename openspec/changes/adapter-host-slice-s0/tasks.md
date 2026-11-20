@@ -59,7 +59,10 @@
 ## 8. 明确不在本切片
 
 - [ ] 8.1 候选包（Karmada / 阿里云 / CMDB）——后续独立任务
+       状态（2026-11-20）：已派发为独立子任务（含 8.2/8.5 与 8.3 裁定的落地）。
 - [ ] 8.2 导出第三方贡献入口——随第一个真实候选包落地
-- [ ] 8.3 adapter 包在宿主侧的组装点（含 manager 插件宿主当前使用 datasource 策略的问题）
-- [ ] 8.4 `cloud.write` 裁决——写操作切片
+- [x] 8.3 adapter 包在宿主侧的组装点（含 manager 插件宿主当前使用 datasource 策略的问题）
+       裁决（2026-11-20）：维持单一控制面内核宿主——adapter 候选包进 `cmd/opskeeper/main.go:1719` 的同一个宿主、同一个注册表（`Inventory()` 仍是“这个部署能触达什么”的唯一答案；第二宿主/第二注册表按 notifier 方案候选 B 的同款理由拒绝）。授予集在组装根合成：以现 `notifybiz.Policy()`（= `ManagerPolicy()` + alert.write + notifier L3 两个 delta）为基，首个候选包落地时按 S0 导出的 `AdapterPolicy(granted)` 语义追加 `cloud.read` / `topology.read` 两个只读 delta——是组装根 diff，评审可见，不是包侧可申领值。落地实现随 8.1 首个候选包。
+- [x] 8.4 `cloud.write` 裁决——写操作切片
+       裁决（2026-11-20）：本期不引入 `cloud.write`，归写操作切片独立 change。云写是对外部供应商基础设施的副作用，按 `safety.go` 口径属 L3 级（notifier 六渠道定 L3 用的是同一条理由：写进别人的系统）；`AdapterPolicy` 上限钉在 L2/single-ns，引入 `cloud.write` 要么抬全局上限（tool/adapter 全体获得 L3 准入——notifier 方案 §4.5 候选 C 已记录为治理回退），要么走 `WithWiderKindCeiling(KindAdapter, L3)` 的 per-kind 放宽，两者都必须连同写切片的审批队列语义一起评审，不能以一次 scope 翻转带过。现状 fail-closed（未授予即拒、`Satisfies` 拒未知 scope）即为正确默认。
 - [ ] 8.5 `pig-ops.yaml` / `NotPackagedFamilies` 接线——随第一个注册只读工具的真实候选包落地
