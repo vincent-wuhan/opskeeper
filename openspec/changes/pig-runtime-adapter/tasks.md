@@ -10,7 +10,17 @@
 ## 2. PiG Runtime Adapter
 
 - [x] 2.1 Implement a PiG runtime driver that starts, probes, streams events, cancels, and terminates an isolated PiG process.
-- [ ] 2.2 Normalize PiG registration and lifecycle observations into OpsKeeper runtime health and task events.
+- [x] 2.2 Normalize PiG registration and lifecycle observations into OpsKeeper runtime health and task events.
+  交付（PR 见 BENY-1070）：`biz/pigruntime/lifecycle_sink.go` 把六类事件归一为
+  注册/心跳写（`RuntimeRecord`，第六类 `pig` 加入 Kind 闭集）与 `TaskResult`
+  终态写（脱敏三态保守映射：applied / skipped+notes / 拒绝持久化，双闸不
+  互信）。关键决策：PiG 注册走进程内直写 Store 端口，不走 `POST /v1/runtimes`
+  ——PiG 是 Manager 子进程而非远端执行面，注册事实（digest/并发额度）全部
+  来自 Manager 侧钉住的 descriptor，HTTP 自注册只会把进程内事实降级为网络
+  声明并为子进程铸造不必要凭据；HTTP 路径保留给真远端 runtime。首个生产
+  装配在 `cmd/opskeeper/pigruntime_wiring.go`：默认零环境变量零行为，
+  显式启用但工件三元组缺失/摘要漂移 fail closed。deadcode 棘轮
+  910/604/306 → 909/603/306（ProcessDriver 首次进入生产调用图）。
 - [ ] 2.3 Add capability admission that reconciles declared, observed, and allowlisted tools before exposing them to a role.
 - [ ] 2.4 Enforce no ambient extension discovery, no provider override, no host write, and no direct production credential access in the first slice.
 - [x] 2.5 Add deterministic fake-PiG integration fixtures for launch, registration, heartbeat, progress, cancellation, crash, and completion.
