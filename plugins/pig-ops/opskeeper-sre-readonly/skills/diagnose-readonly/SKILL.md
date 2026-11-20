@@ -26,6 +26,9 @@ with a blast radius.
 
 1. **Scope the blast radius.** Identify which node, namespace, or
    dependency the alert concerns. Narrow the search before widening it.
+   When the alert names nothing concrete, `query_devices` is the entry
+   point: it turns a role, an online state, or a name fragment into the
+   `device_id` every later query wants.
 
 2. **Collect primary evidence.** Read the service's own logs, its process
    state, and its resource usage. Prefer the service's own account of
@@ -37,7 +40,11 @@ with a blast radius.
 
 4. **Check recent change.** Look for a deploy, a config change, or a
    scaling event in the window around the alert. Most incidents trace back
-   to a change.
+   to a change. The incident timeline is where the sequence lives:
+   `query_incidents` lists what fired and when, `get_incident_detail`
+   returns one incident's full timeline (firing, ack, resolve,
+   notification). Neither changes anything — both are reads of what the
+   alert system already recorded.
 
 5. **State a hypothesis and its confidence.** Say what you believe is
    wrong, what evidence supports it, and what would falsify it. An

@@ -75,6 +75,7 @@ extensions:
       - expand_topology
       - find_outlier_edges
       - find_topology_node
+      - get_incident_detail
       - get_topology
       - host_dmesg
       - host_file_inventory
@@ -92,6 +93,8 @@ extensions:
       - host_top_processes
       - host_traceroute
       - query_alert_rules
+      - query_devices
+      - query_incidents
 
 # One entry per skill, each pointing at its own directory.
 #
