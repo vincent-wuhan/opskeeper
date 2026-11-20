@@ -3445,7 +3445,15 @@ func main() {
 	// node's own business: a node serves them locally, and sharing the
 	// bag would make the control plane a second door to a question the
 	// asker can answer without leaving the machine.
-	agentTools.basetool = newBaseToolUpcall(toolsReg.BuildBaseTools(), aiopstoolsdec.Deps{
+	//
+	// The second argument is the registry's product vocabulary, and it
+	// matters for exactly the calls the bag cannot answer: a deployment
+	// that wired no knowledge service serves a bag without query_knowledge
+	// while the node's manifest still offers it, and without the
+	// vocabulary the bridge would let that fall through to "no such tool"
+	// — a sentence about the product that is false, where the honest one
+	// is about the deployment and an operator can act on it.
+	agentTools.basetool = newBaseToolUpcall(toolsReg.BuildBaseTools(), toolsReg.KnownToolNames(), aiopstoolsdec.Deps{
 		Timeout: 15 * time.Second,
 		// Audit is deliberately empty. This channel's own ledger
 		// (agentToolAudit) records every call it serves, and the
@@ -7229,6 +7237,13 @@ func (a *agentToolUpcall) dispatchAgentTool(ctx context.Context, edgeID uint64, 
 		return res, agentToolSurfaceBaseTool, false, "", nil
 	case errors.Is(err, errBaseToolNotHere):
 		// The bridge does not carry that name; the closure registry may.
+	case errors.Is(err, errBaseToolKnownUnwired):
+		// The product has the tool and this deployment does not. The
+		// answer is the bridge's own — falling through to the closure
+		// registry would at best re-derive the same miss and at worst
+		// shadow the configuration sentence with "no such tool", which
+		// is the one sentence here nobody can act on.
+		return nil, agentToolSurfaceBaseTool, denied, reason, err
 	default:
 		return nil, agentToolSurfaceBaseTool, denied, reason, err
 	}

@@ -108,7 +108,11 @@ func TestTheObservabilityProfilesToolListIsSortedAndUnique(t *testing.T) {
 //
 // observability.read is the metric and log history, db.read is the
 // registered database sources, alert.read is the rule table the queries
-// are interpreted against. What must NOT be here is host.read: this
+// are interpreted against, and knowledge.read is the curated playbooks
+// and synced repos query_knowledge retrieves from — the same class of
+// read as alert.read: a reference the answer is interpreted against,
+// fetched through the control plane's own service rather than a local
+// credential. What must NOT be here is host.read: this
 // package reads the fleet, and granting it the local machine's view would
 // be handing a fleet-wide toolset a scope whose purpose it does not have,
 // in exchange for nothing. The mutating scopes are refused for the same
@@ -116,7 +120,7 @@ func TestTheObservabilityProfilesToolListIsSortedAndUnique(t *testing.T) {
 func TestTheObservabilityProfileAsksForReadScopesAndNothingWider(t *testing.T) {
 	p := loadObservabilityProfile(t)
 	got := p.Manifest.Spec.RequiredScopes
-	for _, s := range []domain.Scope{domain.ScopeMetricsRO, domain.ScopeDBRead, domain.ScopeAlertRO} {
+	for _, s := range []domain.Scope{domain.ScopeMetricsRO, domain.ScopeDBRead, domain.ScopeAlertRO, domain.ScopeKnowledgeRO} {
 		if !got.Has(s) {
 			t.Errorf("the profile has a tool needing %q but does not declare it", s)
 		}
@@ -195,7 +199,7 @@ func TestTheObservabilityProfileShipsAPersonaThatKnowsItsOwnLimits(t *testing.T)
 	// question it was never built for and report the result as evidence.
 	p := loadObservabilityProfile(t)
 	if len(p.Skills) == 0 {
-		t.Fatal("the profile ships no skills, so its twelve tools are a menu nobody knows how to use")
+		t.Fatal("the profile ships no skills, so its fourteen tools are a menu nobody knows how to use")
 	}
 	found := false
 	for _, s := range p.Skills {
