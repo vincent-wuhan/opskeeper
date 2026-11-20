@@ -25,7 +25,7 @@ import (
 // The node's observability and middleware toolset, generated from this
 // registry.
 //
-// Twelve tools, most of them with schemas long enough that transcribing
+// Fourteen tools, most of them with schemas long enough that transcribing
 // them by hand is not an option and retyping a range bound is not a
 // mistake anybody should make on purpose. So the file the agent reads is
 // produced from the live Info() of the tools that will actually run it,
@@ -74,6 +74,11 @@ func observabilityTools() []observabilityEntry {
 				info, err := host.NewGetHostLoadTool(nil, nil, nil, nil).Info(ctx)
 				return infoOf(t, info, err)
 			}},
+		{host.ToolNameGetProcessList, "get_host_processes",
+			func(t *testing.T, ctx context.Context) basetoolInfo {
+				info, err := host.NewGetProcessListTool(nil, nil, nil, nil).Info(ctx)
+				return infoOf(t, info, err)
+			}},
 		{ToolNameGrepSource, "grep_source",
 			func(t *testing.T, ctx context.Context) basetoolInfo {
 				info, err := NewGrepSourceTool(nil, nil).Info(ctx)
@@ -97,6 +102,11 @@ func observabilityTools() []observabilityEntry {
 		{alerting.ToolNameQueryChangeEvents, "query_change_events",
 			func(t *testing.T, ctx context.Context) basetoolInfo {
 				info, err := alerting.NewQueryChangeEventsTool(nil, nil, nil).Info(ctx)
+				return infoOf(t, info, err)
+			}},
+		{ToolNameQueryKnowledge, "query_knowledge",
+			func(t *testing.T, ctx context.Context) basetoolInfo {
+				info, err := NewQueryKnowledgeTool(nil, nil).Info(ctx)
 				return infoOf(t, info, err)
 			}},
 		{querybackend.ToolNameQueryLogQL, "query_logql",

@@ -121,6 +121,7 @@ var deploymentProfiles = []Profile{
 			domain.ScopeK8sRead, domain.ScopeDBRead, domain.ScopeMQRead,
 			domain.ScopeMetricsRO, domain.ScopeTopologyRO,
 			domain.ScopeAlertRO, domain.ScopeAlertWrite,
+			domain.ScopeKnowledgeRO,
 		},
 		Intent: "Host-scoped repair (host.write) is granted because restarting one unit on one host is the operation this fleet most needs to automate, and alert.write is granted alongside it because the repair package that does the restarting also commits confirmed alert-rule drafts — a package that bundles the two, so granting one without the other leaves the flagship package uninstallable in the one deployment it was written for. Neither scope reaches trading state: one restarts a systemd unit, the other edits when a rule fires. Every scope that reaches past the host and past the alert system — k8s.exec, db.write, mq.write — is withheld, so a package needing one is refused at admission rather than at the moment it tries.",
 		// Named so an operator asking "why was this refused" gets the
@@ -165,7 +166,7 @@ var deploymentProfiles = []Profile{
 			domain.ScopeDBRead, domain.ScopeDBWrite,
 			domain.ScopeMQRead, domain.ScopeMQWrite,
 			domain.ScopeMetricsRO, domain.ScopeTopologyRO, domain.ScopeAlertRO,
-			domain.ScopeAlertWrite,
+			domain.ScopeAlertWrite, domain.ScopeKnowledgeRO,
 		},
 		Intent: "Every scope is granted because the operators here are the tenant's own SREs and need the whole toolkit. The containment is the radius: an approval is minted for one namespace, so a write that would cross a tenant boundary is refused by the policy engine before the approval is even requested.",
 		// The scope list is unrestricted, so the note has to say what is

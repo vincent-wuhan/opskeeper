@@ -122,6 +122,35 @@ var tools = []toolSpec{
 }`,
 	},
 	{
+		Name:        "get_host_processes",
+		Label:       "get_host_processes",
+		Description: "Return the top-N processes on the named edge host, sorted by CPU or memory usage.",
+		Parameters: `{
+  "type": "object",
+  "properties": {
+    "device_ids": {
+      "type": "array",
+      "items": {"type": "integer"},
+      "minItems": 1,
+      "maxItems": 16,
+      "description": "设备 id 列表，一次最多 16 个。fleet 视角看进程对比应该一次性给所有 id。"
+    },
+    "top_n": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100,
+      "description": "每台设备返回 top-N 进程（默认 10）。"
+    },
+    "sort_by": {
+      "type": "string",
+      "enum": ["cpu", "mem"],
+      "description": "排序依据：cpu 或 mem（默认 cpu）。"
+    }
+  },
+  "required": ["device_ids"]
+}`,
+	},
+	{
 		Name:        "grep_source",
 		Label:       "grep_source",
 		Description: "Search a registered git repo's tracked source for a regex (function/type names, error strings). Returns path:line:text hits. Binary files skipped.",
@@ -240,6 +269,47 @@ var tools = []toolSpec{
     "limit": {"type": "integer", "minimum": 1, "maximum": 200, "description": "返回条数上限（默认 50）。"}
   },
   "required": []
+}`,
+	},
+	{
+		Name:        "query_knowledge",
+		Label:       "query_knowledge",
+		Description: "Semantic search over the operator's knowledge base (curated playbooks + synced git repos). Returns top-N matching docs with title / source / score / preview. Use natural-language queries — full sentences embed better than keyword bags.",
+		Parameters: `{
+  "type": "object",
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "Natural language search query (full sentence preferred over keyword bag, e.g. 'DNS 解析失败怎么排查')."
+    },
+    "path": {
+      "type": "string",
+      "description": "Optional exact path filter (e.g. '网络/DNS'). Empty = no filter. Mutually exclusive with path_prefix."
+    },
+    "path_prefix": {
+      "type": "string",
+      "description": "Optional path-prefix filter for a subtree (e.g. '网络/' matches '网络/DNS', '网络/TLS', etc.). Empty = no filter. Use this when domain is known but specific subfolder is not."
+    },
+    "tags": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string"},
+      "description": "Optional tag filter (any-match). Example: ['dns','systemd-resolved']. Empty = no filter."
+    },
+    "max_results": {
+      "type": "integer",
+      "description": "How many hits to return. Default 5; max 20.",
+      "default": 5,
+      "minimum": 1,
+      "maximum": 20
+    },
+    "incident_id": {
+      "type": "string",
+      "description": "Incident identifier used to persist RRF candidate decisions for audit.",
+      "maxLength": 128
+    }
+  },
+  "required": ["query", "incident_id"]
 }`,
 	},
 	{

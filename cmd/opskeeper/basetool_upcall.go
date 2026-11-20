@@ -56,6 +56,26 @@ import (
 // tool is "no such tool" the honest answer.
 var errBaseToolNotHere = errors.New("no such tool on this surface")
 
+// errBaseToolKnownUnwired says the tool exists in this product but this
+// deployment did not wire the dependency it needs.
+//
+// It is the third miss, and it is distinct from the other two for the same
+// reason they are distinct from each other: "this channel will not run
+// that" is a policy, "there is no tool by that name" is a typo, and "the
+// product has it but this control plane wired no knowledge service" is a
+// configuration gap an operator can close. Only the third one has an
+// action attached to it, so only the third one may be phrased as if the
+// tool does not exist.
+//
+// BuildBaseTools nil-gates its optional dependencies, so the bag a bridge
+// is handed shrinks with the deployment: a control plane with no knowledge
+// service serves a bag without query_knowledge, while the node's manifest
+// — a product fact, not a deployment one — still offers it. Returning
+// errBaseToolNotHere there would let the dispatch chain fall through to
+// the closure registry, which does not carry the name either, and the
+// model would finally read "no such tool" for a tool the product ships.
+var errBaseToolKnownUnwired = errors.New("tool exists in this product but is not configured on this deployment")
+
 // baseToolUpcallReserved names the read-class tools this channel still
 // will not serve, with the reason.
 //
@@ -93,6 +113,19 @@ type baseToolUpcall struct {
 	// sentences to whoever reads the ledger afterwards: the first is a
 	// policy, the second is a typo, and only the second is worth chasing.
 	withheld map[string]string
+
+	// known holds every tool name this registry can know about across both
+	// of its surfaces, including the names a nil-gated dependency keeps out
+	// of THIS deployment's bag. It is the product vocabulary, and it is
+	// what separates "not here" from "here, but the dependency was never
+	// wired": the bag answers the second question and cannot answer the
+	// first, because the bag is a deployment fact and the manifest a node
+	// installed is a product fact.
+	//
+	// Nil means the bridge cannot tell the two apart and every miss reads
+	// as "not here" — the S-1 behaviour, retained for a caller that has no
+	// registry to ask.
+	known map[string]bool
 }
 
 // newBaseToolUpcall builds the bridge from a tool bag.
@@ -103,14 +136,19 @@ type baseToolUpcall struct {
 // the node itself; a bridge that carried them would turn every local
 // question into a tunnel round trip.
 //
+// known is the registry's product vocabulary (Registry.KnownToolNames). It
+// may be nil, which restores the two-miss behaviour: without it the bridge
+// cannot phrase "exists but not configured", and a miss is a miss.
+//
 // The bag is also where the untrusted-output fencing already happened
 // (`markUntrustedOutputs` runs inside BuildBaseTools). The bridge does not
 // fence again: two fences over the same string mark it twice, and make the
 // fencing look like it has two rules when it has one.
-func newBaseToolUpcall(bag *aiopstoolscore.ToolBag, deps aiopstoolsdec.Deps, log *slog.Logger) *baseToolUpcall {
+func newBaseToolUpcall(bag *aiopstoolscore.ToolBag, known map[string]bool, deps aiopstoolsdec.Deps, log *slog.Logger) *baseToolUpcall {
 	b := &baseToolUpcall{
 		serve:    map[string]aiopstoolsbase.BaseTool{},
 		withheld: map[string]string{},
+		known:    known,
 	}
 	if bag == nil {
 		return b
@@ -160,9 +198,13 @@ func newBaseToolUpcall(bag *aiopstoolscore.ToolBag, deps aiopstoolsdec.Deps, log
 
 // invoke runs one tool the node's agent asked for.
 //
-// The three outcomes are distinct on purpose: served, known-and-refused,
-// and not-here. The last one is not an answer — it is the signal for the
-// dispatch chain to try the next surface.
+// The four outcomes are distinct on purpose: served; known-and-refused
+// (this channel will not run it); exists-but-not-configured (the product
+// has it, this deployment did not wire its dependency); and not-here. The
+// last one is not an answer — it is the signal for the dispatch chain to
+// try the next surface — and the third one deliberately is an answer,
+// because falling through to the closure registry would only replace a
+// sentence an operator can act on with one nobody can.
 func (b *baseToolUpcall) invoke(ctx context.Context, tool string, args json.RawMessage) (json.RawMessage, bool, string, error) {
 	if b == nil {
 		return nil, false, "", errBaseToolNotHere
@@ -173,6 +215,17 @@ func (b *baseToolUpcall) invoke(ctx context.Context, tool string, args json.RawM
 	}
 	wrapped, ok := b.serve[tool]
 	if !ok {
+		// A name the registry knows but the bag does not carry is a
+		// nil-gated dependency: BuildBaseTools left the tool out because
+		// this deployment wired nothing behind it. The model read the
+		// name off the manifest — a product fact — so "no such tool"
+		// would be a lie about the product, and the operator reading the
+		// ledger needs the sentence that names the actual gap.
+		if b.known[tool] {
+			return nil, true,
+				"the tool exists in this product but this deployment did not configure its dependency",
+				fmt.Errorf("%w: %s", errBaseToolKnownUnwired, tool)
+		}
 		return nil, false, "", fmt.Errorf("%w: %s", errBaseToolNotHere, tool)
 	}
 	if len(args) == 0 {
