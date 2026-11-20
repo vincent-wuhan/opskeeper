@@ -11,7 +11,7 @@
 
 - [x] 2.1 Implement a PiG runtime driver that starts, probes, streams events, cancels, and terminates an isolated PiG process.
 - [x] 2.2 Normalize PiG registration and lifecycle observations into OpsKeeper runtime health and task events.
-  交付（PR 见 BENY-1070）：`biz/pigruntime/lifecycle_sink.go` 把六类事件归一为
+  交付（#127，BENY-1070）：`biz/pigruntime/lifecycle_sink.go` 把六类事件归一为
   注册/心跳写（`RuntimeRecord`，第六类 `pig` 加入 Kind 闭集）与 `TaskResult`
   终态写（脱敏三态保守映射：applied / skipped+notes / 拒绝持久化，双闸不
   互信）。关键决策：PiG 注册走进程内直写 Store 端口，不走 `POST /v1/runtimes`
