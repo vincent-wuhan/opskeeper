@@ -231,6 +231,10 @@ independent = audit, chatdiagnose, cluster, demo, edgeauth, federation, federati
         hitl,
         notify,
         plugin, pluginimport, prometheus, promwrite, report,
+        # pigruntime 留在 independent（决策 449：它 import runtimemgmt，但
+        # 没有任何域 import 它，零入向资格保持）；runtimemgmt 被它 import，
+        # 失去零入向资格，移出。
+        pigruntime,
         nodefleet,
         scheduler, secret, setting, skill, systemhealth, systemupgrade,
         topology, traces, version, webshell,
