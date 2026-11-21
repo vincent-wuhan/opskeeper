@@ -134,6 +134,24 @@ var tools = []toolSpec{
 }`,
 	},
 	{
+		Name:        "get_incident_detail",
+		Label:       "get_incident_detail",
+		Description: "Return the full incident row plus its event timeline (firing, ack, resolve, notification_sent/failed). Use this whenever the question is about what happened on a specific incident id.",
+		Parameters: `{
+  "type": "object",
+  "properties": {
+    "incident_ids": {
+      "type": "array",
+      "items": {"type": "integer"},
+      "minItems": 1,
+      "maxItems": 16,
+      "description": "告警 id 列表，一次最多 16 个。LLM 经常同时关联多个 alert，一次拉一组比逐个调省 4-8 轮。"
+    }
+  },
+  "required": ["incident_ids"]
+}`,
+	},
+	{
 		Name:        "get_topology",
 		Label:       "get_topology",
 		Description: "Return high-level deployment topology: manager version, edge fleet size + online count, configured Prom/Loki/Tempo URLs, channel count, enabled rule count.",
@@ -529,6 +547,84 @@ var tools = []toolSpec{
       "minimum": 1,
       "maximum": 500,
       "description": "Max rows returned (default 100)."
+    }
+  }
+}`,
+	},
+	{
+		Name:        "query_devices",
+		Label:       "query_devices",
+		Description: "List OpsKeeper-managed devices (hosts) filtered by role, online status, last-seen freshness, name substring, or IP address. Use this whenever the question is about which machines exist or which ones match a coarse attribute. Returns an array of {device_id, name, hostname, ip_address, online, roles, last_seen_at}; use device_id (NOT edge_id) in any PromQL/LogQL/TraceQL you generate.",
+		Parameters: `{
+  "type": "object",
+  "properties": {
+    "role": {
+      "type": "string",
+      "enum": ["server", "storage", "network", "database"],
+      "description": "Filter to devices that carry this role bit. Optional."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["online", "offline"],
+      "description": "Filter by current online status. Optional."
+    },
+    "last_seen_within_minutes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Only return devices whose last_seen_at is within the last N minutes. Optional."
+    },
+    "name_contains": {
+      "type": "string",
+      "description": "Substring filter against device name (case-sensitive)."
+    },
+    "ip_contains": {
+      "type": "string",
+      "description": "Substring filter against device IP address. Optional."
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "description": "Max rows returned (default 50)."
+    }
+  }
+}`,
+	},
+	{
+		Name:        "query_incidents",
+		Label:       "query_incidents",
+		Description: "List OpsKeeper alert incidents filtered by severity, status, edge, rule_key and a since-window (in minutes). Use this for questions like '过去 24h 有几条 critical incident' or 'show open incidents on edge X'. Returns array of {id, title, severity, status, rule, edge_id, first_fired_at, last_fired_at}.",
+		Parameters: `{
+  "type": "object",
+  "properties": {
+    "severity": {
+      "type": "string",
+      "enum": ["info", "warning", "critical"],
+      "description": "Filter by severity. Optional."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["open", "acknowledged", "silenced", "resolved"],
+      "description": "Filter by lifecycle status. Optional."
+    },
+    "since_minutes": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Only return incidents whose last_fired_at is within the last N minutes. Default 1440 (24h)."
+    },
+    "edge_id": {
+      "type": "integer",
+      "description": "Filter to incidents on a specific edge. Optional."
+    },
+    "rule_key": {
+      "type": "string",
+      "description": "Filter by rule key (e.g. 'cpu_high'). Optional."
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500,
+      "description": "Max rows returned (default 50)."
     }
   }
 }`,

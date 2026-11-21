@@ -57,7 +57,7 @@ func TestTheProducerCommandAndTheConsumerAgreeAcrossAProcess(t *testing.T) {
 		"opskeeper-sre-autonomy":      "0.2.0",
 		"opskeeper-sre-middleware":    "0.2.0",
 		"opskeeper-sre-observability": "0.2.0",
-		"opskeeper-sre-readonly":      "0.2.0",
+		"opskeeper-sre-readonly":      "0.3.0",
 		"opskeeper-sre-repair":        "0.2.0",
 	}
 	got := map[string]string{}

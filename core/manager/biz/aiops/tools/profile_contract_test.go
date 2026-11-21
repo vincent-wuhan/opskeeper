@@ -14,12 +14,14 @@ import (
 // The control-plane half of the node's read-only toolset.
 //
 // The node's agent offers get_topology, expand_topology, find_topology_node,
-// find_outlier_edges and query_alert_rules alongside the host probes. Those
-// five are not implemented on the node — they read the manager's graph and
-// its rule table, and the broker reaches them by asking the control plane.
-// The names therefore have to be the same strings on both sides, and the
-// assertion lives here because these constants are the ones that would
-// drift: a rename here silently breaks a tool the node still offers.
+// find_outlier_edges, query_alert_rules, query_incidents,
+// get_incident_detail and query_devices alongside the host probes. Those
+// eight are not implemented on the node — they read the manager's graph,
+// its rule table, its incident timeline and its device inventory, and the
+// broker reaches them by asking the control plane. The names therefore
+// have to be the same strings on both sides, and the assertion lives here
+// because these constants are the ones that would drift: a rename here
+// silently breaks a tool the node still offers.
 
 // profileRoot locates the shipped package from this test's own directory,
 // so the check does not depend on the working directory.
@@ -49,6 +51,9 @@ func TestEveryControlPlaneToolTheNodeOffersIsRegisteredHere(t *testing.T) {
 		topology.ToolNameFindTopologyNode,
 		topology.ToolNameFindOutlierEdges,
 		alerting.ToolNameQueryAlertRules,
+		alerting.ToolNameQueryIncidents,
+		alerting.ToolNameGetIncidentDetail,
+		ToolNameQueryEdges,
 	} {
 		if !declared[name] {
 			t.Errorf("%q is served by this registry but the node's read-only profile does not "+
@@ -75,6 +80,9 @@ func TestTheControlPlaneToolsTheNodeOffersAreAllReadOnly(t *testing.T) {
 		topology.ToolNameFindTopologyNode,
 		topology.ToolNameFindOutlierEdges,
 		alerting.ToolNameQueryAlertRules,
+		alerting.ToolNameQueryIncidents,
+		alerting.ToolNameGetIncidentDetail,
+		ToolNameQueryEdges,
 	} {
 		if got, ok := classes[name]; !ok {
 			t.Errorf("%q is not declared by the node's profile", name)

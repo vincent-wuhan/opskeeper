@@ -8,7 +8,7 @@ apiVersion: opskeeper.io/v1
 kind: Plugin
 metadata:
   name: opskeeper-sre-readonly
-  version: 0.2.0
+  version: 0.3.0
   vendor: opskeeper
   homepage: https://github.com/vincent-wuhan/opskeeper
 spec:
@@ -54,6 +54,7 @@ spec:
     - { name: expand_topology,     class: read }  # the graph, one hop out
     - { name: find_outlier_edges,  class: read }  # edges behaving unlike their peers
     - { name: find_topology_node,  class: read }  # where one component lives
+    - { name: get_incident_detail, class: read }  # one incident's full timeline, batched
     - { name: get_topology,        class: read }  # the whole graph
     - { name: host_dmesg,          class: read , limits: {output_bytes: 262144, timeout_seconds: 60}}  # kernel ring buffer
     - { name: host_file_inventory,  class: read , limits: {output_bytes: 262144, timeout_seconds: 120}}  # where the space under a path went
@@ -71,6 +72,8 @@ spec:
     - { name: host_top_processes,  class: read , limits: {output_bytes: 131072, timeout_seconds: 30}}  # this node's own processes, ranked by cpu or memory
     - { name: host_traceroute,     class: read , limits: {output_bytes: 65536, timeout_seconds: 120}}  # path to a host, hop by hop
     - { name: query_alert_rules,   class: read }  # what is firing
+    - { name: query_devices,       class: read }  # the device inventory; where a device_id comes from
+    - { name: query_incidents,     class: read }  # incidents matching a filter, newest context first
 
   # The host injects credentials for exactly these scopes. A scope not
   # listed here is never handed to the plugin, so it cannot reach a
