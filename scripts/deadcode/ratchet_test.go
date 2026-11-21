@@ -387,20 +387,27 @@ import (
 // 根代码让两个此前仅测试可达的符号进入了生产调用图。接线落地后应优先
 // 把这批符号转入真实生产调用边并回调预算。
 //
-// 910 → 909 / 604 → 603 / 306 不动：pig-runtime-adapter 2.2（生命周期归一 +
-// 首个生产装配）。`cmd/opskeeper/pigruntime_wiring.go` 是 ProcessDriver 的
-// 第一个生产调用方：`NewProcessDriver`、`NewLifecycleSink` 与
-// `ExecutionSnapshot` 校验入口此前只由测试点亮（见上方 912 → 914 一条），
-// 现在全部进入生产调用图，test-only 净 -3。`ConsumePigEvents` 补 +1
-// test-only——消费循环在装配根上有真实落点，但生产侧 Launch 调用位属于
-// 2.3+ 切片，当前只有测试驱动它；这是切片边界，不是长期豁免。归一层初稿
-// 的 `WithClock` 与 `MarshalCapabilities`（时钟注入与能力 JSON 序列化，无
-// 生产调用方）按"删除优于豁免"处理：时戳全部取事件 OccurredAt，不引入
-// 第二时钟。dead 一格 -1 为连带读数，非本切片直接删除。
+// 909 → 906 / 603 → 610 / 306 → 296：runtime-management-gap §2.2+§2.3 任务
+// 生命周期切片，决策 446 的欠条到期与审计词表扩张同刀发生；基线是
+// pig-runtime-adapter 2.2 合入后的 909/603/306（生命周期归一 + 首个生产
+// 装配，ProcessDriver 三符号转入生产调用图、`WithClock` 与
+// `MarshalCapabilities` 按「删除优于豁免」处理）。
+// dead +7 的全部构成是八个新词表符号（`ActionRuntimeTaskCreate/Claim/
+// Start/Result/Failure/Cancel/Recover` 七动词 + `ResourceRuntimeTask`）加入
+// `core/domains/model/audit/log.go` 的 re-export 层——该层一百五十余个
+// 常量在本报告里全部记 dead（按名匹配只看本文件引用，re-export 的定义行
+// 不算引用，上游 `auditport.X` 的限定引用触达不到别名），与决策 337/449
+// 每次**添加审计动作**时的 +N dead 是同一类已知账目，不是新欠债。同时
+// `ErrClaimLost` 在本刀转入生产调用边（biz.Checkpoint/ReportResult/
+// RenewLease 均以其为返回错误，-1 dead），决策 446 注记的「接线后回调」
+// 兑现。test-only -10 是 §2.1 模型方法（`NewTask`/`AdvanceTo`/
+// `ExtendLiveness`/`HasRetryBudget`/`IsRetryable`/`NewIdempotencyContract`
+// 等）随 biz/data 层落地全部进入生产调用图——这些符号从 test-only 桶
+// 消失而非换桶。
 const (
-	unreachableBudget    = 909
-	deadSymbolBudget     = 603
-	testOnlySymbolBudget = 306
+	unreachableBudget    = 906
+	deadSymbolBudget     = 610
+	testOnlySymbolBudget = 296
 )
 
 // TestTheUnreachableSymbolCountNeverGrows is the gate decision 199 declined to

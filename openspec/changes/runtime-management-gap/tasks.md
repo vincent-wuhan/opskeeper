@@ -19,8 +19,10 @@
 
 - [x] 2.1 Define task state, idempotency, admission, claim, lease, checkpoint, attempt, failure classification, and terminal-result models.
   - 已随 PR #98 落入 `core/manager/model/runtimemgmt/`（task{,_state,_idempotency,_admission,_claim,_lease,_checkpoint,_attempt,_result,_safety}.go + failure_class.go + errors.go，均带测试）。本勾选为 2026-11-01 读数纠偏（此前 change 显示 0/41 但 2.1 实际已交付）。
-- [ ] 2.2 Implement slot-before-claim admission using server limits, runtime health, free slots, and local capacity.
-- [ ] 2.3 Add claim, prepare-lease renewal, start, checkpoint, progress, result, cancel, stale-recovery, and failure APIs.
+- [x] 2.2 Implement slot-before-claim admission using server limits, runtime health, free slots, and local capacity.
+  - 已交付（执行任务见对应 OPC 线程）：`biz/runtimemgmt.Usecase.evaluateAdmission`（server limit ∩ runtime 健康 ∉ {offline, recently_lost} ∩ `ProjectedFreeSlots>0`，兜底投影用 `ActiveTasks<TotalSlots`）；`OPSKEEPER_RUNTIME_TASK_SERVER_LIMIT`（默认 64，装配根一次读取）；入队内联评估一次 + `Claim` 时懒重评，零后台 sweeper；拒绝 → 任务留 queued + rejected `AdmissionDecision`（Reason=no_capacity/runtime_not_ready），零 claim 行。`TestAdmissionRejectedLeavesNoClaim` / `TestAdmissionRuntimeNotReady` / `TestAdmissionFreeSlotsZeroRejected` 钉死。
+- [x] 2.3 Add claim, prepare-lease renewal, start, checkpoint, progress, result, cancel, stale-recovery, and failure APIs.
+  - 已交付（执行任务见对应 OPC 线程）：`server/runtimemgmt/tasks_http.go` 十二条路由挂 `/v1/runtime-tasks`（`/v1/tasks` 被 report 占用，ADR D-2）；biz/data 分层（`biz/runtimemgmt` 状态机 + `data/runtimemgmt/store.TaskStore` SQL，D-3：认领/终态写全部单条条件 UPDATE，零 read-modify-write）；八表迁移 `MigrateTaskTables`（migrator 计数 25→26）；幂等双闸（入队 fail-fast + 认领前 durable 终态 `no_idempotency_contract`）；可重试失败 `IsRetryable ∧ HasRetryBudget ∧ 指纹匹配` 回 admitted；审计七动词 + 三条高频无行路由 settled 裁决；装配根 `cmd/opskeeper/runtimemgmt_task_wiring.go` 留 §2.4 worker 注册位。`usecase_test.go` 十三条验收测试（含并发双认领恰一成功、旧代际 ErrClaimLost、终态写入拒收）。
 - [ ] 2.4 Integrate one read-only diagnostic worker and repair-preview execution with the shared task lifecycle.
 - [ ] 2.5 Integrate AgentTeams/TeamHarness task reporting while preserving the existing incident-phase ledger as evidence.
 - [ ] 2.6 Add restart/failover tests proving no duplicate read-only or disposable-preview work.
