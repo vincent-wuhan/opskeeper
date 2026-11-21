@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -553,4 +554,53 @@ func hasEventType(events []*model.Event, t string) bool {
 		}
 	}
 	return false
+}
+
+// installBuiltinChannelView installs a channel resolver holding the six
+// built-in factories, so the persisted-channel dispatch path (BuildSenderFromChannel
+// → notify.BuildChannel) resolves types in tests the way it resolves them in
+// the running manager — through the view the assembly root installed.
+//
+// The package-level registry these tests used to lean on for free is gone:
+// the notify package's only source of factories is the installed view, and
+// a test that never installs one has no channels, exactly like a binary
+// that never wired the notifier extension point. Every test that builds a
+// sender from a persisted channel row calls this first; the cleanup keeps
+// the package global clean for whatever runs next.
+func installBuiltinChannelView(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() { notify.InstallChannelResolver(nil) })
+	notify.InstallChannelResolver(builtinChannelView{})
+}
+
+// builtinChannelView is a minimal notify.ChannelResolver answering the six
+// built-in channel types with the same constructions the manager side
+// activates (core/manager/biz/notify.Builtins). It is spelled here rather
+// than imported because the alert tests must not depend on the kernel glue
+// package; the constructions themselves are the one-line senders the
+// factories have always built.
+type builtinChannelView struct{}
+
+func (builtinChannelView) Factory(typ string) (notify.ChannelFactory, bool) {
+	f, ok := map[string]notify.ChannelFactory{
+		"webhook": func(s notify.ChannelSpec, _ *slog.Logger) (notify.Sender, error) {
+			return notify.NewGenericWebhookSender(s.Name, s.URL, s.Secret, nil), nil
+		},
+		"slack": func(s notify.ChannelSpec, _ *slog.Logger) (notify.Sender, error) {
+			return notify.NewSlackSender(s.Name, s.URL, nil), nil
+		},
+		"feishu": func(s notify.ChannelSpec, _ *slog.Logger) (notify.Sender, error) {
+			return notify.NewFeishuSender(s.Name, s.URL, s.Secret, nil), nil
+		},
+		"dingtalk": func(s notify.ChannelSpec, _ *slog.Logger) (notify.Sender, error) {
+			return notify.NewDingTalkSender(s.Name, s.URL, s.Secret, nil), nil
+		},
+		"wecom": func(s notify.ChannelSpec, _ *slog.Logger) (notify.Sender, error) {
+			return notify.NewWeComSender(s.Name, s.URL, nil), nil
+		},
+		"telegram": func(s notify.ChannelSpec, _ *slog.Logger) (notify.Sender, error) {
+			return notify.NewTelegramSender(s.Name, s.URL, s.ChatID, nil), nil
+		},
+	}[typ]
+	return f, ok
 }

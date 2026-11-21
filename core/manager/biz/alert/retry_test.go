@@ -9,6 +9,7 @@ import (
 )
 
 func TestRetryWorkerSucceedsOnRecover(t *testing.T) {
+	installBuiltinChannelView(t)
 	repo := newFakeRepo()
 	now := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)
 
@@ -69,6 +70,7 @@ func TestRetryWorkerSucceedsOnRecover(t *testing.T) {
 }
 
 func TestRetryWorkerHonorsBackoff(t *testing.T) {
+	installBuiltinChannelView(t)
 	repo := newFakeRepo()
 	now := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)
 	edge := uint64(7)
@@ -114,6 +116,7 @@ func TestRetryWorkerHonorsBackoff(t *testing.T) {
 }
 
 func TestRetryWorkerStopsAtMaxAttempts(t *testing.T) {
+	installBuiltinChannelView(t)
 	repo := newFakeRepo()
 	now := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)
 	edge := uint64(7)
@@ -154,6 +157,7 @@ func TestRetryWorkerStopsAtMaxAttempts(t *testing.T) {
 }
 
 func TestRetryWorkerSkipsResolvedIncident(t *testing.T) {
+	installBuiltinChannelView(t)
 	repo := newFakeRepo()
 	now := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)
 	resolved := now.Add(-2 * time.Minute)

@@ -386,7 +386,7 @@ func (f *fakeNotifier) Send(_ context.Context, msg notify.Message, channels ...s
 }
 
 func TestServiceTestChannelHappyPath(t *testing.T) {
-	t.Parallel()
+	installBuiltinChannelView(t)
 
 	// TestChannel now builds a typed sender from the channel + POSTs directly
 	// (bypassing the global notify master switch), so point the endpoint at a
@@ -410,7 +410,7 @@ func TestServiceTestChannelHappyPath(t *testing.T) {
 }
 
 func TestServiceTestChannelReportsFailure(t *testing.T) {
-	t.Parallel()
+	installBuiltinChannelView(t)
 
 	// Real upstream failure (503) must surface as accepted=false with detail —
 	// not a silent no-op and not "channel not configured".
@@ -491,4 +491,47 @@ func TestASystemActorEventCarriesNoUser(t *testing.T) {
 	if strings.Contains(string(body), "operator_user_id") {
 		t.Fatalf("marshalled event = %s, want the key omitted entirely", body)
 	}
+}
+
+// installBuiltinChannelView installs a channel resolver holding the six
+// built-in factories, so TestChannel's sender construction resolves types
+// in tests the way it resolves them in the running manager — through the
+// view the assembly root installed. The notify package has no package-level
+// registry any more, so a test that never installs a view has no channels.
+//
+// It is not parallel-safe: the view is a package global in the notify
+// package, and the tests that use it opt out of t.Parallel accordingly.
+func installBuiltinChannelView(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() { notify.InstallChannelResolver(nil) })
+	notify.InstallChannelResolver(builtinChannelView{})
+}
+
+// builtinChannelView answers the six built-in channel types with the same
+// one-line constructions the manager side activates
+// (core/manager/biz/notify.Builtins).
+type builtinChannelView struct{}
+
+func (builtinChannelView) Factory(typ string) (notify.ChannelFactory, bool) {
+	f, ok := map[string]notify.ChannelFactory{
+		"webhook": func(s notify.ChannelSpec, _ *slog.Logger) (notify.Sender, error) {
+			return notify.NewGenericWebhookSender(s.Name, s.URL, s.Secret, nil), nil
+		},
+		"slack": func(s notify.ChannelSpec, _ *slog.Logger) (notify.Sender, error) {
+			return notify.NewSlackSender(s.Name, s.URL, nil), nil
+		},
+		"feishu": func(s notify.ChannelSpec, _ *slog.Logger) (notify.Sender, error) {
+			return notify.NewFeishuSender(s.Name, s.URL, s.Secret, nil), nil
+		},
+		"dingtalk": func(s notify.ChannelSpec, _ *slog.Logger) (notify.Sender, error) {
+			return notify.NewDingTalkSender(s.Name, s.URL, s.Secret, nil), nil
+		},
+		"wecom": func(s notify.ChannelSpec, _ *slog.Logger) (notify.Sender, error) {
+			return notify.NewWeComSender(s.Name, s.URL, nil), nil
+		},
+		"telegram": func(s notify.ChannelSpec, _ *slog.Logger) (notify.Sender, error) {
+			return notify.NewTelegramSender(s.Name, s.URL, s.ChatID, nil), nil
+		},
+	}[typ]
+	return f, ok
 }

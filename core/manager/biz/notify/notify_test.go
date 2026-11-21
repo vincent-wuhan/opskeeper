@@ -93,11 +93,11 @@ func alertMessage() notify.Message {
 	}
 }
 
-// TestTheSixBuiltinChannelsResolveIdenticallyThroughTheKernel pins I2: the
-// six built-in channels behave the same whether they are reached through the
-// legacy channel registry or through the kernel.
+// TestTheSixBuiltinChannelsResolveIdenticallyThroughTheKernel pins the
+// equivalence that outlived the migration: the senders the kernel view hands
+// out are the senders Builtins() describes.
 //
-// The two paths are compared at the wire, not at the factory: a sender that
+// The two sides are compared at the wire, not at the factory: a sender that
 // builds the same object but posts a different body is a different channel.
 // Every channel is asked to deliver the same message to the same capture
 // endpoint, and the two requests must agree on the sender name, the HTTP
@@ -107,19 +107,39 @@ func alertMessage() notify.Message {
 // normalized and each signature recomputed against its own timestamp — the
 // scheme is the one the G4 e2e case already pins, reused rather than
 // reinvented.
+//
+// Before the legacy map was removed, the comparison was "the map against the
+// kernel", and it guarded a two-registry window in which the six factories
+// existed in two copies. That window closed; the question this test answers
+// now is the one that remains meaningful with a single source of factories:
+// does what the kernel admitted — through the same admission gate every
+// third-party package passes — still behave as the Builtins() closures say
+// a built-in behaves?
 func TestTheSixBuiltinChannelsResolveIdenticallyThroughTheKernel(t *testing.T) {
 	srv := newCaptureServer(t)
 	cases := sixCases(srv.URL)
 
-	// The legacy path: no view installed, so BuildChannel reads the
-	// pre-migration registry map.
-	legacy := make(map[string]notify.Sender, len(cases))
-	for _, tc := range cases {
-		sender, err := notify.BuildChannel(tc.spec, nil)
-		if err != nil {
-			t.Fatalf("legacy build of %s: %v", tc.typ, err)
+	// The direct side: the Builtins() factories build the senders with no
+	// kernel in between. This is the reference behaviour, stated where the
+	// closures live.
+	direct := make(map[string]notify.Sender, len(cases))
+	{
+		b := Builtins()
+		byType := map[string]notify.ChannelFactory{
+			NameWebhook: b.Webhook, NameSlack: b.Slack, NameFeishu: b.Feishu,
+			NameDingTalk: b.DingTalk, NameWeCom: b.WeCom, NameTelegram: b.Telegram,
 		}
-		legacy[tc.typ] = sender
+		for _, tc := range cases {
+			f, ok := byType[tc.typ]
+			if !ok {
+				t.Fatalf("no built-in factory for %s", tc.typ)
+			}
+			sender, err := f(tc.spec, nil)
+			if err != nil {
+				t.Fatalf("direct build of %s: %v", tc.typ, err)
+			}
+			direct[tc.typ] = sender
+		}
 	}
 
 	// The kernel path: the six built-ins go through the same admission gate
@@ -139,13 +159,13 @@ func TestTheSixBuiltinChannelsResolveIdenticallyThroughTheKernel(t *testing.T) {
 			if err != nil {
 				t.Fatalf("kernel build of %s: %v", tc.typ, err)
 			}
-			if got, want := kernelSender.Name(), legacy[tc.typ].Name(); got != want {
+			if got, want := kernelSender.Name(), direct[tc.typ].Name(); got != want {
 				t.Errorf("sender name = %q, want %q", got, want)
 			}
 
 			before := srv.count()
-			if err := legacy[tc.typ].Send(context.Background(), msg); err != nil {
-				t.Fatalf("legacy send of %s: %v", tc.typ, err)
+			if err := direct[tc.typ].Send(context.Background(), msg); err != nil {
+				t.Fatalf("direct send of %s: %v", tc.typ, err)
 			}
 			if err := kernelSender.Send(context.Background(), msg); err != nil {
 				t.Fatalf("kernel send of %s: %v", tc.typ, err)
@@ -166,7 +186,7 @@ func TestTheSixBuiltinChannelsResolveIdenticallyThroughTheKernel(t *testing.T) {
 				assertDingTalkRequestsMatch(t, tc, oldReq, newReq)
 			default:
 				if string(oldReq.Body) != string(newReq.Body) {
-					t.Errorf("body bytes differ:\n legacy = %s\n kernel = %s", oldReq.Body, newReq.Body)
+					t.Errorf("body bytes differ:\n direct = %s\n kernel = %s", oldReq.Body, newReq.Body)
 				}
 			}
 
@@ -187,6 +207,38 @@ func TestTheSixBuiltinChannelsResolveIdenticallyThroughTheKernel(t *testing.T) {
 		}
 		if want := "opskeeper-notifier-" + tc.typ; holder != want {
 			t.Errorf("holder of %s = %q, want %q", tc.typ, holder, want)
+		}
+	}
+}
+
+// TestWireInstallsTheViewAndBuiltinsAnswerThroughIt pins the assembly
+// order in its post-migration meaning: after Wire returns, the six built-in
+// types are buildable through the installed view, with no separate step the
+// assembly root could have forgotten.
+//
+// With the legacy map gone there is no fallback behind this: if Wire did not
+// install the view — or installed something the base package cannot read —
+// every built-in type would refuse, and the deployment would have no
+// notification channels while its boot log still looked healthy. This test
+// is the canary for that failure mode.
+func TestWireInstallsTheViewAndBuiltinsAnswerThroughIt(t *testing.T) {
+	host := kernel.NewHost(kernel.NewRegistry(), Policy(), slog.New(slog.DiscardHandler))
+	if _, err := Wire(host, Builtins(), slog.New(slog.DiscardHandler)); err != nil {
+		t.Fatalf("wire: %v", err)
+	}
+	// Deliberately no uninstall inside the test body: the assertion is that
+	// the view Wire installed is live. The cleanup keeps the package global
+	// clean for whatever runs next.
+	t.Cleanup(func() { notify.InstallChannelResolver(nil) })
+
+	for _, typ := range []string{NameWebhook, NameSlack, NameFeishu, NameDingTalk, NameWeCom, NameTelegram} {
+		sender, err := notify.BuildChannel(notify.ChannelSpec{Type: typ, Name: "probe-" + typ, URL: "http://127.0.0.1:1/hook"}, nil)
+		if err != nil {
+			t.Errorf("build %s after Wire: %v (the view must be live the moment Wire returns)", typ, err)
+			continue
+		}
+		if sender.Name() != "probe-"+typ {
+			t.Errorf("sender name = %q, want %q", sender.Name(), "probe-"+typ)
 		}
 	}
 }
@@ -347,11 +399,13 @@ func TestAThirdPartyVariantOwningSlackWinsOverTheBuiltinAndBootStillSucceeds(t *
 		t.Fatalf("activate the third-party variant: %v", err)
 	}
 
-	// The built-in implementation, built before the view is installed, so
-	// the test can tell the two apart afterwards.
-	legacySlack, err := notify.BuildChannel(notify.ChannelSpec{Type: NameSlack, Name: "ops-slack", URL: "http://127.0.0.1:1/hook"}, nil)
+	// The built-in implementation, built directly from the Builtins()
+	// factory rather than through any view, so the test can tell the two
+	// apart afterwards. The package-level registry this once read is gone;
+	// "the built-in behaviour" is stated by the closure itself.
+	builtinSlack, err := Builtins().Slack(notify.ChannelSpec{Type: NameSlack, Name: "ops-slack", URL: "http://127.0.0.1:1/hook"}, nil)
 	if err != nil {
-		t.Fatalf("legacy build of slack: %v", err)
+		t.Fatalf("built-in build of slack: %v", err)
 	}
 
 	set, err := Wire(host, Builtins(), log)
@@ -387,8 +441,8 @@ func TestAThirdPartyVariantOwningSlackWinsOverTheBuiltinAndBootStillSucceeds(t *
 	if got, want := resolved.Name(), variantSenderName; got != want {
 		t.Errorf("sender name = %q, want %q (the third-party variant)", got, want)
 	}
-	if legacySlack.Name() == resolved.Name() {
-		t.Error("the legacy registry and the kernel view answer slack identically; the test cannot tell the variant apart")
+	if builtinSlack.Name() == resolved.Name() {
+		t.Error("the built-in factory and the kernel view answer slack identically; the test cannot tell the variant apart")
 	}
 
 	// The standing aside is an Info naming both sides, and the only Warn

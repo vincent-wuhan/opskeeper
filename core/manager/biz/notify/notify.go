@@ -135,7 +135,6 @@ type resolved struct {
 // this is where the view comes from.
 type Set struct {
 	entries map[string]resolved
-	log     *slog.Logger
 }
 
 // Resolve reads the channel entries out of a registry.
@@ -203,14 +202,6 @@ func (s Set) Types() []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-// Logger returns where the view wants a fallback warning to go.
-func (s Set) Logger() *slog.Logger {
-	if s.log == nil {
-		return slog.Default()
-	}
-	return s.log
 }
 
 // Activate admits and activates whichever built-in channels are configured,
@@ -298,7 +289,6 @@ func Wire(host *kernel.Host, b Backends, log *slog.Logger) (Set, error) {
 	if err != nil {
 		return Set{}, err
 	}
-	set.log = log
 	notify.InstallChannelResolver(set)
 
 	holders := make(map[string]string, len(set.entries))
