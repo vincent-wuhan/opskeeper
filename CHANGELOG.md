@@ -2,6 +2,10 @@
 
 本文件记录 opskeeper 各版本的主要变更。最新在上。
 
+## Unreleased
+
+- **BREAKING**（notifier B3，`notifier-legacy-map-removal`）：删除 `core/base/pkg/notify` 的旧 `channelFactories` map 与回落路径。`BuildChannel` 只读启动期安装的渠道视图：**视图未安装的进程对任何渠道类型（含 webhook 等六个内置）一律返回 `unknown channel type`**——此前该状态回落旧 map 可建六渠道。同时删除零生产调用者的导出符号 `RegisterChannel` 与 `RegisteredChannels`。以库形式 import 本包且不经装配根装视图的下游须改为自装 `ChannelResolver` 视图。仓库内生产路径不变：装配序同步修正（`cmd/opskeeper/main.go` 的 `NewFromConfig` 急切构渠道，连同其首个消费者 `alertSvc` 构造移到 `Wire` 之后；B2 期间该倒挂被回落掩盖）。错误文本 `unknown channel type %q` / `built an unnamed sender` 一字不改。
+
 ## 2026.11.0-rc.1 — 2026-11-18
 
 - Bind the release to TeamHarness `1.0.75` and installer `1.4.3`, with the source boundary at backend/plugin source `aa2bb013f8c0c79c6ad49b946ee01ea50bc86004` and the two source trees recorded in `RELEASE_VERSION.json`.

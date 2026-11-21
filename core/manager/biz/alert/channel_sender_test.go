@@ -20,6 +20,7 @@ func chWithConfig(name, typ string, cfg map[string]string) *model.Channel {
 }
 
 func TestBuildSenderFromChannel(t *testing.T) {
+	installBuiltinChannelView(t)
 	types := []string{
 		model.ChannelTypeSlack, model.ChannelTypeFeishu, model.ChannelTypeDingTalk,
 		model.ChannelTypeWeCom, model.ChannelTypeTelegram, model.ChannelTypeWebhook,
@@ -124,6 +125,7 @@ func (b *replyBox) get() string {
 }
 
 func TestDingTalkNonZeroErrcodeFailsTheDeliveryAndIsRetried(t *testing.T) {
+	installBuiltinChannelView(t)
 	now := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)
 	ctx := context.Background()
 
