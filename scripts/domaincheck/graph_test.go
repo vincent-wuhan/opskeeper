@@ -617,8 +617,13 @@ func TestTheShippedTreeIsADagFourLevelsDeep(t *testing.T) {
 	// it is `notify -> aiops`: the notifier's admission policy is derived
 	// from the datasource admission policy rather than written out a second
 	// time, and that derivation is a production import across a domain
-	// boundary. Nine is the reading that follows.
-	if !strings.Contains(buf.String(), "9 edges") {
+	// boundary. Nine was the reading that followed.
+	//
+	// Ten is the PiG lifecycle edge (decision 449, PR #127):
+	// `pigruntime -> runtimemgmt`, the lifecycle sink writing runtime
+	// registration/heartbeats and task results. Same pattern as notify:
+	// a new producer whose whole job is to feed one consumer.
+	if !strings.Contains(buf.String(), "10 edges") {
 		t.Errorf("the edge count moved; the ledger in docs/opskeeper2-architecture.md is now wrong:\n%s", firstLines(buf.String(), 6))
 	}
 }
