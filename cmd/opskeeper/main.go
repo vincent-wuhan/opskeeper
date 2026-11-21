@@ -653,7 +653,6 @@ func main() {
 	// histogram, Higress resolve, plugin sync, 7-phase loop, DBApprovedDecision
 	// loader outcomes). See core/floor/prom/agentteams_metrics.go.
 	prom.RegisterAgentTeamsMetrics(reg, log.With(slog.String("comp", "prom-agentteams-metrics")))
-	notifyRouter := notify.NewFromConfig(cfg.Notification, log.With(slog.String("comp", "notify")))
 
 	// system_settings BC: admin-editable runtime config (LLM creds today,
 	// more later). The service is consulted by the LLM client on every
@@ -1690,22 +1689,6 @@ func main() {
 	)
 	webshellHandler.SetAuthz(authzMW)
 
-	alertSvc := managersvcalert.New(alertUC, alertRepo, notifyRouter, log.With(slog.String("comp", "alert-svc")))
-	// Wire the read-only preview clients (Prom range + Loki range). Each
-	// is optional — when nil, the corresponding kind returns skipped_reason
-	// instead of a hard error. Built before the AIOps runtime so
-	// conversational draft tools can reuse the same service path.
-	{
-		previewDeps := managerbizalert.PreviewDeps{}
-		if promQueryClient != nil {
-			previewDeps.Prom = promQueryClient
-		}
-		if cfg.Logs.URL != "" {
-			previewDeps.Log = pkglogquery.New(cfg.Logs.URL, log.With(slog.String("comp", "alert-preview-log")))
-		}
-		alertSvc.SetPreviewDeps(previewDeps)
-	}
-
 	// IM bridge admin repo/UC is needed by Settings -> Channels HTTP handlers.
 	// The runtime-facing Bridge service still wires later, after aiopsSvc
 	// exists.
@@ -1860,6 +1843,30 @@ func main() {
 	if _, notifyErr := notifybiz.Wire(ph.Kernel(), notifybiz.Builtins(), pluginLog); notifyErr != nil {
 		log.Error("notification channel activation", slog.Any("err", notifyErr))
 		os.Exit(1)
+	}
+
+	// The env-config notification router builds each configured channel
+	// through the channel view Wire just installed — the eager
+	// NewRouterFromSpecs call resolves every spec at construction, so
+	// this must sit after Wire or config-file channels resolve against
+	// no view and get skipped (the B3 slice moved it here for exactly
+	// that reason; under B2 the legacy-map fallback masked the gap).
+	notifyRouter := notify.NewFromConfig(cfg.Notification, log.With(slog.String("comp", "notify")))
+
+	alertSvc := managersvcalert.New(alertUC, alertRepo, notifyRouter, log.With(slog.String("comp", "alert-svc")))
+	// Wire the read-only preview clients (Prom range + Loki range). Each
+	// is optional — when nil, the corresponding kind returns skipped_reason
+	// instead of a hard error. Built before the AIOps runtime so
+	// conversational draft tools can reuse the same service path.
+	{
+		previewDeps := managerbizalert.PreviewDeps{}
+		if promQueryClient != nil {
+			previewDeps.Prom = promQueryClient
+		}
+		if cfg.Logs.URL != "" {
+			previewDeps.Log = pkglogquery.New(cfg.Logs.URL, log.With(slog.String("comp", "alert-preview-log")))
+		}
+		alertSvc.SetPreviewDeps(previewDeps)
 	}
 	// The one tool-registry wiring for this binary, as a value rather than
 	// as a constructor call: the fields that exist now are filled now, and

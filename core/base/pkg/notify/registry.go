@@ -3,8 +3,6 @@ package notify
 import (
 	"fmt"
 	"log/slog"
-	"sort"
-	"sync"
 	"time"
 
 	"github.com/vincent-wuhan/opskeeper/core/floor/config"
@@ -36,76 +34,21 @@ type ChannelSpec struct {
 // channel is skipped rather than registered broken.
 type ChannelFactory func(spec ChannelSpec, log *slog.Logger) (Sender, error)
 
-var (
-	channelMu        sync.RWMutex
-	channelFactories = map[string]ChannelFactory{
-		"webhook": func(s ChannelSpec, _ *slog.Logger) (Sender, error) {
-			return NewGenericWebhookSender(s.Name, s.URL, s.Secret, nil), nil
-		},
-		"slack": func(s ChannelSpec, _ *slog.Logger) (Sender, error) {
-			return NewSlackSender(s.Name, s.URL, nil), nil
-		},
-		"feishu": func(s ChannelSpec, _ *slog.Logger) (Sender, error) {
-			return NewFeishuSender(s.Name, s.URL, s.Secret, nil), nil
-		},
-		"dingtalk": func(s ChannelSpec, _ *slog.Logger) (Sender, error) {
-			return NewDingTalkSender(s.Name, s.URL, s.Secret, nil), nil
-		},
-		"wecom": func(s ChannelSpec, _ *slog.Logger) (Sender, error) {
-			return NewWeComSender(s.Name, s.URL, nil), nil
-		},
-		"telegram": func(s ChannelSpec, _ *slog.Logger) (Sender, error) {
-			return NewTelegramSender(s.Name, s.URL, s.ChatID, nil), nil
-		},
-	}
-)
-
-// RegisterChannel registers a channel type's factory.
-//
-// It refuses a duplicate rather than replacing, for the same reason the
-// microkernel registry does: a silent replace is how one channel type takes
-// over another's name, and a deployment that keeps the type it always used
-// would never see the implementation change.
-func RegisterChannel(typ string, f ChannelFactory) error {
-	if typ == "" {
-		return fmt.Errorf("notify: channel type is empty")
-	}
-	if f == nil {
-		return fmt.Errorf("notify: channel factory for %q is nil", typ)
-	}
-	channelMu.Lock()
-	defer channelMu.Unlock()
-	if _, ok := channelFactories[typ]; ok {
-		return fmt.Errorf("notify: channel type %q is already registered", typ)
-	}
-	channelFactories[typ] = f
-	return nil
-}
-
-// RegisteredChannels returns the channel types a factory is registered for,
-// sorted. It is what a diagnostics page lists, derived from the registry so
-// it cannot drift from what NewRouterFromSpecs will build.
-func RegisteredChannels() []string {
-	channelMu.RLock()
-	defer channelMu.RUnlock()
-	out := make([]string, 0, len(channelFactories))
-	for typ := range channelFactories {
-		out = append(out, typ)
-	}
-	sort.Strings(out)
-	return out
-}
-
-// BuildChannel builds one channel through the registry.
+// BuildChannel builds one channel through the installed view.
 //
 // It is exported because the alert delivery path builds a channel from a
 // persisted row rather than from process config, and that path should reach
-// the same registry this one does — one place decides which channel types
-// exist.
+// the same view this one does — one place decides which channel types exist.
+//
+// There is no second registry behind this: the only source of factories is
+// the view the assembly root installed at startup. A process that never
+// installed one — a test that skipped Wire, a binary that links the package
+// without hosting the notifier extension point — refuses every type,
+// including the six built-ins. The refusal text is the text that has always
+// meant "nobody holds this channel type", and a process in that state has
+// no channels to build.
 func BuildChannel(spec ChannelSpec, log *slog.Logger) (Sender, error) {
-	channelMu.RLock()
-	f, ok := channelFactories[spec.Type]
-	channelMu.RUnlock()
+	f, ok := factoryFor(spec.Type)
 	if !ok {
 		return nil, fmt.Errorf("notify: unknown channel type %q", spec.Type)
 	}
@@ -119,7 +62,7 @@ func BuildChannel(spec ChannelSpec, log *slog.Logger) (Sender, error) {
 	return sender, nil
 }
 
-// NewRouterFromSpecs builds a router from channel specs through the registry.
+// NewRouterFromSpecs builds a router from channel specs through the view.
 //
 // A spec whose type is unknown, or whose factory fails, is skipped with a
 // warning rather than failing the whole router: one misconfigured channel

@@ -58,6 +58,7 @@ func newPipelineEvaluator(t *testing.T, repo *fakeRepo, notifier Notifier, rules
 // any edge crosses the threshold and resolves once the gauge drops
 // back below.
 func TestPipelineEdgeOfflineMetricRawFiresAndResolves(t *testing.T) {
+	installBuiltinChannelView(t)
 	repo := newFakeRepo()
 	notifier := &fakeNotifier{}
 	now := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)
@@ -108,6 +109,7 @@ func TestPipelineEdgeOfflineMetricRawFiresAndResolves(t *testing.T) {
 }
 
 func TestPipelinePromQueryFiresAndResolves(t *testing.T) {
+	installBuiltinChannelView(t)
 	repo := newFakeRepo()
 	notifier := &fakeNotifier{}
 	now := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)
@@ -156,6 +158,7 @@ func TestPipelinePromQueryFiresAndResolves(t *testing.T) {
 }
 
 func TestPipelinePromQueryErrorIsSafe(t *testing.T) {
+	installBuiltinChannelView(t)
 	repo := newFakeRepo()
 	prom := &fakePromQuerier{err: errors.New("connection refused")}
 	rules := NewStaticRulesProvider(WithMetricRawRules([]MetricRawRule{
@@ -181,6 +184,7 @@ func TestPipelinePromQueryErrorIsSafe(t *testing.T) {
 // each create their own incident — the same multi-rule fan-out the
 // deleted edge_absence path supported.
 func TestPipelineEdgeOfflineMultipleMetricRawRules(t *testing.T) {
+	installBuiltinChannelView(t)
 	repo := newFakeRepo()
 	notifier := &fakeNotifier{}
 	now := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)

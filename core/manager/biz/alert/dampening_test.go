@@ -120,6 +120,7 @@ func TestRuleInputBothZeroSendPolicyOK(t *testing.T) {
 // zero calls, and a repeat_suppressed event must be recorded with the
 // "dampened" reason for each suppressed firing.
 func TestMaybeNotifyDampeningBelowThreshold(t *testing.T) {
+	installBuiltinChannelView(t)
 	repo := newFakeRepo()
 	uc := NewUsecase(repo, nil)
 	notifier := &fakeNotifier{}
@@ -182,6 +183,7 @@ func TestMaybeNotifyDampeningBelowThreshold(t *testing.T) {
 // MaybeNotify three times — the third firing pushes count ≥ 3 and the
 // notifier is invoked exactly once.
 func TestMaybeNotifyDampeningReleasesAtThreshold(t *testing.T) {
+	installBuiltinChannelView(t)
 	repo := newFakeRepo()
 	uc := NewUsecase(repo, nil)
 	notifier := &fakeNotifier{}
@@ -237,6 +239,7 @@ func TestMaybeNotifyDampeningReleasesAtThreshold(t *testing.T) {
 // default-zero send policy is a no-op: every firing gets a notification
 // (subject only to the cooldown / silence / inhibit gates).
 func TestMaybeNotifyDampeningDisabledNotifiesOnEveryFiring(t *testing.T) {
+	installBuiltinChannelView(t)
 	repo := newFakeRepo()
 	uc := NewUsecase(repo, nil)
 	notifier := &fakeNotifier{}
