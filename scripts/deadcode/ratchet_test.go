@@ -386,9 +386,20 @@ import (
 // 双重计入，合并后的真实树才是唯一裁判。test-only 反而 -2，是观察者装配
 // 根代码让两个此前仅测试可达的符号进入了生产调用图。接线落地后应优先
 // 把这批符号转入真实生产调用边并回调预算。
+//
+// 910 → 909 / 604 → 603 / 306 不动：pig-runtime-adapter 2.2（生命周期归一 +
+// 首个生产装配）。`cmd/opskeeper/pigruntime_wiring.go` 是 ProcessDriver 的
+// 第一个生产调用方：`NewProcessDriver`、`NewLifecycleSink` 与
+// `ExecutionSnapshot` 校验入口此前只由测试点亮（见上方 912 → 914 一条），
+// 现在全部进入生产调用图，test-only 净 -3。`ConsumePigEvents` 补 +1
+// test-only——消费循环在装配根上有真实落点，但生产侧 Launch 调用位属于
+// 2.3+ 切片，当前只有测试驱动它；这是切片边界，不是长期豁免。归一层初稿
+// 的 `WithClock` 与 `MarshalCapabilities`（时钟注入与能力 JSON 序列化，无
+// 生产调用方）按"删除优于豁免"处理：时戳全部取事件 OccurredAt，不引入
+// 第二时钟。dead 一格 -1 为连带读数，非本切片直接删除。
 const (
-	unreachableBudget    = 910
-	deadSymbolBudget     = 604
+	unreachableBudget    = 909
+	deadSymbolBudget     = 603
 	testOnlySymbolBudget = 306
 )
 

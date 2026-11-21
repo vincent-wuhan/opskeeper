@@ -365,6 +365,22 @@ func main() {
 		log.Error("run migrations", slog.Any("err", err))
 		os.Exit(1)
 	}
+	// PiG 运行时装配（pig-runtime-adapter 2.2）：默认零环境变量即
+	// no-op；显式启用但工件缺失/摘要漂移是启动错误（fail closed）。
+	pigAsm, err := assemblePigRuntime(db)
+	if err != nil {
+		log.Error("pig runtime assembly", slog.Any("err", err))
+		os.Exit(1)
+	}
+	if pigAsm != nil {
+		defer func() {
+			if cerr := pigAsm.Close(); cerr != nil {
+				log.Warn("pig: closing the process driver", slog.Any("err", cerr))
+			}
+		}()
+		log.Info("pig runtime enabled",
+			slog.String("runtime_id", pigAsm.Driver.Descriptor().RuntimeID))
+	}
 	sqlDB, errDB := db.DB()
 
 	// Platform-base-ha: Redis client (used by leader.Manager and any
