@@ -745,6 +745,28 @@ var Verdicts = []Verdict{
 	{File: "core/manager/server/runtimemgmt/http.go", Route: "/v1/runtimes", Handler: "h.register"},
 	{File: "core/manager/server/runtimemgmt/http.go", Route: "/v1/runtimes/{id}/heartbeat", Handler: "h.heartbeat"},
 	{File: "core/manager/server/runtimemgmt/http.go", Route: "/v1/runtimes/{id}/commands/{cid}/ack", Handler: "h.ackCommand"},
+
+	// runtime-management-gap §2.2+§2.3（ /，ADR D-2）：
+	// 任务生命周期面十二条路由。九条 mutating 入账（runtime_task_*
+	// 七词：create/claim/start/result/failure/cancel/recover——recover 是
+	// 批次汇总行，不给每个任务单开一行）；三条高频存活信号
+	// （lease-renewal/checkpoint/progress）是 settled 型无行裁决：
+	// 它们滚的是租约期限与恢复指针，行的时序语义由 lease 表自己持有，
+	// 而认领代际已经由 claim 行入账——每 5 分钟一条审计链行只会淹没
+	// 真正的变更面，与决策 449 心跳同理。
+	{File: "core/manager/server/runtimemgmt/tasks_http.go", Route: "/v1/runtime-tasks", Handler: "h.create"},
+	{File: "core/manager/server/runtimemgmt/tasks_http.go", Route: "/v1/runtime-tasks/{id}/claim", Handler: "h.claim"},
+	{File: "core/manager/server/runtimemgmt/tasks_http.go", Route: "/v1/runtime-tasks/{id}/lease-renewal", Handler: "h.leaseRenewal",
+		Backlog: "liveness lease rolling — high-frequency keepalive, no state change beyond the deadline column; the claim generation that authorises it is already on the chain via runtime_task_claim"},
+	{File: "core/manager/server/runtimemgmt/tasks_http.go", Route: "/v1/runtime-tasks/{id}/start", Handler: "h.start"},
+	{File: "core/manager/server/runtimemgmt/tasks_http.go", Route: "/v1/runtime-tasks/{id}/checkpoint", Handler: "h.checkpoint",
+		Backlog: "recovery pointer append plus lease roll — a running worker's progress signal; the row it guards lives in runtimemgmt_checkpoints, and the consequential transitions (start/result/failure) are each on the chain"},
+	{File: "core/manager/server/runtimemgmt/tasks_http.go", Route: "/v1/runtime-tasks/{id}/progress", Handler: "h.progress",
+		Backlog: "lightweight alias of /checkpoint, same shape: phase label + lease roll, no terminal or ownership change"},
+	{File: "core/manager/server/runtimemgmt/tasks_http.go", Route: "/v1/runtime-tasks/{id}/result", Handler: "h.result"},
+	{File: "core/manager/server/runtimemgmt/tasks_http.go", Route: "/v1/runtime-tasks/{id}/failure", Handler: "h.failure"},
+	{File: "core/manager/server/runtimemgmt/tasks_http.go", Route: "/v1/runtime-tasks/{id}/cancel", Handler: "h.cancel"},
+	{File: "core/manager/server/runtimemgmt/tasks_http.go", Route: "/v1/runtime-tasks/stale-recovery", Handler: "h.staleRecovery"},
 }
 
 // Result is what one run found.

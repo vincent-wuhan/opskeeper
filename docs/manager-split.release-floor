@@ -14,8 +14,8 @@
 #
 #   候选（第三份就是本文件）                     组内 import   跨组 import   切断的硬约束
 #   docs/manager-split.proposed 50 6 0 / 0
-#   docs/manager-split.constrained 54 3 0 / 0
-#   docs/manager-split.release-floor 43 14 0 / 0
+#   docs/manager-split.constrained 55 3 0 / 0
+#   docs/manager-split.release-floor 43 15 0 / 0
 #
 # **notifier 切片重取了这三行，其中本文件的组内 import 从 0 变成 43、跨组从 56
 # 掉到 14。** 这一刀的机制与前面每一次都不同：**它是加边，不是切边。** 六个内置
@@ -231,8 +231,10 @@ independent = audit, chatdiagnose, cluster, demo, edgeauth, federation, federati
         hitl,
         notify,
         plugin, pluginimport, prometheus, promwrite, report,
+        # pigruntime 留在 independent（决策 450：它 import runtimemgmt，但
+        # 没有任何域 import 它，零入向资格保持）；runtimemgmt 被它 import，
+        # 失去零入向资格，移出 independent、归入下方 core 组。
         pigruntime,
-        runtimemgmt,
         nodefleet,
         scheduler, secret, setting, skill, systemhealth, systemupgrade,
         topology, traces, version, webshell,
@@ -340,7 +342,10 @@ independent = audit, chatdiagnose, cluster, demo, edgeauth, federation, federati
 # 它在 import 图里读作叶子——被依赖不需要声明——但它同时被 aiops 与 marketplace
 # 依赖，而且已经是一个独立的 Go module（core/extension），入度在这张图里
 # 不可测这件事本身不该成为不分配它的理由。
+# runtimemgmt（决策 450 移入）：pigruntime 的 lifecycle sink 直写它的
+# RuntimeRecord/TaskResult，入向不再是零，不能留在 independent；它没有
+# 出向跨域 import，留在 core 不新增缝以外的任何边。
 core = agentteams, alert, aiops, container, control,
         dataguard, device,
         higress, knowledge, loop, middleware,
-        migrate, migrator, observability
+        migrate, migrator, observability, runtimemgmt

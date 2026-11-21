@@ -4,15 +4,21 @@
 // 与 task.go 的分工：Task 描述租户内的一次工作；RuntimeRecord 描述平台
 // 执行面本身。五类首切片 runtime（Edge Agent / Manager Chat Worker /
 // AgentTeams Worker / TeamHarness plugin manager / preview-pg）通过
-// `POST /v1/runtimes` 注册，经心跳续约，由 `GET /v1/runtimes` 读回。
+// `POST /v1/runtimes` 注册，经心跳续约，由 `GET /v1/runtimes` 读回；
+// 第六类 pig 由进程内生命周期归一层写入（见 RuntimeKindPiG 注释）。
 package runtimemgmt
 
 import (
 	"time"
 )
 
-// RuntimeKind 是首切片承认的五类执行面。闭集：注册请求携带其它值会被
-// 拒绝，避免注册表长出无人认领的“第七类”。
+// RuntimeKind 是注册表承认的执行面闭集。首切片五类经
+// `POST /v1/runtimes` 注册；第六类 pig（PiG 子进程运行时）由
+// pig-runtime-adapter 2.2 的进程内归一层写入（PiG 是 Manager 子进程，
+// 不是远端执行面，走 HTTP 自注册会把进程内事实降级为网络声明——
+// 决策理由见 openspec/changes/pig-runtime-adapter/design.md「Key Decisions」
+// 与 tasks.md 2.2 交付注记）。闭集语义不变：其它值仍被拒绝，避免
+// 注册表长出无人认领的“第七类”。
 type RuntimeKind string
 
 const (
@@ -26,6 +32,10 @@ const (
 	RuntimeKindPluginManager RuntimeKind = "plugin_manager"
 	// RuntimeKindPoolPreview 是一次性预览执行面（preview-pg 连接池）。
 	RuntimeKindPoolPreview RuntimeKind = "pool_preview"
+	// RuntimeKindPiG 是治理下的 PiG 子进程运行时（biz/pigruntime 驱动 +
+	// 生命周期归一层）。与前五类的差异：注册不走 HTTP，由装配根把
+	// pigruntime.LifecycleEvent 流归一为注册/心跳写。
+	RuntimeKindPiG RuntimeKind = "pig"
 )
 
 // AllRuntimeKinds 是注册校验用的闭集成员列表。
@@ -35,6 +45,7 @@ var AllRuntimeKinds = []RuntimeKind{
 	RuntimeKindAgentTeamsWorker,
 	RuntimeKindPluginManager,
 	RuntimeKindPoolPreview,
+	RuntimeKindPiG,
 }
 
 // IsRuntimeKind 判断 k 是否在 AllRuntimeKinds 内。
