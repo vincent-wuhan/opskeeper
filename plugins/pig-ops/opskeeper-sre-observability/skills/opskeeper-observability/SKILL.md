@@ -37,6 +37,9 @@ about *how to query* rather than *what to fix*.
   changes. Start here; it answers "where do I look" for most questions.
 - `get_host_load` — load and pressure on one host, when the edge summary
   points at it.
+- `get_host_processes` — the top processes on a set of hosts, side by
+  side. The pair of `get_host_load`: that one says a host is busy, this
+  one says with what.
 - `list_metric_catalog` — which metric names exist right now, and which
   collector each came from. The reference, not a query.
 - `query_promql` — the metric series, by PromQL. Respect the time range:
@@ -49,6 +52,10 @@ about *how to query* rather than *what to fix*.
   (MySQL, PostgreSQL, Redis, MongoDB) that exporter metrics can answer,
   before a raw PromQL query.
 - `list_database_sources` — which databases are registered and reachable.
+- `query_knowledge` — the operator's curated playbooks and synced
+  documentation. The first hop for "how did we handle this before": a
+  matched playbook outranks generic inference. Not for live data — that
+  is what the rest of this list is.
 - `list_repo_sources` / `read_source` / `grep_source` — the code that was
   running. A stack trace line becomes a file, a file becomes a function, a
   function becomes a change.

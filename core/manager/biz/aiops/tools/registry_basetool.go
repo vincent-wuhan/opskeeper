@@ -279,3 +279,89 @@ func (r *Registry) BuildBaseTools() *ToolBag {
 	bag = bag.WithExtra(NewToolSearchTool(bag, r.log))
 	return bag
 }
+
+// baseToolCandidateNames is every tool name BuildBaseTools can produce,
+// including the ones a nil-gated dependency keeps out of a given
+// deployment's bag.
+//
+// It exists because the bag is a *deployment* fact — it answers "what does
+// THIS control plane serve" — and the node's manifest is a *product* fact:
+// a node that installed a package declaring query_knowledge did not stop
+// declaring it because this deployment wired no knowledge service. A bridge
+// that only knew the bag could not tell "a capability this product does
+// not have" from "a capability this deployment did not wire", and the two
+// need different sentences: the second is one an operator can act on.
+//
+// Deriving it by calling BuildBaseTools with every dependency set is the
+// obvious move and the wrong one — it re-runs constructor code to answer a
+// vocabulary question, and the constructors are not all side-effect free
+// to call with fakes. So the list is written out, and the test beside it
+// (TestBaseToolCandidateNamesCoverEveryUnconditionalBuild) is the check
+// that the two do not drift: a tool added to BuildBaseTools without a line
+// here fails that test, in either direction.
+//
+// The names are the tools' own constants rather than string literals, so a
+// rename breaks the build here instead of quietly leaving the old name in
+// a list the bridge uses to phrase a refusal.
+var baseToolCandidateNames = []string{
+	// Unconditional.
+	host.ToolNameGetHostLoad,
+	host.ToolNameGetProcessList,
+	ToolNameQueryEdges,
+	ToolNameGetEdgeSummary,
+	ToolSearchToolName,
+
+	// Nil-gated.
+	querybackend.ToolNameQueryPromQL,
+	metriccatalog.ToolNameListMetricCatalog,
+	querybackend.ToolNameQueryLogQL,
+	querybackend.ToolNameQueryTraceQL,
+	database.ToolNameListDatabaseSources,
+	database.ToolNameAnalyzeDatabaseStatus,
+	ToolNameQueryKnowledge,
+	ToolNameListRepoSources,
+	ToolNameReadSource,
+	ToolNameGrepSource,
+	ToolNameGetTopology,
+	topology.ToolNameRankEdges,
+	topology.ToolNameFindOutlierEdges,
+	alerting.ToolNameQueryIncidents,
+	alerting.ToolNameGetIncidentDetail,
+	alerting.ToolNameQueryAlertRules,
+	alerting.ToolNameQueryChangeEvents,
+	correlate.ToolNameCorrelateIncident,
+	configchange.ToolNameDraftConfigChange,
+	configchange.ToolNameApplyConfigChange,
+	AgentToolName,
+	SendMessageToolName,
+	TaskStopToolName,
+	ToolNameRestartService,
+	recovery.ToolNameRecoveryExecute,
+	topology.ToolNameExpandTopology,
+	topology.ToolNameFindTopologyNode,
+	ToolNameBash,
+	ToolNameCloudBash,
+	ToolNameSendIMMessage,
+	ToolNameServePage,
+	chat2query.ToolNameChatToQuery,
+}
+
+// KnownToolNames is the vocabulary of tool names this registry knows
+// about, across both of its surfaces: the closure registry (registry.go)
+// and the BaseTool bag (BuildBaseTools), the latter including names a
+// nil-gated dependency keeps out of this deployment's bag.
+//
+// It is the answer to "does this capability exist in the product", which
+// is a different question from "can this deployment serve it" — the bag
+// answers that one — and the caller that needs it is the node upcall
+// bridge, which has to phrase a miss differently for the two cases.
+func (r *Registry) KnownToolNames() map[string]bool {
+	out := make(map[string]bool, len(r.tools)+len(baseToolCandidateNames))
+	for name := range r.tools {
+		out[name] = true
+	}
+	for _, name := range baseToolCandidateNames {
+		out[name] = true
+	}
+	return out
+}

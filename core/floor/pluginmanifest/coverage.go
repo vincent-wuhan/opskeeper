@@ -73,6 +73,15 @@ const (
 	// silently left the k8s/pod-oom case uncovered.
 	CapGitArtifact = "git-artifact"
 
+	// CapKnowledge is the curated playbook and documentation base:
+	// operator-written SOPs and synced repositories retrieved by
+	// semantic search rather than by listing or reading a path. It is
+	// separate from CapSource, which is the code a fleet was running —
+	// one answers "how did we handle this", the other "what was this
+	// line doing" — and folding them together would make every source
+	// case claim coverage by a corpus it never read.
+	CapKnowledge = "knowledge"
+
 	// CapRecovery is the bounded-remediation dispatcher: a reserved,
 	// approved action chosen from a fixed catalogue rather than composed
 	// by the model. It is its own family because it is not "host" —
@@ -121,15 +130,26 @@ var toolCapabilities = map[string]string{
 	"analyze_database_status": CapDatabase,
 	"get_edge_summary":        CapHost,
 	"get_host_load":           CapHost,
-	"grep_source":             CapSource,
-	"list_database_sources":   CapDatabase,
-	"list_metric_catalog":     CapObservability,
-	"list_repo_sources":       CapSource,
-	"query_change_events":     CapAlert,
-	"query_logql":             CapObservability,
-	"query_promql":            CapObservability,
-	"query_traceql":           CapObservability,
-	"read_source":             CapSource,
+	// get_host_processes is CapHost rather than a fleet family, and the
+	// distinction from host_top_processes (the read-only package's own
+	// probe) is the direction of the question: that one ranks the node's
+	// own /proc, this one compares a set of named hosts from the control
+	// plane's view. Both are "a read about hosts", which is what the
+	// family asserts and all it asserts.
+	"get_host_processes":    CapHost,
+	"grep_source":           CapSource,
+	"list_database_sources": CapDatabase,
+	"list_metric_catalog":   CapObservability,
+	"list_repo_sources":     CapSource,
+	// query_knowledge is CapKnowledge rather than CapSource: the corpus
+	// it retrieves is the operator's playbooks and synced docs, searched
+	// by meaning, not the repository files a stack trace points at.
+	"query_change_events": CapAlert,
+	"query_knowledge":     CapKnowledge,
+	"query_logql":         CapObservability,
+	"query_promql":        CapObservability,
+	"query_traceql":       CapObservability,
+	"read_source":         CapSource,
 
 	// --- opskeeper-sre-middleware ---
 	//

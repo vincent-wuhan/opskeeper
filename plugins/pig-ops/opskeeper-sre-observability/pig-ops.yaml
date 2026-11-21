@@ -21,7 +21,7 @@ apiVersion: opskeeper.io/v1
 kind: Plugin
 metadata:
   name: opskeeper-sre-observability
-  version: 0.2.0
+  version: 0.3.0
   vendor: opskeeper
   homepage: https://github.com/vincent-wuhan/opskeeper
 spec:
@@ -46,7 +46,7 @@ spec:
 
   # The tool inventory, and the host's allow-list: a tool the agent
   # produces that is not named here is refused on every turn. It is
-  # therefore the review surface — twelve names, sorted, each one a thing
+  # therefore the review surface — fourteen names, sorted, each one a thing
   # somebody agreed this package may read.
   #
   # The declared class is a claim, not the decision. The host re-derives
@@ -66,11 +66,13 @@ spec:
     - { name: analyze_database_status, class: read }  # DB health and inventory from exporter metrics
     - { name: get_edge_summary,        class: read }  # one edge's current state and its incidents
     - { name: get_host_load,           class: read }  # load and pressure on one host
+    - { name: get_host_processes,      class: read }  # top processes across a set of hosts, for fleet comparison
     - { name: grep_source,             class: read }  # search a registered repository
     - { name: list_database_sources,   class: read }  # which databases are registered and reachable
     - { name: list_metric_catalog,     class: read }  # which metric names actually exist right now
     - { name: list_repo_sources,       class: read }  # which repositories are registered
     - { name: query_change_events,     class: read }  # audit history of what changed and who
+    - { name: query_knowledge,         class: read }  # the operator's curated playbooks and synced repos
     - { name: query_logql,            class: read }  # the log stream, by LogQL
     - { name: query_promql,           class: read }  # the metric series, by PromQL
     - { name: query_traceql,          class: read }  # the trace store, by TraceQL
@@ -83,10 +85,20 @@ spec:
   # There is no host.read here, and that is the point: this package reads
   # the fleet, not the machine. A node whose operators do not want the
   # local read package installed can still get these, and vice versa.
+  #
+  # knowledge.read is the knowledge-base search: the curated playbooks and
+  # the synced repositories behind query_knowledge. It is its own scope
+  # rather than a rider on observability.read for the same reason those
+  # are scopes at all — a scope is a credential boundary, and the metric
+  # and log history is a different credential from the knowledge base even
+  # though both are "things the control plane collected". A deployment
+  # that wants the fleet view without handing every playbook to every node
+  # can grant the first and not the second.
   required_scopes:
     - observability.read
     - db.read
     - alert.read
+    - knowledge.read
 
   audit:
     # The package reports tool activity; the host derives each ledger entry

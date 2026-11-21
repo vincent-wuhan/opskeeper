@@ -24,12 +24,19 @@ import (
 	"testing"
 
 	auditport "github.com/vincent-wuhan/opskeeper/core/base/pkg/audit"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/notify"
 	"github.com/vincent-wuhan/opskeeper/core/base/pkg/promptguard"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/tenantctx"
+	"github.com/vincent-wuhan/opskeeper/core/floor/config"
 	"github.com/vincent-wuhan/opskeeper/core/floor/tunnel"
 	manageraiopstools "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools"
 	"github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/alerting"
 	"github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/configchange"
 	"github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/topology"
+	managerbizapproval "github.com/vincent-wuhan/opskeeper/core/manager/biz/approval"
+	devicebiz "github.com/vincent-wuhan/opskeeper/core/manager/biz/device"
+	managerapprovaldata "github.com/vincent-wuhan/opskeeper/core/manager/data/approval/store"
+	manageralertdata "github.com/vincent-wuhan/opskeeper/core/manager/data/alert/store"
 )
 
 // recordingAuditEmitter keeps the rows the channel wrote.
@@ -79,6 +86,14 @@ func surfaceOf(ev auditport.Event) (string, bool) {
 type agentToolTunnelStub struct {
 	channel *agentToolUpcall
 	edgeID  uint64
+	// tenant names the operator the conversation belongs to. The tunnel
+	// itself carries no identity — a node is a node — so the manager
+	// resolves the session to its owner before the call runs, and this
+	// field is that resolution as the stub would hand it down. The tools
+	// that need one (query_knowledge scopes every hit to a tenant) read
+	// it through the tenant_bind decorator, same as on every other
+	// surface that reaches them.
+	tenant string
 }
 
 func (s agentToolTunnelStub) call(t *testing.T, req tunnel.AgentToolRequest) tunnel.AgentToolResponse {
@@ -91,7 +106,11 @@ func (s agentToolTunnelStub) call(t *testing.T, req tunnel.AgentToolRequest) tun
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		t.Fatalf("decode the request: %v", err)
 	}
-	out, err := s.channel.RunAgentTool(context.Background(), s.edgeID, decoded.SessionID, decoded.Tool, decoded.Arguments)
+	ctx := context.Background()
+	if s.tenant != "" {
+		ctx = tenantctx.With(ctx, tenantctx.Tenant{UserID: 7, Role: tenantctx.RoleUser})
+	}
+	out, err := s.channel.RunAgentTool(ctx, s.edgeID, decoded.SessionID, decoded.Tool, decoded.Arguments)
 	if err != nil {
 		return tunnel.AgentToolResponse{Error: err.Error()}
 	}
@@ -353,6 +372,147 @@ func TestTheBaseToolBridgeAnswersBeforeTheClosureRegistry(t *testing.T) {
 	if strings.Contains(string(resp.Result), "closure") {
 		t.Errorf("the closure registry answered %s, and the node's arguments are shaped for the "+
 			"BaseTool form: %s", topology.ToolNameFindTopologyNode, resp.Result)
+	}
+}
+
+// A name the product carries and this deployment did not wire says so,
+// rather than claiming the tool does not exist.
+//
+// This is the third miss, and the one the two before it could not phrase:
+// "not here" is the dispatch chain's signal to try the next surface, and
+// "this channel will not run that" is a policy, but "the product has it
+// and nobody wired its dependency" is a configuration gap with an operator
+// on the other end. The node's manifest is a product fact — a node that
+// installed a package declaring query_knowledge did not stop declaring it
+// because this control plane wired no knowledge service — so "no such
+// tool" would be a lie about the product, and a sentence nobody can act
+// on.
+//
+// The two constructions below differ in exactly one field, and that is the
+// whole test: the wiring struct carries every dependency, and the
+// knowledge seam is the one whose absence takes query_knowledge out of the
+// bag while leaving it in the product vocabulary.
+func TestAToolTheProductHasButThisDeploymentDidNotWireSaysSo(t *testing.T) {
+	wired := func(t *testing.T) *agentToolUpcall {
+		t.Helper()
+		reg, bag := buildTheRealToolRegistry(t)
+		return &agentToolUpcall{
+			reg:      reg,
+			basetool: gapGateBridge(t, reg, bag),
+			audit:    &agentToolAudit{emitter: &recordingAuditEmitter{}},
+		}
+	}
+	// The unwired construction replays buildTheRealToolRegistry's wiring
+	// minus the knowledge seam, because that seam is the one a deployment
+	// leaves out when it runs no knowledge service — and BuildBaseTools'
+	// nil-gating is what turns the missing seam into a missing bag entry
+	// while KnownToolNames keeps the name in the vocabulary.
+	unwired := func(t *testing.T) *agentToolUpcall {
+		t.Helper()
+		db := throwawayDB(t)
+		log := newTestLogger(t)
+		w := toolRegistryWiring{
+			Caller:  stubCaller{},
+			Edges:   stubEdgeCatalog{},
+			Devices: &devicebiz.Usecase{},
+			Prom:    stubPromQuerier{},
+			Logs:    stubLogQuerier{},
+			Trace:   stubTraceQuerier{},
+			Alerts:  stubAlertUsecase{},
+			Log:     log,
+		}
+		reg := w.buildRegistry()
+		w.Approval = managerbizapproval.NewUsecase(managerapprovaldata.NewRepo(db), log)
+		w.Channels = manageralertdata.NewRepo(db)
+		w.Router = notify.NewFromConfig(config.NotificationConfig{}, log)
+		w.DB = db
+		w.LLM = stubCompleter{}
+		w.PagesDir = t.TempDir()
+		w.AuditLister = stubAuditLister{}
+		w.EdgeChanges = stubEdgeChangeLister{}
+		w.ConfigManager = stubConfigManager{}
+		w.PluginConfig = stubPluginConfigLister{}
+		w.TopologyGraph = stubTopologyGraph{}
+		// Knowledge stays nil: the deployment wired no knowledge service.
+		w.apply(reg)
+		return &agentToolUpcall{
+			reg:      reg,
+			basetool: gapGateBridge(t, reg, reg.BuildBaseTools()),
+			audit:    &agentToolAudit{emitter: &recordingAuditEmitter{}},
+		}
+	}
+
+	// On the wired deployment the tool serves.
+	resp := agentToolTunnelStub{channel: wired(t), edgeID: 7, tenant: "operator-7"}.call(t, tunnel.AgentToolRequest{
+		Tool:      "query_knowledge",
+		Arguments: json.RawMessage(`{"query":"tunnel reconnect backoff"}`),
+	})
+	if resp.Error != "" {
+		t.Fatalf("query_knowledge was not served on a deployment that wired the knowledge "+
+			"service: %s", resp.Error)
+	}
+
+	// On the unwired one the refusal names the configuration gap.
+	resp = agentToolTunnelStub{channel: unwired(t), edgeID: 7}.call(t, tunnel.AgentToolRequest{
+		Tool:      "query_knowledge",
+		Arguments: json.RawMessage(`{"query":"tunnel reconnect backoff"}`),
+	})
+	if resp.Error == "" {
+		t.Fatal("query_knowledge was served by a deployment that wired no knowledge service")
+	}
+	if !strings.Contains(resp.Error, "not configured") {
+		t.Errorf("the refusal %q does not say the tool is a configuration gap on this "+
+			"deployment, and that is the sentence an operator can act on", resp.Error)
+	}
+	if strings.Contains(resp.Error, "no such tool") {
+		t.Errorf("the refusal %q claims the product has no query_knowledge, and the node's "+
+			"manifest declares it: the name is a product fact, not a deployment one", resp.Error)
+	}
+	// The audit row records the refusal as a denial with a reason, because
+	// a node probing a configuration gap and a node probing a typo are two
+	// different investigations, and only the first has a next step.
+	channel := unwired(t)
+	emitter := &recordingAuditEmitter{}
+	channel.audit = &agentToolAudit{emitter: emitter}
+	agentToolTunnelStub{channel: channel, edgeID: 7}.call(t, tunnel.AgentToolRequest{
+		Tool: "query_knowledge",
+	})
+	ev, ok := emitter.lastFor("query_knowledge")
+	if !ok {
+		t.Fatal("query_knowledge was refused and wrote no audit row")
+	}
+	if ev.Status != auditport.StatusDenied {
+		t.Errorf("query_knowledge was refused but the audit row records it as %q, and a "+
+			"configuration gap has to be readable as a refusal", ev.Status)
+	}
+}
+
+// A name outside the product vocabulary is still "no such tool".
+//
+// The third miss is deliberately narrow: it fires only for names the
+// registry's KnownToolNames carries. A name nobody knows is a typo, and
+// chasing it as a configuration gap would send an operator hunting for a
+// dependency a tool never had.
+func TestAToolOutsideTheProductVocabularyIsStillNoSuchTool(t *testing.T) {
+	reg, bag := buildTheRealToolRegistry(t)
+	channel := &agentToolUpcall{
+		reg:      reg,
+		basetool: gapGateBridge(t, reg, bag),
+		audit:    &agentToolAudit{emitter: &recordingAuditEmitter{}},
+	}
+	resp := agentToolTunnelStub{channel: channel, edgeID: 7}.call(t, tunnel.AgentToolRequest{
+		Tool: "a_tool_nobody_declared",
+	})
+	if resp.Error == "" {
+		t.Fatal("a tool nobody declared was served")
+	}
+	if !strings.Contains(resp.Error, "not found") {
+		t.Errorf("the refusal %q does not say the tool does not exist, and a name outside "+
+			"the product vocabulary is exactly that", resp.Error)
+	}
+	if strings.Contains(resp.Error, "not configured") {
+		t.Errorf("the refusal %q phrases a typo as a configuration gap, and the two are "+
+			"different investigations", resp.Error)
 	}
 }
 

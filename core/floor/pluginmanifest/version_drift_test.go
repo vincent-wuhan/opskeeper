@@ -56,7 +56,7 @@ var released = map[string]struct {
 }{
 	"opskeeper-sre-autonomy":      {"0.2.0", "350b0b5e81ed3de5e8d8a50f4ba9d6a1942f6cbc32bdd42398ad3073d4e0db05"},
 	"opskeeper-sre-middleware":    {"0.2.0", "8bc8c3e7a4d39e4f5db42cf2d01ad57349277d586725e8b965abc70c0d5eb536"},
-	"opskeeper-sre-observability": {"0.2.0", "1b2616a8c3c80e3507dd3ffa6c9b10d2e8cfbe250eb4193fe71c2464849a9b48"},
+	"opskeeper-sre-observability": {"0.3.0", "313b1399978da289416239beafa912ea657cb3527e8a9375bde4c2ff6f90c831"},
 	"opskeeper-sre-readonly":      {"0.3.0", "ab9bff52575e2419fb9b0edc5ae90e291c32f11de1acb2834b4627b5bfe869be"},
 	"opskeeper-sre-repair":        {"0.2.0", "010722d4295dd64769e7965359698c5a90d37222741304063ab5a22763a9a08f"},
 }
