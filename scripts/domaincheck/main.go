@@ -344,6 +344,12 @@ var edges = map[edge]string{
 	// the only place that legitimately knows there are two domains here.
 
 	{"report", "loop"}: "a report is produced out of a loop investigation, and the postmortem service renders the loop's own postmortem contract (PostmortemDoc / RootCauseJSON / CritiqueScore) — one direction only since decision 115",
+	// pigruntime -> runtimemgmt（决策 450 / PR #127）：PiG 生命周期观察归一为
+	// runtime 健康与任务事件。lifecycle_sink 把六类 PiG 事件写成
+	// RuntimeRecord 注册/心跳与 TaskResult 终态，消费者是 runtime 治理域的
+	// 持久化模型；方向单一（pigruntime 观察世界，runtimemgmt 记录它），
+	// 没有反向依赖。
+	{"pigruntime", "runtimemgmt"}: "the PiG lifecycle sink normalizes six process events into runtime registration/heartbeat writes and task-result terminal states (decision 450, PR #127); one direction only",
 }
 
 // pair canonicalises a mutual pair so that the table can be written in

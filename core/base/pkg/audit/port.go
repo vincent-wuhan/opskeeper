@@ -737,6 +737,33 @@ const (
 	ActionRuntimeRegister   = "runtime_register"
 	ActionRuntimeHeartbeat  = "runtime_heartbeat"
 	ActionRuntimeCommandAck = "runtime_command_ack"
+
+	// The runtime task lifecycle surface (runtime-management-gap §2.2+§2.3,
+	// ADR D-2). Seven audited verbs for the durable task state
+	// machine; the three high-frequency liveness writes (lease-renewal,
+	// checkpoint, progress) are deliberately NOT here — they carry no row,
+	// each with a settled routeaudit verdict, for the same reason
+	// runtime_heartbeat keeps its name in the closed list while the
+	// per-beat row question is a verdict, not a naming decision: whichever
+	// way a future slice lands it, the closed list already holds the hook.
+	//
+	// create vs claim are two rows for the same reason register and ack
+	// are (decision 449): "who queued this work" and "which runtime took
+	// it" are asked apart during an incident. start is the row that
+	// answers "when did side effects become possible". result and failure
+	// are the two terminal shapes an operator filters between; cancel is
+	// the operator-driven one and its row is the only place the operator
+	// identity lives, because the task row itself records no actor.
+	// recover is the control plane's own act — a stale claim was taken
+	// over or terminated by policy, and nobody typed anything to make it
+	// happen, which is precisely when an audit row is worth the most.
+	ActionRuntimeTaskCreate  = "runtime_task_create"
+	ActionRuntimeTaskClaim   = "runtime_task_claim"
+	ActionRuntimeTaskStart   = "runtime_task_start"
+	ActionRuntimeTaskResult  = "runtime_task_result"
+	ActionRuntimeTaskFailure = "runtime_task_failure"
+	ActionRuntimeTaskCancel  = "runtime_task_cancel"
+	ActionRuntimeTaskRecover = "runtime_task_recover"
 )
 
 // ResourceType buckets used in the resource_type column. Same flat-list
@@ -869,6 +896,17 @@ const (
 	// filtering "what runtimes are in my inventory" should not sweep in node
 	// CRUD rows from a different surface.
 	ResourceRuntime = "runtime"
+
+	// ResourceRuntimeTask names one durable task lifecycle row
+	// (runtime-management-gap §2.2+§2.3). The resource id is the task's own
+	// uuid — the same string every lifecycle route carries in its path and
+	// the one a result row, a checkpoint row and a recovery decision all
+	// have to be able to name. It is not folded into ResourceRuntime: that
+	// bucket's id is a runtime id, and an operator filtering "which tasks
+	// did who claim" must not sweep in runtime CRUD and heartbeat rows —
+	// the same separation decision 449 drew between ResourceRuntime and
+	// ResourceEdge, applied one level down.
+	ResourceRuntimeTask = "runtime_task"
 )
 
 // The write side: what a bounded context holds to declare that something

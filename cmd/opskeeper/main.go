@@ -301,6 +301,11 @@ func managerMigrators() []dbx.Migrator {
 		// 运行时注册表（runtime-management-gap §1.1）：全新表
 		// runtimemgmt_runtimes，纯增量。
 		runtimemgmtstore.Migrate,
+		// 任务生命周期八表（runtime-management-gap §2.2+§2.3，ADR
+		// ADR D-1）：runtimemgmt_tasks/_claims/_leases/
+		// _checkpoints/_attempt_records/_task_results/
+		// _admission_decisions/_idempotency_contracts，纯增量。
+		runtimemgmtstore.MigrateTaskTables,
 	}
 }
 
@@ -364,6 +369,22 @@ func main() {
 	if err := dbx.RunMigrations(db, log, managerMigrators()...); err != nil {
 		log.Error("run migrations", slog.Any("err", err))
 		os.Exit(1)
+	}
+	// PiG 运行时装配（pig-runtime-adapter 2.2）：默认零环境变量即
+	// no-op；显式启用但工件缺失/摘要漂移是启动错误（fail closed）。
+	pigAsm, err := assemblePigRuntime(db)
+	if err != nil {
+		log.Error("pig runtime assembly", slog.Any("err", err))
+		os.Exit(1)
+	}
+	if pigAsm != nil {
+		defer func() {
+			if cerr := pigAsm.Close(); cerr != nil {
+				log.Warn("pig: closing the process driver", slog.Any("err", cerr))
+			}
+		}()
+		log.Info("pig runtime enabled",
+			slog.String("runtime_id", pigAsm.Driver.Descriptor().RuntimeID))
 	}
 	sqlDB, errDB := db.DB()
 
@@ -3940,6 +3961,10 @@ func main() {
 				nil,
 			)
 			runtimeRegistryHandler.Register(protected)
+			// Task lifecycle（runtime-management-gap §2.2+§2.3）：
+			// /v1/runtime-tasks 十二条路由。装配在
+			// runtimemgmt_task_wiring.go（ ADR D-1）。
+			mountRuntimeTaskRoutes(protected, db)
 		})
 
 		// AgentTeams Bearer-auth sub-router: 独立挂在 /api 之下，绕过 JWT 中间件。

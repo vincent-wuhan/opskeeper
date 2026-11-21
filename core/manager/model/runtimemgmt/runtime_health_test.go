@@ -108,12 +108,13 @@ func TestEvaluateHealthTransitionTable(t *testing.T) {
 	}
 }
 
-// TestRuntimeKindClosedSet 保证注册闭集只有五类。
+// TestRuntimeKindClosedSet 保证注册闭集恰好六类：首切片五类 + pig
+// （pig-runtime-adapter 2.2 归一层写入的第六类）。
 func TestRuntimeKindClosedSet(t *testing.T) {
-	if len(AllRuntimeKinds) != 5 {
-		t.Fatalf("first slice admits exactly five runtime kinds, got %d", len(AllRuntimeKinds))
+	if len(AllRuntimeKinds) != 6 {
+		t.Fatalf("registry admits exactly six runtime kinds, got %d", len(AllRuntimeKinds))
 	}
-	for _, k := range []RuntimeKind{"node_edge", "chat_worker", "agentteams_worker", "plugin_manager", "pool_preview"} {
+	for _, k := range []RuntimeKind{"node_edge", "chat_worker", "agentteams_worker", "plugin_manager", "pool_preview", "pig"} {
 		if !IsRuntimeKind(k) {
 			t.Errorf("IsRuntimeKind(%q) = false; want true", k)
 		}
