@@ -5,8 +5,15 @@ import (
 	"github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/host"
 	"log/slog"
 	"testing"
+	"time"
 
+	audit "github.com/vincent-wuhan/opskeeper/core/base/pkg/audit"
+	"github.com/vincent-wuhan/opskeeper/core/domain"
 	"github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/basetool"
+	"github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/chat2query"
+	"github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/configchange"
+	"github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/recovery"
+	"github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/tools/topology"
 	devicebiz "github.com/vincent-wuhan/opskeeper/core/manager/biz/device"
 	edgebiz "github.com/vincent-wuhan/opskeeper/core/manager/biz/edge"
 )
@@ -138,4 +145,110 @@ func filterOutTool(names []string, drop string) []string {
 		}
 	}
 	return out
+}
+
+// TestBaseToolCandidateNamesCoverEveryUnconditionalBuild is the drift
+// check on baseToolCandidateNames.
+//
+// The list is what KnownToolNames hands the node upcall bridge, and the
+// bridge uses it to tell "this product has no such tool" from "this
+// deployment did not wire its dependency". A name BuildBaseTools can
+// produce but the list omits would make a nil-gated absence read as
+// "no such tool" — exactly the mis-phrasing the list exists to prevent.
+// A name the list carries but nothing produces is a stale entry claiming
+// a capability the product does not have.
+//
+// The check is run with every optional dependency wired, because that is
+// the construction that produces the largest bag: anything the bag can
+// ever hold has to be on the list. The nil-gated direction is not
+// separately asserted here — the list is a vocabulary, and a vocabulary
+// entry whose tool a deployment cannot serve is the *normal* case the
+// bridge handles.
+func TestBaseToolCandidateNamesCoverEveryUnconditionalBuild(t *testing.T) {
+	uc := edgebiz.NewUsecase(newFakeEdgeRepo(), nil, nil, slog.Default())
+	dc := &fakeDevicesForToolBag{}
+
+	reg := NewRegistry(&fakeCaller{}, uc, dc.usecase(), &fakePromQuerier{}, &fakeLogQuerier{}, &fakeTraceQuerier{}, &fakeAlertUC{}, slog.Default())
+	reg.SetPluginConfigLister(fakePluginConfigLister{})
+	reg.SetKnowledgeSearcher(codeKnowledge{})
+	reg.SetAuditLister(fakeAuditListerForCandidates{})
+	reg.SetEdgeChangeLister(fakeAuditListerForCandidates{})
+	reg.SetTopologyGraph(fakeTopologyGraphForCandidates{})
+	reg.SetConfigManager(fakeConfigManagerForCandidates{})
+	bag := reg.BuildBaseTools()
+
+	candidates := map[string]bool{}
+	for _, n := range baseToolCandidateNames {
+		if candidates[n] {
+			t.Errorf("baseToolCandidateNames lists %q twice", n)
+		}
+		candidates[n] = true
+	}
+	for _, tool := range bag.AllTools() {
+		info, err := tool.Info(context.Background())
+		if err != nil || info == nil {
+			t.Fatalf("Info failed while enumerating the bag: %v", err)
+		}
+		if !candidates[info.Name] {
+			t.Errorf("BuildBaseTools produces %q but baseToolCandidateNames does not list it; "+
+				"a deployment missing its dependency would hear \"no such tool\" for a tool this product has",
+				info.Name)
+		}
+	}
+	// The coordinator trio, the mutating repair tools, the shell and the
+	// notification tools are all gated on setters this construction does
+	// not call (spawner, recovery audit, proposers, IM sender, page
+	// store), so their names could silently drop off the list without the
+	// loop above noticing. They are pinned directly, by their constants,
+	// so removing one is a build error here rather than a phrasing bug in
+	// a later slice.
+	for _, n := range []string{
+		AgentToolName, SendMessageToolName, TaskStopToolName,
+		ToolNameRestartService, recovery.ToolNameRecoveryExecute,
+		ToolNameBash, ToolNameCloudBash, ToolNameSendIMMessage, ToolNameServePage,
+		chat2query.ToolNameChatToQuery,
+	} {
+		if !candidates[n] {
+			t.Errorf("baseToolCandidateNames does not list %q; it is produced only under setters this test does not wire, so nothing else would catch its absence", n)
+		}
+	}
+}
+
+// fakeAuditListerForCandidates satisfies both alerting.AuditLister and
+// alerting.EdgeChangeLister for the candidate-coverage test above. Both
+// return empty and neither is called — the test only needs the setters to
+// be non-nil so query_change_events enters the bag.
+type fakeAuditListerForCandidates struct{}
+
+func (fakeAuditListerForCandidates) ListChanges(context.Context, time.Time, time.Time, string, string, int) ([]audit.ChangeRow, error) {
+	return nil, nil
+}
+
+func (fakeAuditListerForCandidates) ListChangeWindow(context.Context, time.Time, time.Time, string, int) ([]domain.ChangeEvent, error) {
+	return nil, nil
+}
+
+// fakeTopologyGraphForCandidates satisfies topology.Graph.
+type fakeTopologyGraphForCandidates struct{}
+
+func (fakeTopologyGraphForCandidates) GetNode(context.Context, uint64) (*topology.Node, error) { return nil, nil }
+func (fakeTopologyGraphForCandidates) ListNodes(context.Context, topology.NodeListFilter) ([]*topology.Node, int64, error) {
+	return nil, 0, nil
+}
+func (fakeTopologyGraphForCandidates) ListRelations(context.Context, topology.RelationListFilter) ([]*topology.Relation, int64, error) {
+	return nil, 0, nil
+}
+func (fakeTopologyGraphForCandidates) ListRelationTypes(context.Context) ([]*topology.RelationType, error) {
+	return nil, nil
+}
+
+// fakeConfigManagerForCandidates satisfies configchange.ConfigManager.
+type fakeConfigManagerForCandidates struct{}
+
+func (fakeConfigManagerForCandidates) DraftAlertRuleConfig(context.Context, configchange.ConfigCaller, configchange.AlertRuleConfigArgs) (*configchange.ConfigDraft, error) {
+	return nil, nil
+}
+
+func (fakeConfigManagerForCandidates) ApplyAlertRuleConfig(context.Context, configchange.ConfigCaller, configchange.AlertRuleApplyArgs) (*configchange.ConfigApplyResult, error) {
+	return nil, nil
 }

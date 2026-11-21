@@ -76,6 +76,14 @@ const (
 	// 凭据，是范围洗白，因此单列一个只读 scope。写操作（云上变更）不
 	// 在此列，留在写操作切片里单独评审。
 	ScopeCloudRead Scope = "cloud.read"
+	// ScopeKnowledgeRO 是知识库（operator 精选文档 + 同步仓库）的只读
+	// 检索权限，与 observability.read 是两个不同的 scope，理由与
+	// ScopeCloudRead 同构：observability.read 注入的是 Prom/Loki/Tempo
+	// 凭据，knowledge.read 背后是 KB 检索服务（Qdrant + knowledge biz），
+	// 把 KB 折进 observability.read 会让一次声明拿到两类凭据——一个
+	// 只想要指标日志的包顺带拿走全部知识库内容。只读；KB 写入（文档
+	// 增删、仓库同步）不在此列。
+	ScopeKnowledgeRO Scope = "knowledge.read"
 )
 
 // Scopes is a declared permission set.

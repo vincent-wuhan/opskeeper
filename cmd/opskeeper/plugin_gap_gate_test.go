@@ -148,11 +148,12 @@ func gapGateError(pkg string, unserved []string) error {
 //
 // It is a separate call from the one in main() only because a test cannot
 // call into main(); the sequence — build the bag from the wired registry,
-// wrap each tool in the decorator chain, expose the read-class ones — is
-// the same one, and the bag it is handed is the bag main() hands it.
+// hand the bridge the registry's product vocabulary, wrap each tool in the
+// decorator chain, expose the read-class ones — is the same one, and the
+// bag it is handed is the bag main() hands it.
 func gapGateBridge(t *testing.T, reg *manageraiopstools.Registry, bag *manageraiopstools.ToolBag) *baseToolUpcall {
 	t.Helper()
-	return newBaseToolUpcall(bag, aiopstoolsdec.Deps{
+	return newBaseToolUpcall(bag, reg.KnownToolNames(), aiopstoolsdec.Deps{
 		Timeout:    15 * time.Second,
 		Limiter:    aiopstoolsdec.NewTokenBucketLimiter(0),
 		Registerer: prometheus.NewRegistry(),
@@ -182,7 +183,7 @@ func TestEveryDeclaredNodeToolIsServableOverTheUpcallChannelOrALocalSkill(t *tes
 // The gate, on a deployment that does NOT have the bridge.
 //
 // This is the negative case, and it is the one that says the gate is
-// worth anything: without the BaseTool bridge the six tools that exist
+// worth anything: without the BaseTool bridge the tools that exist
 // only as BaseTools are declared, offered and unserviceable, and the gate
 // must say so.
 //
@@ -221,7 +222,7 @@ func TestTheGapGateIsRedWhenTheBaseToolBridgeIsNotWired(t *testing.T) {
 	// act on.
 	for _, want := range []string{
 		"grep_source", "list_repo_sources", "query_change_events", "read_source",
-		"expand_topology", "find_topology_node",
+		"expand_topology", "find_topology_node", "query_knowledge",
 	} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("the negative run failed without naming %q, so the failure does not say "+
@@ -236,9 +237,9 @@ func TestTheGapGateIsRedWhenTheBaseToolBridgeIsNotWired(t *testing.T) {
 //
 // This is the second half of the negative case and it is the half that
 // pins the SCOPE of the gap: the tools that are unserved without the
-// bridge are exactly the six that exist only as BaseTools, and nothing
-// else. If a seventh name ever appears here, the gate's negative case
-// has widened and the scope of this slice has changed with it.
+// bridge are exactly the ones that exist only as BaseTools, and nothing
+// else. If a new name ever appears here, the gate's negative case has
+// widened and the scope of this slice has changed with it.
 func TestTheUnservedSetWithoutTheBridgeIsExactlyTheBaseToolOnlyTools(t *testing.T) {
 	reg, bag := buildTheRealToolRegistry(t)
 	local := gapGateNodeLocalNames()
@@ -268,6 +269,7 @@ func TestTheUnservedSetWithoutTheBridgeIsExactlyTheBaseToolOnlyTools(t *testing.
 		"grep_source",
 		"list_repo_sources",
 		"query_change_events",
+		"query_knowledge",
 		"read_source",
 	}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
