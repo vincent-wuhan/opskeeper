@@ -124,7 +124,9 @@ func TestEveryMigratorIsCalledOnEveryBoot(t *testing.T) {
 	// this count in the same change, which is the point: the list is now a
 	// thing with a test on it rather than a literal in a function body.
 	// 24 → 25: runtimemgmt_runtimes（runtime-management-gap §1.1 首切片）。
-	const want = 25
+	// 25 → 26: runtimemgmt 任务生命周期八表（runtime-management-gap
+	// §2.2+§2.3， ADR D-1——MigrateTaskTables 单独成 migrator）。
+	const want = 26
 	if got := len(managerMigrators()); got != want {
 		t.Errorf("managerMigrators has %d entries, this test expects %d; "+
 			"a new data package is either not migrated or not covered", got, want)

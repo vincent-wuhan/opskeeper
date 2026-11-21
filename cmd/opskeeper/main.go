@@ -301,6 +301,11 @@ func managerMigrators() []dbx.Migrator {
 		// 运行时注册表（runtime-management-gap §1.1）：全新表
 		// runtimemgmt_runtimes，纯增量。
 		runtimemgmtstore.Migrate,
+		// 任务生命周期八表（runtime-management-gap §2.2+§2.3，ADR
+		// ADR D-1）：runtimemgmt_tasks/_claims/_leases/
+		// _checkpoints/_attempt_records/_task_results/
+		// _admission_decisions/_idempotency_contracts，纯增量。
+		runtimemgmtstore.MigrateTaskTables,
 	}
 }
 
@@ -3949,6 +3954,10 @@ func main() {
 				nil,
 			)
 			runtimeRegistryHandler.Register(protected)
+			// Task lifecycle（runtime-management-gap §2.2+§2.3）：
+			// /v1/runtime-tasks 十二条路由。装配在
+			// runtimemgmt_task_wiring.go（ ADR D-1）。
+			mountRuntimeTaskRoutes(protected, db)
 		})
 
 		// AgentTeams Bearer-auth sub-router: 独立挂在 /api 之下，绕过 JWT 中间件。

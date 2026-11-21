@@ -217,6 +217,20 @@ const (
 	ActionRuntimeHeartbeat   = auditport.ActionRuntimeHeartbeat
 	ActionRuntimeCommandAck  = auditport.ActionRuntimeCommandAck
 
+	// runtime-management-gap §2.2+§2.3：任务生命周期七个入账
+	// 动词。create/claim 分开与 register/ack 分开同理——「谁排的活」和
+	// 「谁领的活」是两个问题；start 是「副作用从何时开始可能」的那一行；
+	// result/failure 是终态的两形状，cancel 是唯一记录操作者身份的地方。
+	// 高频存活信号（lease-renewal/checkpoint/progress）刻意不在闭集里：
+	// 它们带 settled 型无行裁决，理由在 route-audit 表。
+	ActionRuntimeTaskCreate  = auditport.ActionRuntimeTaskCreate
+	ActionRuntimeTaskClaim   = auditport.ActionRuntimeTaskClaim
+	ActionRuntimeTaskStart   = auditport.ActionRuntimeTaskStart
+	ActionRuntimeTaskResult  = auditport.ActionRuntimeTaskResult
+	ActionRuntimeTaskFailure = auditport.ActionRuntimeTaskFailure
+	ActionRuntimeTaskCancel  = auditport.ActionRuntimeTaskCancel
+	ActionRuntimeTaskRecover = auditport.ActionRuntimeTaskRecover
+
 	// 决策 335：编排面。flow_run 与 flow_test_node 是整个平台后果最重的两行——
 	// 一份编排是一串工具调用，按一次就真的发生。
 	ActionFlowCreate   = auditport.ActionFlowCreate
@@ -346,6 +360,7 @@ const (
 	ResourcePlugin           = auditport.ResourcePlugin
 	ResourceEdge             = auditport.ResourceEdge
 	ResourceRuntime          = auditport.ResourceRuntime
+	ResourceRuntimeTask      = auditport.ResourceRuntimeTask
 	ResourceAuditChain       = auditport.ResourceAuditChain
 	ResourceApproval         = auditport.ResourceApproval
 	ResourceIMApp            = auditport.ResourceIMApp
