@@ -619,7 +619,7 @@ func TestTheShippedTreeIsADagFourLevelsDeep(t *testing.T) {
 	// time, and that derivation is a production import across a domain
 	// boundary. Nine was the reading that followed.
 	//
-	// Ten is the PiG lifecycle edge (decision 449, PR #127):
+	// Ten is the PiG lifecycle edge (decision 450, PR #127):
 	// `pigruntime -> runtimemgmt`, the lifecycle sink writing runtime
 	// registration/heartbeats and task results. Same pattern as notify:
 	// a new producer whose whole job is to feed one consumer.
