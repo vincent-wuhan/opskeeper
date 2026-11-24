@@ -1,0 +1,7 @@
+schema: spec-driven
+created: 2026-11-25
+goal: Close the three S-level (release-blocking) findings from
+  plugin-architecture-security-review (PR #145) by flipping every trust-boundary
+  default to fail-closed: marketplace DevMode off unless explicit, a dedicated
+  non-superuser IM bridge service identity, and Feishu webhook events rejected
+  when no encrypt_key is configured.
