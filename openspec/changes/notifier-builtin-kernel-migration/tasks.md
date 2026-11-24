@@ -108,8 +108,8 @@
 
 ## 6. 不在本 change
 
-- [ ] 6.1 B3：删除 `registry.go` 的旧 map 与回落路径、收编 `RegisterChannel`。
-       状态（2026-11-20）：真实的待做代码切片，行为变更（回落路径删除改变未装视图宿主的路径），须独立 OpenSpec change + 独立 PR，已派发为子任务；不并入本次机械回写。
+- [x] 6.1 B3：删除 `registry.go` 的旧 map 与回落路径、收编 `RegisterChannel`。
+       状态（2026-11-21）：已随独立 change `notifier-legacy-map-removal` 落库（PR #131，main `bf80042a`）。`RegisterChannel` / `RegisteredChannels` 按 ADR 裁决删除（零生产调用者，`RegisteredChannels` 读视图语义迁到内核视图之上）；e2e G1/G3/G4/G8 零修改通过，交付详情与闸门读数见该 change 的 tasks.md。原「状态（2026-11-20）」派发注记兑现完毕。
 - [ ] 6.2 候选插件包（S-8）、渠道类型枚举扩展（S-5）、Router 重名（S-6）、
        `ChannelSpec` 凭证模型（S-7）。
 - [ ] 6.3 per-kind scope（`alert.write` 的收窄面）与运行期插件重载（`Set` 活查询）。
