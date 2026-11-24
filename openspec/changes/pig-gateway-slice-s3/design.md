@@ -1,6 +1,6 @@
 # Design: pig-gateway-slice-s3
 
-任务依据：`openspec/changes/pig-runtime-adapter/tasks.md` 3.1–3.5 与 BENY-1072 任务书。基线 `main@f771c1bd`（S1 #127 + S2 #134 已合入）。
+任务依据：`openspec/changes/pig-runtime-adapter/tasks.md` 3.1–3.5 与  任务书。基线 `main@f771c1bd`（S1 #127 + S2 #134 已合入）。
 
 ## 一、A / B 裁决：接入 Manager decorators 面（方案 A）
 

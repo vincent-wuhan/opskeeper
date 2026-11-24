@@ -405,7 +405,7 @@ import (
 // 等）随 biz/data 层落地全部进入生产调用图——这些符号从 test-only 桶
 // 消失而非换桶。
 //
-// 906 → 911 / 610 → 614 / 296 → 297：pig-runtime-adapter 3.1–3.5 治理工具
+// 906 → 910 / 610 → 614 / 296 → 296：pig-runtime-adapter 3.1–3.5 治理工具（合并树复测：S2 worker 与 failover 矩阵切片先行落地，+1 unreachable 与 +1 test-only 已被其净变化吸收）
 // 网关切片。dead +4 的全部构成：`ActionPigToolCall` + `ResourcePigTool`
 // 两个审计词表符号进 `log.go` re-export 层（与上一段 +N dead 同一类已知
 // 账目）；`ToolCallRecord.BeforeCreate`（gorm 钩子，经 reflection 调用，
@@ -418,9 +418,9 @@ import (
 // `Execute`）落 test-only 而非 dead：矩阵测试是它们的调用方，与 S2
 // `NewLifecycleSink` 落点一致——装配根不接 fake 消费点，诚实欠账。
 const (
-	unreachableBudget    = 911
+	unreachableBudget    = 910
 	deadSymbolBudget     = 614
-	testOnlySymbolBudget = 297
+	testOnlySymbolBudget = 296
 )
 
 // TestTheUnreachableSymbolCountNeverGrows is the gate decision 199 declined to

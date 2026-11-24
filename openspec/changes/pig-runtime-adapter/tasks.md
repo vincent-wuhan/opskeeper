@@ -61,7 +61,7 @@
 ## 3. Governed Tool Gateway Integration
 
 - [x] 3.1 Translate PiG tool identities to stable OpsKeeper tool IDs and read/write/destructive classes.
-  交付（BENY-1072，切片 openspec/changes/pig-gateway-slice-s3，基线 main@f771c1bd）：
+  交付（执行任务见对应 OPC 线程）：
   `biz/pigruntime/tool_identity.go` 的 `TranslateToolCall(manifest, exposed,
   runtimeToolID, reportedClass)` 只消费两份 Manager 侧事实（清单声明 +
   S2 对账暴露集），不做第二次映射。清单内 RuntimeToolID 撞名 →

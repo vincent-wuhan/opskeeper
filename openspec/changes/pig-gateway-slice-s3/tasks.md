@@ -40,4 +40,4 @@
 
 - [x] 7.1 module-check / vet / 全包测试 一手复验
 - [x] 7.2 migrator 计数与 deadcode 棘轮读数注记
-- [x] 7.3 tasks.md 勾选附证据，独立 PR 引用 BENY-1059
+- [x] 7.3 tasks.md 勾选附证据，独立 PR 引用 
