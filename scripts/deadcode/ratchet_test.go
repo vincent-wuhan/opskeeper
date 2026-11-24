@@ -404,9 +404,24 @@ import (
 // `ExtendLiveness`/`HasRetryBudget`/`IsRetryable`/`NewIdempotencyContract`
 // 等）随 biz/data 层落地全部进入生产调用图——这些符号从 test-only 桶
 // 消失而非换桶。
+//
+// 906 → 910 / 610 → 614 / 296 → 296：pig-runtime-adapter 3.1–3.5 治理工具（合并树复测：S2 worker 与 failover 矩阵切片先行落地，+1 unreachable 与 +1 test-only 已被其净变化吸收）
+// 网关切片。dead +4 的全部构成：`ActionPigToolCall` + `ResourcePigTool`
+// 两个审计词表符号进 `log.go` re-export 层（与上一段 +N dead 同一类已知
+// 账目）；`ToolCallRecord.BeforeCreate`（gorm 钩子，经 reflection 调用，
+// 六条不可见路径之一——与同包 `RuntimeRecord.BeforeCreate` 等既有钩子
+// 同型）；`pigruntimedata.NewBizToolCallLedger`（装配根窄化构造，与
+// `NewLifecycleSink`/`NewBizCapacitySource` 同型——消费点在后续切片点亮
+// 时转入生产调用图；适配器原落 data/runtimemgmt/store，CI 阶段为免
+// pigruntime → runtimemgmt 声明边折环挪至 data/pigruntime，表与模型
+// 仍归 runtimemgmt）。test-only +1 是 `ToolGateway.SetProposalSink`
+// （3.5 proposal 台账接缝，本切片只有测试注入 fake sink；生产写入方在
+// ReadOnly=false 的后续切片点亮）。网关本体（`NewToolGateway`/`Admit`/
+// `Execute`）落 test-only 而非 dead：矩阵测试是它们的调用方，与 S2
+// `NewLifecycleSink` 落点一致——装配根不接 fake 消费点，诚实欠账。
 const (
-	unreachableBudget    = 906
-	deadSymbolBudget     = 610
+	unreachableBudget    = 910
+	deadSymbolBudget     = 614
 	testOnlySymbolBudget = 296
 )
 

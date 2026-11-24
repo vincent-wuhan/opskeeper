@@ -14,8 +14,8 @@
 #
 #   候选（第三份就是本文件）                     组内 import   跨组 import   切断的硬约束
 #   docs/manager-split.proposed 50 6 0 / 0
-#   docs/manager-split.constrained 55 3 0 / 0
-#   docs/manager-split.release-floor 43 15 0 / 0
+#   docs/manager-split.constrained 57 4 0 / 0
+#   docs/manager-split.release-floor 43 18 0 / 0
 #
 # **notifier 切片重取了这三行，其中本文件的组内 import 从 0 变成 43、跨组从 56
 # 掉到 14。** 这一刀的机制与前面每一次都不同：**它是加边，不是切边。** 六个内置
