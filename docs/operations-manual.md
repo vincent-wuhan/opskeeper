@@ -214,21 +214,21 @@ DSN 支持 `secret://` 前缀（`core/manager/pkg/secretbox`），也接受明�
 `plugin_manager`（TeamHarness/插件宿主）、`pool_preview`（一次性预览
 执行面）、`pig`（治理下的 PiG 子进程运行时，见 §2.7）。
 
-**十二条路由**（前缀 `/v1/runtime-tasks`；`/v1/tasks` 已被 report 包占用）：
+**十二条路由**（`/v1/tasks` 已被 report 包占用，故用独立前缀）：
 
 ```
-POST /                      入队（内联准入）
-GET  /                      列表
-GET  /{id}                  详情
-POST /{id}/claim            认领（单条条件 UPDATE，并发双认领恰一成功）
-POST /{id}/lease-renewal    续租
-POST /{id}/start            开始
-POST /{id}/checkpoint       检查点
-POST /{id}/progress         进度
-POST /{id}/result           结果
-POST /{id}/failure          失败
-POST /{id}/cancel           取消
-POST /stale-recovery        陈旧恢复（租约过期的认领行接管或终态）
+POST /v1/runtime-tasks                      入队（内联准入）
+GET  /v1/runtime-tasks                      列表
+GET  /v1/runtime-tasks/{id}                 详情
+POST /v1/runtime-tasks/{id}/claim           认领（单条条件 UPDATE，并发双认领恰一成功）
+POST /v1/runtime-tasks/{id}/lease-renewal   续租
+POST /v1/runtime-tasks/{id}/start           开始
+POST /v1/runtime-tasks/{id}/checkpoint      检查点
+POST /v1/runtime-tasks/{id}/progress        进度
+POST /v1/runtime-tasks/{id}/result          结果
+POST /v1/runtime-tasks/{id}/failure         失败
+POST /v1/runtime-tasks/{id}/cancel          取消
+POST /v1/runtime-tasks/stale-recovery       陈旧恢复（租约过期的认领行接管或终态）
 ```
 
 **准入三闸**（入队时内联评估；无 selector 的任务只过 server limit 单闸，
