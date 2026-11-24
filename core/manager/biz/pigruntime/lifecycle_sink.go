@@ -21,11 +21,18 @@
 package pigruntime
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	model "github.com/vincent-wuhan/opskeeper/core/manager/model/runtimemgmt"
 )
+
+// heartbeatOverdueReason 是心跳超期降级理由的固定前缀，恢复逻辑以它
+// 区分「心跳类理由」与「能力 drift 理由」——只有前者随健康心跳清除。
+const heartbeatOverdueReason = "pig heartbeat overdue: "
 
 // ErrRuntimeRecordMissing 表示 GetRuntime 命中的是「行不存在」。装配根
 // 的 gorm 适配方把 gorm.ErrRecordNotFound 归一成它；归一层在该信号上走
@@ -47,15 +54,40 @@ type RuntimeMgmtStore interface {
 // LifecycleSink 把一个 PiG RuntimeDescriptor 钉住的事件流归一为注册表与
 // 任务终态写入。零 goroutine：ApplyEvent 由驱动的消费方（装配根的观察
 // 循环或测试）同步调用，写入顺序即事件顺序。
+//
+// 能力对账（任务 2.3）从同一入口落：注册/心跳事件携带的 CapabilityObservation
+// 经 ReconcileCapabilities 对账后，暴露集写进注册行 CapabilitiesJSON，观察侧
+// drift 并入 HealthReason（degraded / rejected）。不另开第二条健康写路径。
 type LifecycleSink struct {
 	store      RuntimeMgmtStore
 	descriptor RuntimeDescriptor
+	admission  AdmissionConfig
+}
+
+// AdmissionConfig 是归一层对账所需的 Manager 侧事实：发布清单（declared）
+// 与角色准入表（allowlisted）。两者都由装配根钉住，不从子进程自报读。
+type AdmissionConfig struct {
+	Manifest CapabilityManifest
+	Roles    []RoleAllowlist
+	Policy   AdmissionPolicy
 }
 
 // NewLifecycleSink 构造。descriptor 必须是 ProcessDriver 的固定身份——
 // 归一层写的注册行（digest、并发额度、Kind=pig）全部取自它。写库时戳
 // 取事件 OccurredAt（驱动已归一为 UTC），不引入第二时钟。
 func NewLifecycleSink(store RuntimeMgmtStore, descriptor RuntimeDescriptor) (*LifecycleSink, error) {
+	return NewLifecycleSinkWithAdmission(store, descriptor, AdmissionConfig{})
+}
+
+// NewLifecycleSinkWithAdmission 构造带能力对账的归一层。manifest 非空时
+// 必须与 descriptor.CapabilityDigest 同字节（ComputeCapabilityDigest）——
+// 对账的 declared 侧就是注册行写的能力摘要，两者不一致即装配错误。
+// 角色准入表按 Role 唯一；同一角色两张表是装配错误。
+func NewLifecycleSinkWithAdmission(
+	store RuntimeMgmtStore,
+	descriptor RuntimeDescriptor,
+	admission AdmissionConfig,
+) (*LifecycleSink, error) {
 	if store == nil {
 		return nil, ErrInvalidContract
 	}
@@ -65,7 +97,25 @@ func NewLifecycleSink(store RuntimeMgmtStore, descriptor RuntimeDescriptor) (*Li
 	if err := descriptor.Validate(); err != nil {
 		return nil, err
 	}
-	return &LifecycleSink{store: store, descriptor: descriptor}, nil
+	if len(admission.Manifest.Tools) > 0 {
+		if err := admission.Manifest.Validate(); err != nil {
+			return nil, err
+		}
+		if ComputeCapabilityDigest(admission.Manifest) != descriptor.CapabilityDigest {
+			return nil, ErrInvalidContract
+		}
+	}
+	roles := make(map[string]struct{}, len(admission.Roles))
+	for _, role := range admission.Roles {
+		if err := role.Validate(); err != nil {
+			return nil, err
+		}
+		if _, exists := roles[role.Role]; exists {
+			return nil, ErrInvalidContract
+		}
+		roles[role.Role] = struct{}{}
+	}
+	return &LifecycleSink{store: store, descriptor: descriptor, admission: admission}, nil
 }
 
 // SinkWrite 是 ApplyEvent 一次调用产生的持久化观察，测试与调用方日志用。
@@ -78,6 +128,10 @@ type SinkWrite struct {
 // ErrTerminalRejected 表示终态事件的脱敏裁决无法保守映射，结果被拒绝
 // 持久化（fail closed，与 model.TaskResult.Validate 同一立场）。
 var ErrTerminalRejected = errors.New("pigruntime: terminal result rejected by sanitizer gate")
+
+// ErrAdmissionRejected 表示能力对账给出 Rejected 裁决（未声明副作用类
+// 或观察身份冲突）：注册行已记 degraded，后续任务准入必须 fail closed。
+var ErrAdmissionRejected = errors.New("pigruntime: capability admission rejected")
 
 // ApplyEvent 归一一条生命周期事件。
 //
@@ -148,8 +202,12 @@ func (s *LifecycleSink) applyRegistration(event LifecycleEvent) (SinkWrite, erro
 	if rec.Health == model.RuntimeHealthStarting {
 		rec.Health = model.RuntimeHealthOnline
 	}
+	admissionErr := s.applyCapabilityDrift(&rec, event.Capabilities, event.OccurredAt)
 	if err := s.store.UpsertRuntime(rec); err != nil {
 		return SinkWrite{}, fmt.Errorf("pigruntime: upsert runtime record: %w", err)
+	}
+	if admissionErr != nil {
+		return SinkWrite{RuntimeTouched: true, Heartbeat: true}, admissionErr
 	}
 	return SinkWrite{RuntimeTouched: true, Heartbeat: true}, nil
 }
@@ -171,17 +229,136 @@ func (s *LifecycleSink) applyHeartbeat(event LifecycleEvent) (SinkWrite, error) 
 		rec.ActiveTasks = event.Health.ActiveExecutions
 		if event.Health.HeartbeatOverdue && rec.Health != model.RuntimeHealthDegraded {
 			rec.Health = model.RuntimeHealthDegraded
-			rec.HealthReason = "pig heartbeat overdue: " + event.Health.Reason
+			rec.HealthReason = heartbeatOverdueReason + event.Health.Reason
 		} else if !event.Health.HeartbeatOverdue && rec.HealthReason != "" {
-			rec.Health = model.RuntimeHealthOnline
-			rec.HealthReason = ""
+			// 恢复只清心跳类理由。能力 drift 是持续性异常——进程每次
+			// 注册/心跳都在重报未声明工具，一次健康心跳抹不掉它；drift
+			// 的清除只能由带 Capabilities 的事件重算对账（干净观察会
+			// 走 applyCapabilityDrift 的 clean 分支重写）或人工介入。
+			if strings.HasPrefix(rec.HealthReason, heartbeatOverdueReason) {
+				rec.Health = model.RuntimeHealthOnline
+				rec.HealthReason = ""
+			}
 		}
 	}
 	rec.UpdatedAt = at
+	admissionErr := s.applyCapabilityDrift(&rec, event.Capabilities, event.OccurredAt)
 	if err := s.store.UpsertRuntime(rec); err != nil {
 		return SinkWrite{}, fmt.Errorf("pigruntime: save runtime heartbeat: %w", err)
 	}
+	if admissionErr != nil {
+		return SinkWrite{RuntimeTouched: true, Heartbeat: true}, admissionErr
+	}
 	return SinkWrite{RuntimeTouched: true, Heartbeat: true}, nil
+}
+
+// applyCapabilityDrift 对账事件携带的能力观察并把结果并入注册行。调用
+// 点是注册与心跳的同一条 UpsertRuntime 路径——不开第二条健康写路径
+// （开工注记 1 的要求）。sink 保持无状态：观察来自事件的
+// Capabilities 字段，不在归一层累积跨事件状态。
+//
+// 处置按 2026-11-21 默认裁决：clean → 只更新暴露集；degraded → 注册行
+// 记 degraded + 理由；rejected → 注册行记 degraded + 理由，并返回
+// ErrAdmissionRejected 让消费方把后续任务准入 fail closed——不当场杀
+// 已启动的执行：未声明工具本来就不在暴露集里，观察是证据不是授权。
+func (s *LifecycleSink) applyCapabilityDrift(
+	rec *model.RuntimeRecord,
+	observed []CapabilityObservation,
+	occurredAt time.Time,
+) error {
+	// 只在事件携带观察时对账：心跳通常不带 Capabilities，把「没带」
+	// 当「观察为空」会每次心跳都重写一遍 unobserved 证据。
+	if len(s.admission.Manifest.Tools) == 0 || len(s.admission.Roles) == 0 ||
+		len(observed) == 0 {
+		return nil
+	}
+	worst := VerdictClean
+	capabilitiesJSON := ""
+	for _, role := range s.admission.Roles {
+		result, err := ReconcileCapabilities(
+			s.admission.Manifest, observed, role, s.admission.Policy)
+		if err != nil {
+			return err
+		}
+		if verdictRank(result.Verdict) > verdictRank(worst) {
+			worst = result.Verdict
+		}
+		// 多角色时暴露集取并集——首切片单角色是常态；per-role 暴露面
+		// 的持久化形态属于 3.x 网关表族，本切片先钉最危险裁决与证据。
+		capabilitiesJSON = mergeExposedJSON(capabilitiesJSON, result.Exposed)
+	}
+	if capabilitiesJSON != "" {
+		rec.CapabilitiesJSON = capabilitiesJSON
+	}
+	if worst == VerdictClean {
+		// 干净观察负责清除 drift 降级（心跳不再误清，见 applyHeartbeat）。
+		// 只清 drift 理由；心跳超期理由不是本对账的职责。
+		if strings.HasPrefix(rec.HealthReason, capabilityDriftReasonPrefix) &&
+			rec.Health == model.RuntimeHealthDegraded {
+			rec.Health = model.RuntimeHealthOnline
+			rec.HealthReason = ""
+			rec.UpdatedAt = occurredAt.UTC()
+		}
+		return nil
+	}
+	rec.Health = model.RuntimeHealthDegraded
+	rec.HealthReason = s.driftReason(worst, observed)
+	rec.UpdatedAt = occurredAt.UTC()
+	if worst == VerdictRejected {
+		return ErrAdmissionRejected
+	}
+	return nil
+}
+
+// driftReason 重算一次只含最危险角色的 HealthReason 文案。走重算而非
+// 缓存，保持无状态；角色数是配置常量，成本可忽略。
+func (s *LifecycleSink) driftReason(worst DriftVerdict, observed []CapabilityObservation) string {
+	var reason string
+	for _, role := range s.admission.Roles {
+		result, err := ReconcileCapabilities(
+			s.admission.Manifest, observed, role, s.admission.Policy)
+		if err != nil || verdictRank(result.Verdict) < verdictRank(worst) {
+			continue
+		}
+		if result.HealthReason != "" {
+			reason = result.HealthReason
+		}
+	}
+	return reason
+}
+
+// verdictRank 把裁决闭集排成危险单调序：clean < degraded < rejected。
+func verdictRank(verdict DriftVerdict) int {
+	switch verdict {
+	case VerdictClean:
+		return 0
+	case VerdictDegraded:
+		return 1
+	default:
+		return 2
+	}
+}
+
+// mergeExposedJSON 把多角色的暴露集并成一个 JSON 对象写进注册行
+// CapabilitiesJSON。键是 StableToolID，值是统一 domain 拼写的类别——
+// 与 server/runtimemgmt 读回路径的 map[string]any 形状兼容。序列化
+// 失败归一为空串（capabilitiesJSON 校验拒绝落库），不因该列失败。
+func mergeExposedJSON(current string, exposed []ExposedTool) string {
+	merged := map[string]any{}
+	if current != "" {
+		_ = json.Unmarshal([]byte(current), &merged)
+	}
+	for _, tool := range exposed {
+		merged[tool.StableToolID] = string(tool.Class)
+	}
+	if len(merged) == 0 {
+		return "{}"
+	}
+	encoded, err := json.Marshal(merged)
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
 }
 
 func (s *LifecycleSink) applyTerminal(event LifecycleEvent) (SinkWrite, error) {

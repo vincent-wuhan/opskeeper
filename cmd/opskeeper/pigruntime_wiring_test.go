@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,7 +12,6 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
-	"log/slog"
 
 	pigruntime "github.com/vincent-wuhan/opskeeper/core/manager/biz/pigruntime"
 	runtimemgmtstore "github.com/vincent-wuhan/opskeeper/core/manager/data/runtimemgmt/store"
@@ -246,6 +247,118 @@ func TestPigLifecycleSinkWritesSkippedTerminal(t *testing.T) {
 	if result.SanitizerNotes == "" {
 		t.Fatal("skipped status persisted without notes")
 	}
+}
+
+// TestPigCapabilityAdmissionEndToEnd 是 issue 2.3 的集成断言：fake-PiG
+// 注册事件自带合法能力观察，走完整 Launch → ConsumePigEvents，对账后
+// 暴露集写进 RuntimeRecord.CapabilitiesJSON，健康保持 online。fake 的
+// 注册事件再带一个未声明工具时（第二段），注册行记 degraded——写入
+// 不丢、裁决留痕。
+func TestPigCapabilityAdmissionEndToEnd(t *testing.T) {
+	db := newPigTestDB(t)
+	cleanObserved := `"Capabilities":[{"RuntimeToolID":"pig.host.status","StableToolID":"opskeeper.host.status","Name":"Host Status","Class":"read_only","AllowedInScope":true}]`
+	rogueObserved := `"Capabilities":[{"RuntimeToolID":"pig.host.status","StableToolID":"opskeeper.host.status","Name":"Host Status","Class":"read_only","AllowedInScope":true},{"RuntimeToolID":"pig.rogue.read","StableToolID":"opskeeper.rogue.read","Name":"Rogue Read","Class":"read_only","AllowedInScope":true}]`
+	terminal := `{"Sequence":4,"Type":"completed","Terminal":{"State":"succeeded","OutputRef":"oss://results/pig-task-3","OutputDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Sanitized":true,"CompletedAt":"$NOW"}}`
+
+	for name, observed := range map[string]string{
+		"clean":      cleanObserved,
+		"undeclared": rogueObserved,
+	} {
+		t.Run(name, func(t *testing.T) {
+			artifact, digest := writeFakePiGArtifactWithCapabilities(t, terminal, observed)
+			asm, err := buildPigRuntime(db, pigEnvMap(artifact, digest))
+			if err != nil {
+				t.Fatalf("buildPigRuntime() error = %v", err)
+			}
+			t.Cleanup(func() { _ = asm.Close() })
+
+			descriptor := asm.Driver.Descriptor()
+			request := pigruntime.LaunchRequest{
+				Semantics: pigruntime.FromChatRuntimeSemantics(
+					"tenant-1", "incident-1", "investigator", "conversation-1", "pig-task-3", true,
+				),
+				Execution: pigruntime.ExecutionSnapshot{
+					RuntimeID:        descriptor.RuntimeID,
+					Release:          validPigReleaseForAssembly(digest),
+					CapabilityDigest: descriptor.CapabilityDigest,
+					PinnedArtifact:   artifact,
+				},
+				Deadline:        time.Now().Add(30 * time.Second),
+				MaxEvents:       16,
+				AllowedTools:    []string{"opskeeper.host.status"},
+				HeartbeatWindow: time.Second,
+			}
+			events, err := asm.Driver.Launch(t.Context(), request)
+			if err != nil {
+				t.Fatalf("Launch() error = %v", err)
+			}
+			done := make(chan struct{})
+			go func() {
+				asm.ConsumePigEvents(context.Background(), events, slog.Default())
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(20 * time.Second):
+				t.Fatal("event consumption did not finish")
+			}
+
+			var rec runtimemgmtmodel.RuntimeRecord
+			if err := db.Where("runtime_id = ?", "pig:manager-1").First(&rec).Error; err != nil {
+				t.Fatalf("runtime record missing: %v", err)
+			}
+			caps := map[string]any{}
+			if err := json.Unmarshal([]byte(rec.CapabilitiesJSON), &caps); err != nil {
+				t.Fatalf("CapabilitiesJSON = %q: %v", rec.CapabilitiesJSON, err)
+			}
+			if _, exposed := caps["opskeeper.host.status"]; !exposed {
+				t.Fatalf("CapabilitiesJSON = %q, want opskeeper.host.status exposed", rec.CapabilitiesJSON)
+			}
+			switch name {
+			case "clean":
+				if _, leaked := caps["opskeeper.rogue.read"]; leaked {
+					t.Fatalf("clean case unexpectedly carries rogue tool: %q", rec.CapabilitiesJSON)
+				}
+				if rec.Health != runtimemgmtmodel.RuntimeHealthOnline || rec.HealthReason != "" {
+					t.Fatalf("clean health = %q reason = %q, want online", rec.Health, rec.HealthReason)
+				}
+			case "undeclared":
+				// 未声明 read_only：暴露集不含 rogue，健康 degraded + 理由。
+				if _, leaked := caps["opskeeper.rogue.read"]; leaked {
+					t.Fatalf("undeclared tool exposed: %q", rec.CapabilitiesJSON)
+				}
+				if rec.Health != runtimemgmtmodel.RuntimeHealthDegraded {
+					t.Fatalf("undeclared health = %q, want degraded", rec.Health)
+				}
+				if !strings.Contains(rec.HealthReason, "undeclared=1") {
+					t.Fatalf("HealthReason = %q, want undeclared=1", rec.HealthReason)
+				}
+			}
+		})
+	}
+}
+
+// writeFakePiGArtifactWithCapabilities 与 writeFakePiGArtifact 同款，但
+// 注册事件注入 Capabilities 观察数组。
+func writeFakePiGArtifactWithCapabilities(t *testing.T, terminalJSON, capabilitiesJSON string) (string, string) {
+	t.Helper()
+	artifact := filepath.Join(t.TempDir(), "fake-pig-capabilities")
+	script := "#!/bin/sh\n" +
+		"now=$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)\n" +
+		"/bin/cat <<EOF\n" +
+		`{"Sequence":1,"Type":"registered",` + capabilitiesJSON + "}\n" +
+		`{"Sequence":2,"Type":"heartbeat","Health":{"Status":"healthy","ActiveExecutions":1}}` + "\n" +
+		`{"Sequence":3,"Type":"progress"}` + "\n" +
+		strings.ReplaceAll(terminalJSON, "$NOW", "$now") + "\n" +
+		"EOF\n"
+	if err := os.WriteFile(artifact, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake pig artifact: %v", err)
+	}
+	digest, err := pigruntime.HashArtifact(artifact)
+	if err != nil {
+		t.Fatalf("hash artifact: %v", err)
+	}
+	return artifact, digest
 }
 
 // validPigReleaseForAssembly 构造一个能过 ExecutionSnapshot.Validate 的
