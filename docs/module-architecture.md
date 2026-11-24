@@ -255,7 +255,7 @@ A plugin ships two manifests side by side:
 ```yaml
 apiVersion: opskeeper.io/v1
 kind: Plugin
-metadata: {name: opskeeper-sre-readonly, version: 0.2.0}
+metadata: {name: opskeeper-sre-readonly, version: 0.3.0}
 spec:
   targets: [edge]              # where it may run
   safety_level: L1             # L0 read-only … L3 external mutation
@@ -265,6 +265,11 @@ spec:
   approval: {required: false}
   install: {strategy: rolling, min_edge_version: 0.7.0}
 ```
+
+The five shipped packages currently declare 99 tools between them
+(readonly 23 / observability 14 / middleware 56 / repair 5 / autonomy 1),
+pinned by `scripts/ledgercheck` against the manifests in the tree, so the
+counts above cannot drift from `plugins/pig-ops/` without a test failing.
 
 The host reads it through `core/floor/pluginmanifest`, which wraps the
 `sdk` module. Every shipped plugin under `plugins/pig-ops/` is validated by
@@ -411,6 +416,61 @@ operator denial reached the console as `deny` and every other refusal as
 `denied`, so a console branching on the field would have needed three
 spellings. `ApprovalFrame.Decision` is now the closed `grant`/`deny` pair and
 the cause travels in `Note`.
+
+## Runtime governance: two manager-side contexts
+
+The control plane now governs the things that execute work through two
+bounded contexts inside `core/manager`, both layered the same way the rest
+of the control plane is (`biz` state machine / `data` SQL / `model`
+vocabulary / `server` HTTP):
+
+- **`biz/runtimemgmt` + `data/runtimemgmt` + `model/runtimemgmt` +
+  `server/runtimemgmt`** — the runtime registry and the shared task
+  lifecycle. Six runtime kinds form a closed set (`node_edge`,
+  `chat_worker`, `agentteams_worker`, `plugin_manager`, `pool_preview`,
+  `pig`); a runtime registers, heartbeats, and is admitted against three
+  gates (server limit ∩ health ∉ {offline, recently_lost} ∩ projected free
+  slots). Tasks move through enqueue → admit → claim → lease → checkpoint
+  → terminal under one discipline: **claim and terminal writes are single
+  conditional UPDATEs**, never read-modify-write, so concurrent double
+  claims resolve to exactly one winner and a stale generation loses its
+  lease without corrupting anything. A stale-recovery sweep requeues
+  retryable failures and terminates the rest with a failure class. The
+  failover matrix (restart, process death, network partition, lease
+  expiry, double claim, terminal idempotency) is a ten-row test that
+  proves no read-only or disposable-preview work executes twice.
+- **`biz/pigruntime` + `data/pigruntimedata`** — the PiG process driver,
+  admitted as the sixth runtime kind. It is an opt-in assembly gated twice:
+  `OPSKEEPER_PIG_RUNTIME_ENABLED=true` *and* a pinned artifact triple
+  (path + SHA-256 digest + runtime id), fail-closed on mismatch. Its
+  lifecycle events normalise into the runtime registry through the
+  in-process store port — PiG is a Manager subprocess, so HTTP
+  self-registration stays reserved for genuinely remote runtimes.
+
+On top of the driver sits the governed tool gateway
+(`biz/pigruntime.ToolGateway`). Every PiG tool call passes seven gates
+before dispatch — identity translation (declared ∩ observed ∩ allowlisted),
+tenant, role, incident scope, resource scope, a read-only hard gate, and
+rate limiting — and a rejection is written to the
+`runtimemgmt_pig_tool_calls` ledger and the audit log *before* it is
+returned, so a denial is a recorded fact rather than a silent drop.
+Write and destructive calls that clear the identity gates are
+**proposal-only**: they are handed to the approval ledger for a human,
+never dispatched directly. The deny reasons form a closed set
+(`undeclared_tool`, `duplicate_tool`, `drifted_class`, `tenant_mismatch`,
+`role_not_allowed`, `cross_incident`, `cross_resource`,
+`read_only_hard_gate`, `rate_limited`, `ledger_write_failed`) that answers
+"which gate killed this call" from a single column.
+
+The notifier follows the same shape from the other side: the six built-in
+channels are preinstalled plugins admitted through the kernel's
+`KindNotifier` extension point by `biz/notify` (`notifybiz.Wire`), and the
+shared `core/base/pkg/notify` package reads them through the read-only
+`ChannelResolver` view that Wire installs at startup. Since the legacy
+channel map was removed, that view is the *only* source of channel
+factories in a process — a process that never installs it has no channels
+at all, which is why the upgrade notes call the removal BREAKING for
+library consumers.
 
 ## The node agent: a process, not a library
 
