@@ -95,7 +95,8 @@
   - 产出：发布执行任务的交付矩阵——36 个 Go 模块 test/race/integration 全绿（0 DATA RACE）、插件 dashboard 97/97 + pytest 274 + installer self-check 34、Web typecheck + 317 tests + vite build、protocol-validate PASS，均在 `aa2bb013` 干净检出上执行。
 - [ ] 6.4 运行 fake 模式 E2E、真实推理链路 E2E、公网 staging E2E 和 Paperclip E2E。
   - 部分：fake 模式 E2E 除 4 个依赖 `docker.io/singchia/frontier:1.2.5` 镜像的用例外全绿，该 4 例如实标 UNVERIFIED（镜像源 403，非静默跳过），列为正式版前置 R-2。
-- [ ] 6.5 完成安全审查：secret、日志脱敏、越权、跨租户、prompt injection、审批绕过、审计缺失和网络出口。
+- [x] 6.5 完成安全审查：secret、日志脱敏、越权、跨租户、prompt injection、审批绕过、审计缺失和网络出口。
+  - 已交付（2026-11-24）：`security-review-v2026.11.0.md`——八项逐条给证据（promptguard 闸门、双签测试、网关七闸 fail-closed 矩阵、route-audit 闭集、secret 字节级脱敏测试、沙箱四禁注入测试、租户密钥推导闸门）；结论**无 A 级阻塞**，B 级六项（生产 nginx 死 location+过期 JWT、JWT secret 无轮换、MCP 与网关关系未成文、llmgw 出口未审、R-5 归档 SHA、6.2 产物签名）全部列明整改归属。
 - [ ] 6.6 完成部署演练、数据迁移演练、插件回滚演练和上一版本回滚演练。
   - 部分（rc.1 精简档）：生产部署已执行（阿里云 8.130.126.29，compose 换镜像 `opskeeper:v2026.11.0-rc.1`，healthz 200、`/api/v1/version` 回读 `v2026.11.0-rc.1`、`/api/v1/runtimes` 4 项，2026-11-19）；上一版本回滚演练已执行（切回 `ab9e94f-prefile-fix2-1.0.79` → 健康 → 切回 rc.1 → 健康）。数据迁移演练、插件回滚演练未做，留给正式版。部署时发现并处置：vecstore 默认落内嵌 chromem（`/data` 不可写导致 crash-loop），已在生产 compose 显式设 `OPSKEEPER_VECTOR_BACKEND=qdrant`（向量数据延续既有 qdrant，非新建空库）。
 - [ ] 6.7 更新架构图、业务板块图、能力矩阵、运维手册和升级手册。
