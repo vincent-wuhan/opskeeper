@@ -91,8 +91,10 @@
   audit sink 同一取舍：可比对，不可重放）。decision 与 status 两列分开
   （裁决事实 vs 分发状态事实），denied 行也落表——失败闭合矩阵的持久化
   断言证据。端口 `biz/pigruntime.ToolCallLedger`（RecordStart/RecordEnd，
-  接口由消费方声明，决策 283 同型）；gorm 适配 `data/runtimemgmt/store/
-  tool_call_ledger.go`；blocked 裁决起始行即终态（status=blocked +
+  接口由消费方声明，决策 283 同型）；gorm 适配 `data/pigruntime/
+  tool_call_ledger.go`（表与模型仍归 runtimemgmt，适配器落在 pigruntime
+  侧——落进 data/runtimemgmt 会让 #127 声明的 pigruntime → runtimemgmt
+  单向边折成环，domaincheck 实测拦截）；blocked 裁决起始行即终态（status=blocked +
   EndedAt 回填）。审计双写：每次裁决经 `audit.Sink` 发
   `ActionPigToolCall`（ResourceType=`pig_tool`，ResourceID=StableToolID），
   denied → Status=denied + ErrorCode=deny_reason。

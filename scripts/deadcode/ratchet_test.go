@@ -410,9 +410,11 @@ import (
 // 两个审计词表符号进 `log.go` re-export 层（与上一段 +N dead 同一类已知
 // 账目）；`ToolCallRecord.BeforeCreate`（gorm 钩子，经 reflection 调用，
 // 六条不可见路径之一——与同包 `RuntimeRecord.BeforeCreate` 等既有钩子
-// 同型）；`store.NewBizToolCallLedger`（装配根窄化构造，与
+// 同型）；`pigruntimedata.NewBizToolCallLedger`（装配根窄化构造，与
 // `NewLifecycleSink`/`NewBizCapacitySource` 同型——消费点在后续切片点亮
-// 时转入生产调用图）。test-only +1 是 `ToolGateway.SetProposalSink`
+// 时转入生产调用图；适配器原落 data/runtimemgmt/store，CI 阶段为免
+// pigruntime → runtimemgmt 声明边折环挪至 data/pigruntime，表与模型
+// 仍归 runtimemgmt）。test-only +1 是 `ToolGateway.SetProposalSink`
 // （3.5 proposal 台账接缝，本切片只有测试注入 fake sink；生产写入方在
 // ReadOnly=false 的后续切片点亮）。网关本体（`NewToolGateway`/`Admit`/
 // `Execute`）落 test-only 而非 dead：矩阵测试是它们的调用方，与 S2
