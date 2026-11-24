@@ -231,6 +231,11 @@ const (
 	ActionRuntimeTaskCancel  = auditport.ActionRuntimeTaskCancel
 	ActionRuntimeTaskRecover = auditport.ActionRuntimeTaskRecover
 
+	// pig-runtime-adapter 3.1–3.5：PiG 治理工具网关面。允许与拒绝同一
+	// 动词、以 payload 的 decision 分形状——denied 行是失败闭合矩阵的
+	// 断言证据，没有它「拒绝」与「静默丢弃」不可区分。
+	ActionPigToolCall = auditport.ActionPigToolCall
+
 	// 决策 335：编排面。flow_run 与 flow_test_node 是整个平台后果最重的两行——
 	// 一份编排是一串工具调用，按一次就真的发生。
 	ActionFlowCreate   = auditport.ActionFlowCreate
@@ -361,6 +366,11 @@ const (
 	ResourceEdge             = auditport.ResourceEdge
 	ResourceRuntime          = auditport.ResourceRuntime
 	ResourceRuntimeTask      = auditport.ResourceRuntimeTask
+
+	// pig-runtime-adapter 3.1–3.5：网关行的资源桶是 StableToolID——
+	// 不是 PiG 侧 RuntimeToolID（不出翻译层），也与 agent_tool / mcp_tool
+	// 两个信任方向分开。
+	ResourcePigTool = auditport.ResourcePigTool
 	ResourceAuditChain       = auditport.ResourceAuditChain
 	ResourceApproval         = auditport.ResourceApproval
 	ResourceIMApp            = auditport.ResourceIMApp

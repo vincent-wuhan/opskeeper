@@ -126,7 +126,9 @@ func TestEveryMigratorIsCalledOnEveryBoot(t *testing.T) {
 	// 24 → 25: runtimemgmt_runtimes（runtime-management-gap §1.1 首切片）。
 	// 25 → 26: runtimemgmt 任务生命周期八表（runtime-management-gap
 	// §2.2+§2.3， ADR D-1——MigrateTaskTables 单独成 migrator）。
-	const want = 26
+	// 26 → 27: runtimemgmt_pig_tool_calls（pig-runtime-adapter 3.3——
+	// PiG 治理工具网关裁决证据行，MigrateToolCallTable 单独成 migrator）。
+	const want = 27
 	if got := len(managerMigrators()); got != want {
 		t.Errorf("managerMigrators has %d entries, this test expects %d; "+
 			"a new data package is either not migrated or not covered", got, want)

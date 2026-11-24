@@ -306,6 +306,9 @@ func managerMigrators() []dbx.Migrator {
 		// _checkpoints/_attempt_records/_task_results/
 		// _admission_decisions/_idempotency_contracts，纯增量。
 		runtimemgmtstore.MigrateTaskTables,
+		// PiG 治理工具调用表（pig-runtime-adapter 3.3）：
+		// runtimemgmt_pig_tool_calls，网关裁决证据行，纯增量。
+		runtimemgmtstore.MigrateToolCallTable,
 	}
 }
 

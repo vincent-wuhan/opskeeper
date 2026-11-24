@@ -60,11 +60,63 @@
 
 ## 3. Governed Tool Gateway Integration
 
-- [ ] 3.1 Translate PiG tool identities to stable OpsKeeper tool IDs and read/write/destructive classes.
-- [ ] 3.2 Enforce tenant, incident, role, resource, capability, rate-limit, and read-only policy before dispatch.
-- [ ] 3.3 Persist tool start/end, caller identity, release/capability digest, parameters hash, result state, error, and trace correlation.
-- [ ] 3.4 Add tests proving undeclared, duplicate, drifted, write, destructive, cross-incident, and cross-resource tools fail closed.
-- [ ] 3.5 Add proposal-only behavior for repair candidates while preserving the existing approval and exact-payload execution path.
+- [x] 3.1 Translate PiG tool identities to stable OpsKeeper tool IDs and read/write/destructive classes.
+  交付（BENY-1072，切片 openspec/changes/pig-gateway-slice-s3，基线 main@f771c1bd）：
+  `biz/pigruntime/tool_identity.go` 的 `TranslateToolCall(manifest, exposed,
+  runtimeToolID, reportedClass)` 只消费两份 Manager 侧事实（清单声明 +
+  S2 对账暴露集），不做第二次映射。清单内 RuntimeToolID 撞名 →
+  `ErrDuplicateRuntimeToolID`（身份级故障整体拒）；不在清单或不在暴露集 →
+  `ErrUndeclaredTool`；上报类别与暴露面类别分叉 → `ErrDriftedClass`（与
+  S2 class_mismatch 同向）。输出 `ResolvedTool{StableToolID, Name, Class,
+  ResourceScope}`——**RuntimeToolID 到翻译层为止**，不进裁决、不进持久化、
+  不进审计行。
+- [x] 3.2 Enforce tenant, incident, role, resource, capability, rate-limit, and read-only policy before dispatch.
+  交付（同上）：`biz/pigruntime/gateway.go` 的 `ToolGateway.Admit` 七闸顺序
+  执行：①身份翻译 ②tenant（调用租户 == 快照租户）③role（准入表命中，
+  同角色多条目不短路）④incident（调用事件 == 任务钉死作用域）⑤resource
+  （ResourceID 命中工具声明 ResourceScope）⑥read-only 硬闸（ReadOnly=true
+  时 write/destructive 直接拒，**不进审批**）⑦限流（复用
+  `decorators.Limiter` 端口，subject=tenant/role/worker 三元组）。任何一道
+  拒绝都先落 denied 调用行 + denied 审计行再返回；起始行写不进
+  （`ErrLedgerWrite`）则不分发——没有证据行的调用与静默放行不可区分。
+  A/B 裁决（PR 描述转载）：Manager decorators 面而非 edge policygate 线
+  协议（零新模块边、暴露集内存直消费）；不做第三套自研网关。落地是
+  「复用 + 增补」而非「挂链」：PiG 输入是结构化 ToolCallRequest，硬塞
+  decorators.Wrap 需伪造 ctx tenant 解析。
+- [x] 3.3 Persist tool start/end, caller identity, release/capability digest, parameters hash, result state, error, and trace correlation.
+  交付（同上）：新表 `runtimemgmt_pig_tool_calls`（`model/runtimemgmt/
+  tool_call.go`，migrator 26→27）。**不复用 chat_tool_calls**：该表
+  message_id NOT NULL 挂 chat 会话、缺 digest/role/incident 治理列、表族
+  归属 aiops 会话域而非 runtimemgmt 域。参数与结果只落 SHA-256（与 MCP
+  audit sink 同一取舍：可比对，不可重放）。decision 与 status 两列分开
+  （裁决事实 vs 分发状态事实），denied 行也落表——失败闭合矩阵的持久化
+  断言证据。端口 `biz/pigruntime.ToolCallLedger`（RecordStart/RecordEnd，
+  接口由消费方声明，决策 283 同型）；gorm 适配 `data/runtimemgmt/store/
+  tool_call_ledger.go`；blocked 裁决起始行即终态（status=blocked +
+  EndedAt 回填）。审计双写：每次裁决经 `audit.Sink` 发
+  `ActionPigToolCall`（ResourceType=`pig_tool`，ResourceID=StableToolID），
+  denied → Status=denied + ErrorCode=deny_reason。
+- [x] 3.4 Add tests proving undeclared, duplicate, drifted, write, destructive, cross-incident, and cross-resource tools fail closed.
+  交付（同上）：`biz/pigruntime/gateway_fail_closed_test.go` 七类矩阵
+  （+tenant/role/rate-limit/ledger-failure/construction 五个补充类），每类
+  四重断言：Decision=Blocked + 对应 deny_reason、fake Dispatch 调用次数
+  **为零**（拒绝发生在分发之前，不是分发失败后补记）、denied 行落 fake
+  ledger（decision=blocked + reason）、denied 审计行落 fake sink（status=
+  denied + error_code）。身份翻译失败时行内落 RuntimeToolID 哈希
+  （`runtime:` 前缀）保留「调用者想碰什么」的证据。合法只读基线测试
+  防止「全拒只是装配坏了」的假阳性。
+- [x] 3.5 Add proposal-only behavior for repair candidates while preserving the existing approval and exact-payload execution path.
+  交付（同上）：首切片 ReadOnly=true 时 write/destructive 由 ⑥ 硬闸拦截
+  **且不产生待审批项**（只读发布里的变更请求本身就是策略违规，测试
+  `TestReadOnlyHardGateProducesNoProposal` 断言 proposal sink 零写入）。
+  ReadOnly=false 的契约在 `ToolGateway.Execute`：write/destructive →
+  `AdmitProposalRequired`，经 `decorators.MutatingProposalSink.Insert` 落
+  `chat_mutating_proposals`（DecisionPending）后返回 `ErrProposalRequired`
+  ——本轮不分发；审批与执行仍走既有 human-approved exact-payload 路径
+  （reviewer 判定 → approve 后执行），网关不内置执行。测试
+  `TestProposalOnlyPathForWriteUnderMutableRelease` 用 fake sink 走通
+  「write 调用 → proposal 行 → 不执行」全路径；生产写入方在后续切片
+  点亮（`SetProposalSink` 接缝，本切片 test-only）。
 
 ## 4. Pi/PiG Ecosystem Inventory and Resources
 

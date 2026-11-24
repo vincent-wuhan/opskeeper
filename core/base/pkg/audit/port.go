@@ -764,6 +764,15 @@ const (
 	ActionRuntimeTaskFailure = "runtime_task_failure"
 	ActionRuntimeTaskCancel  = "runtime_task_cancel"
 	ActionRuntimeTaskRecover = "runtime_task_recover"
+
+	// The PiG governed-tool-gateway surface (pig-runtime-adapter 3.1–3.5).
+	// One action for both the allowed and the denied shape, for the same
+	// reason agent.tool is one: the payload's decision field carries the
+	// verdict, while the operator's first question — "did the PiG runtime
+	// try to call this tool" — has the same answer either way. A denied
+	// row is the evidence the fail-closed matrix asserts against; without
+	// it "rejected" and "silently dropped" are indistinguishable.
+	ActionPigToolCall = "pig_tool_call"
 )
 
 // ResourceType buckets used in the resource_type column. Same flat-list
@@ -907,6 +916,17 @@ const (
 	// the same separation decision 449 drew between ResourceRuntime and
 	// ResourceEdge, applied one level down.
 	ResourceRuntimeTask = "runtime_task"
+
+	// ResourcePigTool names one stable OpsKeeper tool identity a PiG
+	// runtime called through the governed gateway. The id is the
+	// StableToolID — not the PiG-side RuntimeToolID, which does not leave
+	// the translation layer, and not the chat wire name, which belongs to
+	// the BaseTool surface. It is separate from ResourceAgentTool and
+	// ResourceMCPTool because those answer "who is calling in" (a node, an
+	// external client) while this answers "what did the subprocess runtime
+	// we pinned ask for" — an operator triaging a drift incident filters
+	// this bucket and must not sweep in the other two trust directions.
+	ResourcePigTool = "pig_tool"
 )
 
 // The write side: what a bounded context holds to declare that something
