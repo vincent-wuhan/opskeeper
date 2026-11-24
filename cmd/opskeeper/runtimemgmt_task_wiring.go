@@ -44,9 +44,10 @@ func buildRuntimeTaskUsecase(db *gorm.DB) *bizruntimemgmt.Usecase {
 // 单独成函数（而非 main.go 内联）与 runtimeRegistryHandler 的挂载同构：
 // 任务面的装配可读性不依赖 main.go 的两千行上下文。
 //
-// worker 注册位（§2.4 预留）：本切片不注册任何 worker——认领全靠
-// runtime 主动 POST /{id}/claim，「无内置 worker」是 v1 的诚实表达；
-// §2.4 的 runtime 侧执行循环落地时在此登记，不改本函数的形状。
+// worker 注册位（§2.4，本刀点亮）：HTTP 面永远完整（进程外 runtime 的
+// 契约），进程内 worker 按 OPSKEEPER_RUNTIME_TASK_WORKERS 门控另行装配
+// （assembleRuntimeTaskWorkers，runtimemgmt_worker_wiring.go）——默认
+// 空环境变量时零 worker、零 goroutine，与首切片的零行为纪律一致。
 func mountRuntimeTaskRoutes(protected chi.Router, db *gorm.DB) {
 	managerserverruntimemgmt.NewTaskHandler(
 		buildRuntimeTaskUsecase(db),

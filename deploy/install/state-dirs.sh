@@ -85,6 +85,7 @@ repos        65532:65532
 plugins      65532:65532
 federation   65532:65532
 crystallize  65532:65532
+runtime-tasks 65532:65532
 mysql        999:999
 prometheus   65534:65534
 loki         10001:10001

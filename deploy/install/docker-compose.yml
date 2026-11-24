@@ -281,6 +281,15 @@ services:
       # reaches it, with nothing in the logs to say why. Same note as
       # above about the default path.
       - ${OPSKEEPER_DATA_DIR:-/var/lib/opskeeper}/crystallize:/var/lib/opskeeper/crystallize
+      # Runtime-task worker outputs (OPSKEEPER_RUNTIME_TASK_OUTPUT_DIR,
+      # default /var/lib/opskeeper/runtime-tasks). The in-process diagnostic
+      # worker writes <task-id>.json snapshots here and records their absolute
+      # path as TaskResult.output_ref in mysql — a snapshot the container
+      # forgets is a dangling DB reference the task list will happily serve,
+      # so these files must outlive `compose up` / image upgrades like every
+      # other manager state above. Same note as federation about the default
+      # path: pointing the env elsewhere means mounting elsewhere too.
+      - ${OPSKEEPER_DATA_DIR:-/var/lib/opskeeper}/runtime-tasks:/var/lib/opskeeper/runtime-tasks
     logging:
       driver: json-file
       options:

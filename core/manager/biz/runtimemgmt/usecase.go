@@ -122,47 +122,47 @@ func ProjectedFreeSlots(c RuntimeCapacity) int {
 // rejected 决策行（spec「No capacity is available」：不建 claim，任务
 // 不消失，下次评估 upsert 覆盖）。
 type EnqueueResult struct {
-	Task       model.Task
-	Admitted   bool
-	Admission  model.AdmissionDecision
+	Task        model.Task
+	Admitted    bool
+	Admission   model.AdmissionDecision
 	Idempotency *model.IdempotencyContract
 }
 
 // ClaimResult 是认领结果：新代际认领行 + 首个尝试记录 + 准备租约。
 type ClaimResult struct {
-	Task     model.Task
-	Claim    model.Claim
-	Lease    model.Lease
-	Attempt  model.AttemptRecord
+	Task    model.Task
+	Claim   model.Claim
+	Lease   model.Lease
+	Attempt model.AttemptRecord
 }
 
 // CheckpointInput 是检查点/进度写入的入参。Progress 是 Checkpoint 的
 // 轻量别名（phase 标签必填、resume hint 可空），同一存储动作。
 type CheckpointInput struct {
-	Generation int64
+	Generation    int64
 	AttemptNumber int
-	Phase      string
-	ResumeHint string
-	PayloadRef string
+	Phase         string
+	ResumeHint    string
+	PayloadRef    string
 }
 
 // ResultInput 是终态结果写入的入参。
 type ResultInput struct {
-	Generation int64
-	AttemptNumber int
-	Status     model.TaskState // succeeded（/failure、/cancel 走各自用例）
-	OutputRef  string
-	OutputSize int64
-	OutputDigest string
+	Generation      int64
+	AttemptNumber   int
+	Status          model.TaskState // succeeded（/failure、/cancel 走各自用例）
+	OutputRef       string
+	OutputSize      int64
+	OutputDigest    string
 	SanitizerStatus model.SanitizerStatus
-	SanitizerNotes string
+	SanitizerNotes  string
 }
 
 // FailureInput 是失败上报的入参。
 type FailureInput struct {
-	Generation int64
+	Generation    int64
 	AttemptNumber int
-	FailureClass model.FailureClass
+	FailureClass  model.FailureClass
 	FailureReason string
 }
 
@@ -182,10 +182,10 @@ type RecoverResult struct {
 // Usecase 是任务生命周期状态机的唯一入口。全部方法幂等或条件化：
 // 失败分支不落半写状态（store 的事务边界保证一组行同生同灭）。
 type Usecase struct {
-	store  TaskStore
-	cap    RuntimeCapacitySource
-	clock  Clock
-	cfg    AdmissionConfig
+	store TaskStore
+	cap   RuntimeCapacitySource
+	clock Clock
+	cfg   AdmissionConfig
 }
 
 // NewUsecase 构造。cfg 零值字段由 WithDefaults 填默认。
@@ -250,14 +250,14 @@ func (u *Usecase) Enqueue(ctx context.Context, req EnqueueRequest) (EnqueueResul
 
 // EnqueueRequest 是入队入参。Payload 是载荷字节（哈希后不回存）。
 type EnqueueRequest struct {
-	TenantID  string
-	IncidentID string
-	Kind      string
-	Payload   []byte
-	Safety    model.TaskSafety
-	Selector  string
-	TraceID   string
-	Priority  int
+	TenantID                string
+	IncidentID              string
+	Kind                    string
+	Payload                 []byte
+	Safety                  model.TaskSafety
+	Selector                string
+	TraceID                 string
+	Priority                int
 	IdempotencyTargetSystem string
 	IdempotencyScope        string
 	IdempotencyExternalID   string
@@ -365,18 +365,18 @@ func (u *Usecase) terminateNoContract(ctx context.Context, task model.Task, now 
 	attempt := model.AttemptRecord{
 		TaskID: task.TaskID, AttemptNumber: 1, TenantID: task.TenantID,
 		MaxAttempts: 1, StartedAt: now, EndedAt: &now,
-		Outcome: model.AttemptOutcomeFailed,
-		FailureClass: model.FailureClassNoIdempotencyContract,
+		Outcome:       model.AttemptOutcomeFailed,
+		FailureClass:  model.FailureClassNoIdempotencyContract,
 		FailureReason: "mutating task claimed without a persisted idempotency contract",
-		RuntimeID: task.RuntimeID,
+		RuntimeID:     task.RuntimeID,
 	}
 	result := model.TaskResult{
 		TaskID: task.TaskID, AttemptNumber: 1, TenantID: task.TenantID,
 		Status: model.TaskStateFailed, EndedAt: now,
-		FailureClass: model.FailureClassNoIdempotencyContract,
-		ErrorMessage: "mutating task requires an idempotency contract before the first claim",
+		FailureClass:    model.FailureClassNoIdempotencyContract,
+		ErrorMessage:    "mutating task requires an idempotency contract before the first claim",
 		SanitizerStatus: model.SanitizerStatusSkipped,
-		SanitizerNotes: "control-plane classification row; carries no worker output",
+		SanitizerNotes:  "control-plane classification row; carries no worker output",
 	}
 	_, err := u.store.WriteTerminal(ctx, task.TaskID, task.TenantID, model.TaskStateFailed, attempt, result, now)
 	return err
@@ -505,7 +505,7 @@ func (u *Usecase) ReportResult(ctx context.Context, taskID, tenantID, runtimeID 
 		Status: model.TaskStateSucceeded, EndedAt: now,
 		OutputRef: in.OutputRef, OutputSize: in.OutputSize, OutputDigest: in.OutputDigest,
 		SanitizerStatus: in.SanitizerStatus, SanitizerNotes: in.SanitizerNotes,
-		CompletedBy: runtimeID,
+		CompletedBy:               runtimeID,
 		PodIdempotencyFingerprint: contract.Fingerprint,
 	}
 	if err := result.Validate(); err != nil {
@@ -570,8 +570,8 @@ func (u *Usecase) ReportFailure(ctx context.Context, taskID, tenantID, runtimeID
 		Status: model.TaskStateFailed, EndedAt: now,
 		FailureClass: in.FailureClass, ErrorMessage: in.FailureReason,
 		SanitizerStatus: model.SanitizerStatusSkipped,
-		SanitizerNotes: "failure classification row; reason is worker-supplied and must be sanitized upstream",
-		CompletedBy: runtimeID,
+		SanitizerNotes:  "failure classification row; reason is worker-supplied and must be sanitized upstream",
+		CompletedBy:     runtimeID,
 	}
 	if err := result.Validate(); err != nil {
 		return model.Task{}, false, err
@@ -610,7 +610,7 @@ func (u *Usecase) Cancel(ctx context.Context, taskID, tenantID, operator string)
 				TaskID: taskID, AttemptNumber: attempt.AttemptNumber, TenantID: tenantID,
 				Status: model.TaskStateCancelled, EndedAt: now,
 				SanitizerStatus: model.SanitizerStatusSkipped,
-				SanitizerNotes: "operator cancellation; no worker output involved",
+				SanitizerNotes:  "operator cancellation; no worker output involved",
 			}
 			_, werr := u.store.WriteTerminal(ctx, taskID, tenantID, model.TaskStateCancelled, closed, result, now)
 			if werr != nil {
@@ -684,7 +684,7 @@ func (u *Usecase) RecoverStale(ctx context.Context, limit int) (RecoverResult, e
 			Status: model.TaskStateFailed, EndedAt: now,
 			FailureClass: fc, ErrorMessage: "claim lease expired; recovery classified the attempt",
 			SanitizerStatus: model.SanitizerStatusSkipped,
-			SanitizerNotes: "control-plane recovery classification; no worker output",
+			SanitizerNotes:  "control-plane recovery classification; no worker output",
 		}
 		if _, err := u.store.WriteTerminal(ctx, task.TaskID, claim.TenantID, model.TaskStateFailed, attempt, result, now); err == nil {
 			res.Terminated = append(res.Terminated, task.TaskID)
@@ -714,4 +714,18 @@ func (u *Usecase) GetTask(ctx context.Context, taskID, tenantID string) (model.T
 // “未认领”投影，不算错误）。
 func (u *Usecase) GetClaim(ctx context.Context, taskID, tenantID string) (model.Claim, error) {
 	return u.store.GetClaim(ctx, taskID, tenantID)
+}
+
+// LatestAttemptNumber 是 worker 循环的恢复指针重建入口（§2.4，ADR
+// D-6）：跨尝试续跑要读「上一尝试」的检查点，先取最新尝试序号再查
+// 检查点行。无尝试返回 0。
+func (u *Usecase) LatestAttemptNumber(ctx context.Context, taskID, tenantID string) (int, error) {
+	return u.store.LatestAttemptNumber(ctx, taskID, tenantID)
+}
+
+// ListCheckpoints 按 (task_id, attempt_number) 列检查点行，Sequence
+// 升序。worker 循环用它取上一尝试的 ResumeHint（代际过滤在调用侧，
+// Checkpoint.IsForCurrentClaim）。
+func (u *Usecase) ListCheckpoints(ctx context.Context, taskID, tenantID string, attemptNumber int) ([]model.Checkpoint, error) {
+	return u.store.ListCheckpoints(ctx, taskID, tenantID, attemptNumber)
 }

@@ -101,6 +101,7 @@ import (
 	managerbizdevice "github.com/vincent-wuhan/opskeeper/core/manager/biz/device"
 	managerbizedge "github.com/vincent-wuhan/opskeeper/core/manager/biz/edge"
 	changeeventbiz "github.com/vincent-wuhan/opskeeper/core/manager/biz/edge/changeevent"
+	bizruntimemgmt "github.com/vincent-wuhan/opskeeper/core/manager/biz/runtimemgmt"
 	managerbiztopology "github.com/vincent-wuhan/opskeeper/core/manager/biz/topology"
 	manageralertdata "github.com/vincent-wuhan/opskeeper/core/manager/data/alert/store"
 	managerdemodata "github.com/vincent-wuhan/opskeeper/core/manager/data/demo"
@@ -1909,6 +1910,11 @@ func main() {
 	poolFixtureURL := strings.TrimSpace(os.Getenv("OPSKEEPER_POOL_FIXTURE_URL"))
 	poolFixtureToken := strings.TrimSpace(os.Getenv("OPSKEEPER_POOL_FIXTURE_TOKEN"))
 	var demoScenarioHandler *managerserverdemo.Handler
+	// repair-preview executor 提升到外层作用域：runtime-task worker 面
+	// （§2.4）按 env 复用同一实例——只包不改造（ADR D-6），worker handler
+	// 与 demo 工作流共用一个执行器与同一份幂等绑定。
+	var previewExecutor *managerbizdemo.RepairPreviewExecutor
+	var previewFingerprint string
 	if poolFixtureURL != "" || poolFixtureToken != "" {
 		if poolFixtureURL == "" || poolFixtureToken == "" {
 			log.Error("pool fixture client config requires both URL and token")
@@ -1924,7 +1930,8 @@ func main() {
 			os.Exit(1)
 		}
 		expectedReplayProfile := strings.TrimSpace(os.Getenv("OPSKEEPER_REPAIR_PREVIEW_WORKLOAD_FINGERPRINT"))
-		previewExecutor, err := managerbizdemo.NewRepairPreviewExecutor(
+		previewFingerprint = expectedReplayProfile
+		previewExecutor, err = managerbizdemo.NewRepairPreviewExecutor(
 			strings.TrimSpace(os.Getenv("OPSKEEPER_REPAIR_PREVIEW_DSN")),
 			strings.TrimSpace(os.Getenv("OPSKEEPER_REPAIR_PREVIEW_WORKLOAD_PATH")),
 			expectedReplayProfile,
@@ -1962,6 +1969,24 @@ func main() {
 		demoScenarioHandler = managerserverdemo.NewHandler(managersvcdemo.NewService(demoScenarioUsecase), demoAPIToken)
 	} else if demoAPIToken != "" {
 		log.Warn("demo scenario API disabled: pool fixture URL/token is required")
+	}
+	// Runtime-task worker 面（runtime-management-gap §2.4+§2.5，ADR
+	// D-6/D-7）：默认（OPSKEEPER_RUNTIME_TASK_WORKERS 空）零 worker、零
+	// goroutine。previewExecutor 是上面 demo 段已建好的实例——只包不
+	// 改造（worker handler 与 demo 工作流共用同一执行器与幂等绑定）；
+	// demo 未配置时 worker 仍可启用，只是少挂 repair-preview handler。
+	// ledger 只读：桥经 state.Manager 的 LookupIncident/Get 面读，一个
+	// 字节不写（runtimemgmt_worker_wiring_test.go 双读断言）。
+	runtimeTaskAsm := assembleRuntimeTaskWorkers(
+		db, previewExecutor, previewFingerprint,
+		agentteamsstate.NewManager(agentteamsLedgerPath()),
+		os.Getenv,
+	)
+	if runtimeTaskAsm != nil {
+		log.Info("runtime task workers enabled",
+			slog.String("worker", bizruntimemgmt.FormatWorkerID(workerNameManager)),
+			slog.Bool("agentteams_bridge", runtimeTaskAsm.Bridge != nil))
+		go runtimeTaskAsm.Run(rootCtx, log.With(slog.String("comp", "runtime-task-workers")))
 	}
 	toolWiring.PluginConfig = pluginConfigUC
 	gitArtifacts, err := newGitArtifactRuntime(os.Getenv("OPSKEEPER_GIT_ARTIFACT_STORE_PATH"), log)
