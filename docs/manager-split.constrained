@@ -35,7 +35,7 @@
 #
 #   候选                              组内 import   跨组 import   切断的硬约束
 #   docs/manager-split.proposed 50 6 0 / 0
-#   docs/manager-split.constrained 55 3 0 / 0
+#   docs/manager-split.constrained 57 4 0 / 0
 #
 # 机制不难理解，但方向值得写清楚，因为它是本文件存在的全部理由：
 # 那三个域不是跨组边的**消费者**，是**生产者**。它们在 apps，而它们依赖的东西

@@ -623,7 +623,7 @@ func TestTheShippedTreeIsADagFourLevelsDeep(t *testing.T) {
 	// `pigruntime -> runtimemgmt`, the lifecycle sink writing runtime
 	// registration/heartbeats and task results. Same pattern as notify:
 	// a new producer whose whole job is to feed one consumer.
-	if !strings.Contains(buf.String(), "10 edges") {
+	if !strings.Contains(buf.String(), "11 edges") {
 		t.Errorf("the edge count moved; the ledger in docs/opskeeper2-architecture.md is now wrong:\n%s", firstLines(buf.String(), 6))
 	}
 }

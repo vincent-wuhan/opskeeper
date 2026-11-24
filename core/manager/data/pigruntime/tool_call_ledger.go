@@ -2,7 +2,7 @@
 // 起始行 Insert + 按 correlation id 的收尾 Update。端口由消费方声明
 // （tool_call_ledger.go），本文件只做翻译——装配根经 NewBizToolCallLedger
 // 窄化注入，测试用内存 fake（gateway_fail_closed_test.go）。
-package store
+package pigruntimedata
 
 import (
 	"context"

@@ -350,6 +350,10 @@ var edges = map[edge]string{
 	// 持久化模型；方向单一（pigruntime 观察世界，runtimemgmt 记录它），
 	// 没有反向依赖。
 	{"pigruntime", "runtimemgmt"}: "the PiG lifecycle sink normalizes six process events into runtime registration/heartbeat writes and task-result terminal states (decision 450, PR #127); one direction only",
+	// pigruntime -> aiops（治理网关切片）：工具网关复用 decorators 面——
+	// decorators.Limiter 限流端口与 MutatingProposalSink proposal 台账接缝，
+	// 零新模块边（方案 A 裁决：复用+增补，不自建第三套网关语义）。
+	{"pigruntime", "aiops"}: "the governed tool gateway consumes the decorators face - the Limiter port for rate limiting and the MutatingProposalSink seam for proposal-only writes (gateway slice ruling A: reuse and extend, not a third policy vocabulary)",
 }
 
 // pair canonicalises a mutual pair so that the table can be written in

@@ -208,6 +208,7 @@ import (
 	agentteamsstate "github.com/vincent-wuhan/opskeeper/core/manager/biz/agentteams/state"
 	managerbizreport "github.com/vincent-wuhan/opskeeper/core/manager/biz/report"
 	managerreportdata "github.com/vincent-wuhan/opskeeper/core/manager/data/report/store"
+	pigruntimedata "github.com/vincent-wuhan/opskeeper/core/manager/data/pigruntime"
 	runtimemgmtstore "github.com/vincent-wuhan/opskeeper/core/manager/data/runtimemgmt/store"
 	internaldataguard "github.com/vincent-wuhan/opskeeper/core/manager/dataguard"
 	internaldataguardheuristic "github.com/vincent-wuhan/opskeeper/core/manager/dataguard/heuristic"
@@ -309,7 +310,7 @@ func managerMigrators() []dbx.Migrator {
 		runtimemgmtstore.MigrateTaskTables,
 		// PiG 治理工具调用表（pig-runtime-adapter 3.3）：
 		// runtimemgmt_pig_tool_calls，网关裁决证据行，纯增量。
-		runtimemgmtstore.MigrateToolCallTable,
+		pigruntimedata.MigrateToolCallTable,
 	}
 }
 
