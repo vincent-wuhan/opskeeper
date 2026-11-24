@@ -2,8 +2,12 @@
 
 本文件记录 opskeeper 各版本的主要变更。最新在上。
 
-## Unreleased
+## 2026.11.0 — 2026-11-24
 
+- Bind the release to backend source `f4b76a36a28b1c212f0ff242f6784fa0f2143923`, with the source boundary and the two source trees recorded in `RELEASE_VERSION.json`.
+- Runtime task lifecycle (runtime-management-gap §2): slot-before-claim admission, twelve `/v1/runtime-tasks` APIs, eight-table migration, worker execution loop with diagnostic and repair-preview handlers, and the ten-row restart/failover no-duplicate-execution matrix.
+- PiG adapter (pig-runtime-adapter §2–§3): lifecycle normalization into runtime health and task events, three-way capability admission with fail-closed sandbox enforcement, and the governed tool gateway (seven-gate admission, proposal-only writes, persistent call evidence with SHA-256-only parameters).
+- Plugins 0.3.0: readonly gains the incident reads and device inventory; observability gains knowledge retrieval and cross-host process comparison.
 - **BREAKING**（notifier B3，`notifier-legacy-map-removal`）：删除 `core/base/pkg/notify` 的旧 `channelFactories` map 与回落路径。`BuildChannel` 只读启动期安装的渠道视图：**视图未安装的进程对任何渠道类型（含 webhook 等六个内置）一律返回 `unknown channel type`**——此前该状态回落旧 map 可建六渠道。同时删除零生产调用者的导出符号 `RegisterChannel` 与 `RegisteredChannels`。以库形式 import 本包且不经装配根装视图的下游须改为自装 `ChannelResolver` 视图。仓库内生产路径不变：装配序同步修正（`cmd/opskeeper/main.go` 的 `NewFromConfig` 急切构渠道，连同其首个消费者 `alertSvc` 构造移到 `Wire` 之后；B2 期间该倒挂被回落掩盖）。错误文本 `unknown channel type %q` / `built an unnamed sender` 一字不改。
 
 ## 2026.11.0-rc.1 — 2026-11-18
