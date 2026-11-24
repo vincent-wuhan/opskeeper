@@ -21,8 +21,41 @@
   装配在 `cmd/opskeeper/pigruntime_wiring.go`：默认零环境变量零行为，
   显式启用但工件三元组缺失/摘要漂移 fail closed。deadcode 棘轮
   910/604/306 → 909/603/306（ProcessDriver 首次进入生产调用图）。
-- [ ] 2.3 Add capability admission that reconciles declared, observed, and allowlisted tools before exposing them to a role.
-- [ ] 2.4 Enforce no ambient extension discovery, no provider override, no host write, and no direct production credential access in the first slice.
+- [x] 2.3 Add capability admission that reconciles declared, observed, and allowlisted tools before exposing them to a role.
+  交付（执行任务见对应 OPC 线程，基线 main@720797ef）：`biz/pigruntime/admission.go` 的
+  `ReconcileCapabilities(manifest, observed, allowlist, policy)` 三方对账：
+  三方交集才暴露，输出只出 StableToolID（RuntimeToolID 不出对账层）。
+  规则：不在 manifest → 永不暴露 + `undeclared` drift；在 manifest 不在
+  角色 allowlist → 不暴露 + `not_allowlisted`；declared 未 observed → 照常
+  暴露 + `unobserved` 证据（声明优先于观察）；观察类别比声明更危险 →
+  `class_mismatch`，进入副作用类即拒；同一稳定身份不一致观察 →
+  `ErrDuplicateObservation` 整体拒绝。漂移裁决按 11-21 评论区默认裁决：
+  未声明 write/destructive 见一即 `Rejected`（暴露集清空 + 后续准入
+  fail closed），未声明 read_only → `Degraded`；`AdmissionPolicy.
+  RejectAtUndeclaredReadOnly` 是只收紧不放行的绊线。**并入健康的落点**
+  是 `LifecycleSink` 的注册/心跳写路径（`NewLifecycleSinkWithAdmission`
+  构造，暴露集写 `CapabilitiesJSON`，drift 写 `HealthReason`），不开第二条
+  健康写路径；心跳恢复逻辑同时修正为只清心跳类理由——drift 是持续性
+  异常，只能由干净观察重算清除，不能被一次健康心跳抹掉。生产装配在
+  `cmd/opskeeper/pigruntime_wiring.go`（declared=首切片清单，allowlisted=
+  investigator 放行 host.status）。ToolClass 双拼写映射
+  `toDomainToolClass`/`fromDomainToolClass` 双向钉住，闭集外 ClassUnknown
+  fail closed。**裁决：allowlist 持久化本切片不建表**——无生产写入方，
+  建无人写的表只会在棘轮欠债；入参是纯值，3.x 网关落地时再定表族。
+  棘轮 904/610/294 → 906/610/296：`ReconcileCapabilities` 经 sink 进入
+  生产调用图；+2 test-only 是 `fromDomainToolClass`（双向表交付物）与
+  `NewLifecycleSink`（2.2 构造函数，wiring 改用 WithAdmission 变体后
+  失去生产调用方）——两者都是切片边界，不是欠债。
+- [x] 2.4 Enforce no ambient extension discovery, no provider override, no host write, and no direct production credential access in the first slice.
+  交付（执行任务见对应 OPC 线程）：`Config.Validate`/`SandboxProfile.Validate` 已存在，
+  本切片补验证闭环——(a) `ProcessDriver.Launch` 每次复检 Config 与
+  descriptor.SandboxProfile（此前只在 NewProcessDriver 校验一次）；
+  (b) `processEnvironment` 的宿主 env 注入拒绝测试（PATH/DB_*/KUBECONFIG/
+  AWS/阿里云/VAULT_TOKEN/HOME 注入后仍只有 PIG_*）+ 真子进程端到端版
+  （fake-PiG `/usr/bin/env > file` 回传，实证 `/bin/sh` 自设 PWD/SHLVL/_
+  三个 shell 变量之外只有 PIG_*）；(c) `AllowedNetworkHosts` 从声明性死
+  字段改为以 `PIG_ALLOWED_HOSTS` 逗号拼接下发，空列表不下发（「无边界
+  声明」= 无网络，不解释成不受限）。
 - [x] 2.5 Add deterministic fake-PiG integration fixtures for launch, registration, heartbeat, progress, cancellation, crash, and completion.
 
 ## 3. Governed Tool Gateway Integration

@@ -92,8 +92,9 @@ func buildPigRuntime(db *gorm.DB, env func(string) string) (*PigRuntimeAssembly,
 	// 首切片身份策略：工件摘要即发布身份——版本取摘要前 12 位；能力
 	// 摘要取首切片固定只读清单（pig.host.status → opskeeper.host.status）
 	// 的 ComputeCapabilityDigest，与 Launch 侧 ExecutionSnapshot 的清单
-	// 校验同源。清单内容对账是 2.3 的切片，届时由发布工件自带 manifest
-	// 重算，本切片清单钉死在装配根。
+	// 校验同源。2.3 起清单同时是对账的 declared 侧，经
+	// NewLifecycleSinkWithAdmission 进入归一层；4.x 发布工件自带 manifest
+	// 替换本函数。
 	descriptor := pigruntime.RuntimeDescriptor{
 		RuntimeID:        runtimeID,
 		Kind:             pigruntime.RuntimeKindPiG,
@@ -114,7 +115,18 @@ func buildPigRuntime(db *gorm.DB, env func(string) string) (*PigRuntimeAssembly,
 	if err != nil {
 		return nil, fmt.Errorf("pig process driver: %w", err)
 	}
-	sink, err := pigruntime.NewLifecycleSink(&pigRuntimeStoreAdapter{db: db}, descriptor)
+	// 对账配置（2.3）：declared 侧 = 首切片钉死清单；allowlisted 侧 =
+	// investigator 角色放行同一稳定身份（首切片单角色单工具，准入表
+	// 与清单同源是刻意的：3.x 网关引入真正的多角色策略时两者分叉）。
+	// 观察侧不配置——它来自 PiG 注册/心跳事件自带的 Capabilities。
+	sink, err := pigruntime.NewLifecycleSinkWithAdmission(
+		&pigRuntimeStoreAdapter{db: db}, descriptor, pigruntime.AdmissionConfig{
+			Manifest: pigFirstSliceManifest(),
+			Roles: []pigruntime.RoleAllowlist{{
+				Role:  "investigator",
+				Tools: []string{"opskeeper.host.status"},
+			}},
+		})
 	if err != nil {
 		_ = driver.Close()
 		return nil, fmt.Errorf("pig lifecycle sink: %w", err)

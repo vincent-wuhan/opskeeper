@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 )
@@ -84,7 +85,21 @@ func NewProcessDriver(config Config, descriptor RuntimeDescriptor) (*ProcessDriv
 func (d *ProcessDriver) Descriptor() RuntimeDescriptor { return d.descriptor }
 
 // Launch 启动一次隔离 PiG 进程并返回归一后的生命周期事件流。
+//
+// 四禁复检（任务 2.4）：Config 与 SandboxProfile 的校验不只发生在
+// NewProcessDriver 一次——Launch 每次都复检两份约束再放行。驱动的
+// config/descriptor 字段虽未导出，但 Go 值语义下调用方持有同一
+// RuntimeDescriptor 副本可以改了再传回 Launch 的 ExecutionSnapshot；
+// Launch 侧 ExecutionSnapshot.Validate 已拒绝沙箱不闭合的快照，这里
+// 对驱动自身持有的 Config 与 descriptor.SandboxProfile 再拦一次，
+// 双闸不互信。
 func (d *ProcessDriver) Launch(ctx context.Context, request LaunchRequest) (<-chan LifecycleEvent, error) {
+	if err := d.config.Validate(); err != nil {
+		return nil, err
+	}
+	if err := d.descriptor.SandboxProfile.Validate(); err != nil {
+		return nil, err
+	}
 	if err := request.Semantics.Validate(); err != nil {
 		return nil, err
 	}
@@ -258,6 +273,14 @@ func (d *ProcessDriver) processEnvironment(request LaunchRequest) []string {
 	}
 	if request.Semantics.TurnID != "" {
 		values = append(values, "PIG_TURN_ID="+request.Semantics.TurnID)
+	}
+	// AllowedNetworkHosts 的下发（任务 2.4）：SandboxProfile 声明的网络
+	// 边界以逗号拼接进 PIG_ALLOWED_HOSTS，子进程把它当唯一可达集。空
+	// 列表下发空值——「无边界声明」与「无网络」对子进程是同一件事，
+	// 不允许把空解释成不受限。
+	if len(d.descriptor.SandboxProfile.AllowedNetworkHosts) > 0 {
+		values = append(values, "PIG_ALLOWED_HOSTS="+
+			strings.Join(d.descriptor.SandboxProfile.AllowedNetworkHosts, ","))
 	}
 	return values
 }
