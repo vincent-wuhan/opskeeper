@@ -5,7 +5,8 @@
 > **关联**：
 > - 集成指南：[docs/integration-guide.md](integration-guide.md)
 > - Helm chart：[deploy/helm/README.md](../deploy/helm/README.md)
-> - 落地计划：[docs/superpowers/plans/2026-07-13-unified-platform-path-a.md](superpowers/plans/2026-07-13-unified-platform-path-a.md)
+> - 升级（含破坏性变更与环境面变化）：[docs/deployment/upgrade.md](deployment/upgrade.md)
+> - 模块架构：[docs/module-architecture.md](module-architecture.md)
 
 ---
 
@@ -202,6 +203,128 @@ DSN 支持 `secret://` 前缀（`core/manager/pkg/secretbox`），也接受明�
 
 检查装配结果：manager 启动日志里每个成功的适配器各有一行
 `loop: remediation adapter wired`；一个都没连上时是一条 `Warn`，并附上可用变量名。
+
+### 2.6 Runtime 任务生命周期（/v1/runtime-tasks）
+
+控制面提供一套跨 runtime 共享的任务生命周期：诊断、修复预览、AgentTeams
+报告桥都走同一状态机。运维视角的关键事实：
+
+**六类 runtime 注册闭集**：`node_edge`（边端节点代理）、`chat_worker`
+（manager 内聊天工作器）、`agentteams_worker`（团队工作器）、
+`plugin_manager`（TeamHarness/插件宿主）、`pool_preview`（一次性预览
+执行面）、`pig`（治理下的 PiG 子进程运行时，见 §2.7）。
+
+**十二条路由**（前缀 `/v1/runtime-tasks`；`/v1/tasks` 已被 report 包占用）：
+
+```
+POST /                      入队（内联准入）
+GET  /                      列表
+GET  /{id}                  详情
+POST /{id}/claim            认领（单条条件 UPDATE，并发双认领恰一成功）
+POST /{id}/lease-renewal    续租
+POST /{id}/start            开始
+POST /{id}/checkpoint       检查点
+POST /{id}/progress         进度
+POST /{id}/result           结果
+POST /{id}/failure          失败
+POST /{id}/cancel           取消
+POST /stale-recovery        陈旧恢复（租约过期的认领行接管或终态）
+```
+
+**准入三闸**（入队时内联评估；无 selector 的任务只过 server limit 单闸，
+认领时还有第二道懒重评）：
+
+1. server limit：全局 in-flight 达到 `OPSKEEPER_RUNTIME_TASK_SERVER_LIMIT`
+   （默认 64）→ 拒绝 `no_capacity`。
+2. runtime 健康：认领者健康不得为 `offline` 或 `recently_lost` → 拒绝
+   `runtime_not_ready`。
+3. 槽位：runtime 投影空闲槽 `ProjectedFreeSlots > 0` → 否则拒绝
+   `no_capacity`。
+
+**幂等双闸**：mutating 任务必须有幂等契约行——入队时缺契约 fail-fast；
+认领时缺契约是终态失败 `no_idempotency_contract`，零重试。
+
+**认领/续租纪律**：认领与终态写入全部是单条条件 UPDATE（state 前置），
+零 read-modify-write；runtime 代际不匹配返回 `ErrClaimLost`，旧代际的
+心跳/进度会被拒收。陈旧恢复按安全级别分类：可重试失败
+（`IsRetryable ∧ HasRetryBudget ∧ 指纹匹配`）回 `admitted` 重排队，
+否则终态 `failed`（失败类别 `lease_expired` / `runtime_lost`）。
+失败接管矩阵保证重启 / failover 下不重复执行只读与一次性预览工作。
+
+**环境变量**：
+
+| 变量 | 默认 | 语义 |
+|---|---|---|
+| `OPSKEEPER_RUNTIME_TASK_WORKERS` | 空（全关） | 逗号分隔：`manager` = 诊断 worker + repair-preview；`agentteams` = 只读报告桥。默认部署零行为 |
+| `OPSKEEPER_RUNTIME_TASK_TENANT` | 空 | agentteams 桥的租户钉扎；不设则桥不认领任务 |
+| `OPSKEEPER_RUNTIME_TASK_OUTPUT_DIR` | `/var/lib/opskeeper/runtime-tasks` | 诊断 worker 输出落盘目录；**改 env 必须同步改挂载**（DB 里的 `output_ref` 是绝对路径，容器忘了快照就是悬空引用） |
+| `OPSKEEPER_RUNTIME_TASK_SERVER_LIMIT` | 64 | 全局 in-flight 上限，装配期读一次 |
+
+**排查**：任务长期停在 `admitted` → 检查 worker env 是否配置、runtime
+是否健康（`/api/v1/runtimes`）、槽位是否为 0。任务反复被接管 → 看失败
+类别与 attempt 行，认领者心跳是否在租约窗口内。
+
+### 2.7 PiG 子进程运行时（opt-in，默认零行为）
+
+PiG 作为第六类 runtime 接入控制面治理。默认（零环境变量）不建进程、
+不写注册表、零行为——这是**双闸 opt-in**：
+
+```
+OPSKEEPER_PIG_RUNTIME_ENABLED=true          # 显式开启
+OPSKEEPER_PIG_RUNTIME_ARTIFACT=<路径>       # 固定二进制工件
+OPSKEEPER_PIG_RUNTIME_ARTIFACT_DIGEST=<sha256>
+OPSKEEPER_PIG_RUNTIME_ID=<runtime id>
+```
+
+四件齐备才装配驱动；显式启用但工件缺失/摘要不匹配是**启动错误**
+（fail closed）——一个自认启用了 PiG 却悄悄没有它的部署比启动失败更
+危险。禁用方式 = 删掉全部四个 env，回落到既有 runtime 集合。
+
+PiG 生命周期事件（启动、注册、心跳、进度、取消、崩溃、完成）经进程内
+Store 端口归一到 runtime health 与任务事件——它是 Manager 子进程，
+不走 HTTP 自注册（HTTP 自注册留给真远端 runtime）。
+
+**三方工具对账**：declared（发布清单 CapabilityManifest）∩ observed
+（运行期上报）∩ allowlisted（角色准入表）三方交集才暴露一个工具。
+不在 manifest → 永不暴露、记 drift；在 manifest 不在角色 allowlist →
+不暴露、记 drift；observed 缺席 declared → 记证据影响健康。
+未批准的工具不会暴露给任何角色。
+
+**七道闸治理工具网关**（Dispatch 之前依次执行，任一拒绝都先落 denied
+调用行与审计行再返回——拒绝是留痕的事实，不是静默丢弃）：
+
+1. 身份翻译（undeclared / duplicate / drifted 拦截）
+2. tenant 闸（租户与快照一致）
+3. role 闸（角色准入表命中该工具）
+4. incident 闸（事件落在任务钉死的作用域内）
+5. resource 闸（ResourceID 命中工具声明作用域）
+6. read-only 硬闸（`ReadOnly=true` 发布里任何非 read 调用直接拒绝，
+   **不进审批**——只读发布里的变更请求本身就是策略违规）
+7. 限流（subject = tenant/role/worker 三元组）
+
+**proposal-only**：write / destructive 调用在身份与作用域闸全过后
+不直接分发，交给 proposal 台账待人工批准（proposalSink 接缝，nil 时
+fail closed：不执行、不落 proposal）。每次调用持久化开始/结束、调用者、
+release/capability digest、参数 SHA-256、结果状态、错误与 trace 关联
+（表 `runtimemgmt_pig_tool_calls`）。
+
+**排查**：启动即失败 → 检查四件 env 是否齐、digest 是否与工件一致。
+工具不出现 → 看 drift 证据行（三方哪一方缺席）。调用被拒 → deny_reason
+码回答死在哪道闸（`undeclared_tool`/`duplicate_tool`/`drifted_class`/
+`tenant_mismatch`/`role_not_allowed`/`cross_incident`/`cross_resource`/
+`read_only_hard_gate`/`rate_limited`/`ledger_write_failed`）。
+
+### 2.8 出站通知渠道（notifier 扩展点）
+
+六个内置渠道（webhook、slack、feishu、dingtalk、wecom、telegram）是
+**预装插件**：编译进 manager 二进制，但经与第三方包相同的准入闸
+（`notifybiz.Wire`，装配序在 `NewFromConfig` 之前）。渠道激活失败是
+启动失败（fatal），不是悄悄少一个渠道。
+
+升级注意（BREAKING）：`BuildChannel` 只读启动期安装的 `ChannelResolver`
+视图——**视图未安装的进程对任何渠道类型一律返回 `unknown channel
+type`**。独立编译且 import `core/base/pkg/notify` 的进程须自装视图；
+详见升级手册。改渠道集合 = 改部署 + 重启，运行期没有第二个入口。
 
 ---
 
@@ -450,7 +573,33 @@ opskeeper-migrate rollback \
   --target opskeeper://opskeeper-host:8080
 ```
 
-### 5.5 全量事故
+### 5.5 Runtime 任务全部停在 admitted
+
+**症状**：`/v1/runtime-tasks` 列表里任务长期 `admitted`，无人认领。
+
+**排查**：
+
+1. worker 是否装配：`OPSKEEPER_RUNTIME_TASK_WORKERS` 是否按角色设置
+   （空 = 零 worker，这是默认值，不是故障）。
+2. runtime 是否健康：`GET /api/v1/runtimes`——`offline` / `recently_lost`
+   状态的 runtime 不能认领（准入第二闸）。
+3. 槽位是否为 0：认领者 `ProjectedFreeSlots <= 0` 时拒绝认领。
+4. agentteams 桥是否钉了租户：`OPSKEEPER_RUNTIME_TASK_TENANT` 未设则
+   桥不认领跨租户任务。
+
+**恢复**：
+
+```bash
+# 手动触发一轮陈旧恢复（幂等，可重复调）
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+  https://ops.example.com/v1/runtime-tasks/stale-recovery
+```
+
+可重试失败会回 `admitted` 重新排队；不可重试的会终态 `failed` 并带
+失败类别（`lease_expired` / `runtime_lost`）。修好 runtime 健康后任务
+自然被下一轮认领，不需要人工重放。
+
+### 5.6 全量事故
 
 **P0 / P1 事故必须产出 blameless postmortem**：
 
@@ -459,7 +608,8 @@ opskeeper-migrate rollback \
 3. 7d 内：blameless postmortem（无指责，关注系统改进）
 4. 30d 内：长期 fix 实施 + 验证
 
-模板：[docs/postmortem-template.md](postmortem-template.md)（Task 3.8 产出）
+模板：postmortem 文档（blameless 结构：时间线 / 影响面 / 根因 / 行动项，
+无指责原则）。
 
 ---
 
@@ -494,5 +644,6 @@ CI 包含：
 - Helm chart README：[deploy/helm/README.md](../deploy/helm/README.md)
 - Edge 安装：[docs/install/edge.md](install/edge.md)
 - K8s 部署：[docs/deployment/k8s-install.md](deployment/k8s-install.md)
+- 升级手册（含破坏性变更）：[docs/deployment/upgrade.md](deployment/upgrade.md)
 - E2E 测试目录：[docs/test/e2e-catalog.md](test/e2e-catalog.md)
 - Workflow 目录：[docs/workflow-catalog.md](workflow-catalog.md)

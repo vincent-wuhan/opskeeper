@@ -114,13 +114,13 @@
 | `opskeeper-provider-{anthropic,custom,deepseek,gemini,kimi,openai,zhipu}` ×7 | 1.0.0 | manager | L2 / write | ∅ | `provider-manifests/builtin-providers.yaml`；4.6 §5；回滚随 §5 迁移片 |
 | `opskeeper-collector-hostmetrics` / `-procmetrics` / `-logs`（host.read+observability.read）、`-traces` / `-custommetrics`（observability.read）、`-databasemetrics`（db.read+host.read+observability.read）×6 | 1.0.0 | edge | L1 / read | 见左三组 | `collector-manifests/builtin-collectors.yaml`；4.7 §5；回滚随 §5.3 预装装配片 |
 
-### 3.4 待实施·增量——一方随包版本内增量
+### 3.4 一方随包版本内增量（刷新读数：main@f4b76a36，2026-11-24）
 
 | 包 | 版本 | 增量 | 状态 | 测试 | 签名 | 指针 |
 |---|---|---|---|---|---|---|
-| `opskeeper-sre-readonly` | 0.2.0 → **0.3.0** | tools += `query_devices` / `query_incidents` / `get_incident_detail`（3 × read，20→23）；scopes 不变 | 待实施（切片 S-2；D-3 裁决归 readonly） | 未实施（§8.2 三向一致 + 上呼 integration + E2E） | 不适用（随包发布） | 方案 4.8 §5.2/§5.4；回滚 §8.3（发布 0.2.0 回退版，fail-closed 无需清理） |
-| `opskeeper-sre-observability` | 0.2.0 → **0.3.0** | tools += `query_knowledge` / `get_host_processes`（12→14）；scopes += `knowledge.read`（**domain 常量与两 profile 授予均未落**，现状 `core/domain/plugin.go` 无此常量） | 待实施（切片 S-3，依赖 S-1 桥） | 未实施（同上 + profile composition 测试） | 不适用 | 方案 4.8 §5.1/§5.3；回滚 §8.3（scope 成无人消费者无害） |
-| `opskeeper-sre-repair` | 0.2.0 → **0.3.0**（沿 4.8 §5.0"菜单新增即 schema 增量"规则推定，切片落地时确认——§4 漂移 D-3） | tools += `preview.read`（read，5→6）；`verify_recovery` schema 绑定；scopes 不变（4.9 §9.3 论证不加 scope） | 待实施（切片 S-2，D3-a 已裁决归 repair） | 未实施（4.9 §11：拒绝路径测试 + drift 测试 + repairpath 断言） | 不适用 | 方案 4.9 §5.2/§9.1；回滚 §10 S-2（manifest 工具清单回退即不再暴露） |
+| `opskeeper-sre-readonly` | 0.2.0 → **0.3.0** | tools += `query_devices` / `query_incidents` / `get_incident_detail`（3 × read，20→23）；scopes 不变 | **已落地**（切片 S-2，PR #129 `b0394e30`） | 已实施（manifest 与 ledgercheck 计数 23 对上；上呼路径见 4.8 §5.5 桥） | 不适用（随包发布） | 方案 4.8 §5.2/§5.4；回滚 §8.3（发布 0.2.0 回退版，fail-closed 无需清理） |
+| `opskeeper-sre-observability` | 0.2.0 → **0.3.0** | tools += `query_knowledge` / `get_host_processes`（12→14）；scopes += `knowledge.read`（domain 常量已落：`core/domain/plugin.go` `ScopeKnowledgeRO`） | **已落地**（切片 S-3，PR #133 `720797ef`） | 已实施（manifest 与 ledgercheck 计数 14 对上） | 不适用 | 方案 4.8 §5.1/§5.3；回滚 §8.3（scope 成无人消费者无害） |
+| `opskeeper-sre-repair` | 0.2.0 → **0.3.0**（沿 4.8 §5.0"菜单新增即 schema 增量"规则推定，切片落地时确认——§4 漂移 D-3） | tools += `preview.read`（read，5→6）；`verify_recovery` schema 绑定；scopes 不变（4.9 §9.3 论证不加 scope） | 待实施（切片 S-2，D3-a 已裁决归 repair；树仍为 0.2.0/5 工具） | 未实施（4.9 §11：拒绝路径测试 + drift 测试 + repairpath 断言） | 不适用 | 方案 4.9 §5.2/§9.1；回滚 §10 S-2（manifest 工具清单回退即不再暴露） |
 
 ### 3.5 非包级增量索引（不设台账行，防"为什么没有它"）
 

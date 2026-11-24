@@ -4,6 +4,17 @@
 >
 > 输入：`business-domain-mapping.md` §4「归属初判」+ §7 评审结论（2026-10-19），交叉核对 `core/manager`、`core/domains`、`core/base/pkg`、`core/edge`、`plugins/` 实际包清单（`main@1203be78`）。
 >
+> **读数刷新（2026-11-24，main@f4b76a36）**：下方表格保留 10-19 评审基线；
+> 与当前树的差异只有三处，均为 4.2 确认后落地的增量——① 工具计数
+> 94 → **99**（readonly 20→23、observability 12→14，均 0.3.0，切片 S-2/S-3，
+> PR #129/#133）；② notifier 行「未接内核」→ **已接（一方内置）**：6 个
+> 内置渠道经 `biz/notify`（`notifybiz.Wire`）以预装插件形态过内核
+> `KindNotifier` 准入，旧 `channelFactories` map 已删（B3，PR #131）；
+> ③ provider 行维持「未接内核」（`core/pig/pigmodel` 宿主工厂注册表，
+> 第三方 provider 包路径见 4.6 方案）。`query_knowledge` 已随 S-3 进
+> observability 0.3.0（§2 该行从「候选」变「已完成」），新增 scope
+> `knowledge.read`。
+>
 > 四类定义：
 > - **保留在 core**：按 `docs/opskeeper2-architecture.md` §九 属宿主职责，或平台自身基础设施，不插件化。
 > - **迁移为插件**：应挂六扩展点之一；标注「已完成（一方）」「进行中」「候选」。
@@ -41,21 +52,21 @@
 
 | 能力 | 载体 | 扩展点 | 进度 | 后续任务 |
 |---|---|---|---|---|
-| 运维工具集（SRE 工具） | `plugins/pig-ops` 5 包 / 94 工具 | `tool` | 进行中 | 4.8、4.9 |
-| 诊断 / RCA 只读工具 | `opskeeper-sre-readonly`（20 工具） | `tool` | 已完成 | `pig-runtime-adapter` 3.11 E2E |
-| 可观测查询工具 | `opskeeper-sre-observability`（12 工具） | `tool` | 已完成 | 4.8 |
+| 运维工具集（SRE 工具） | `plugins/pig-ops` 5 包 / 99 工具 | `tool` | 进行中 | 4.8、4.9 |
+| 诊断 / RCA 只读工具 | `opskeeper-sre-readonly`（23 工具，0.3.0） | `tool` | 已完成 | `pig-runtime-adapter` 3.11 E2E |
+| 可观测查询工具 | `opskeeper-sre-observability`（14 工具，0.3.0） | `tool` | 已完成 | 4.8 |
 | 中间件工具 | `opskeeper-sre-middleware`（56 工具） | `tool` + `adapter`（一方 8 源已注册） | 已完成（一方） | 4.4（第三方源） |
 | 修复执行 / 独立验证 | `opskeeper-sre-repair`（L2，5 工具）+ Verifier persona | `tool` | 已完成 | 4.9（预览/验证/回滚强化） |
 | L3 有限自治 | `opskeeper-sre-autonomy`（1 工具） | `tool` | 已完成（默认受限） | 非目标：本计划不启用 |
 | 数据源后端（prom/loki/tempo） | `aiops/datasource`（一方 3 后端经内核注册） | `datasource` | 已完成（一方） | 4.3（VictoriaMetrics / ES / OpenSearch） |
 | LLM 模型供应商 | `core/pig/pigmodel`（7 provider id，宿主工厂注册表） | `provider` | 未接内核 | 4.6 |
-| 出站通知渠道 | `core/base/pkg/notify`（6 渠道，宿主注册表） | `notifier` | 未接内核 | 4.5 |
+| 出站通知渠道 | `biz/notify` 预装 6 渠道插件（webhook、slack、feishu、dingtalk、wecom、telegram）+ `core/base/pkg/notify` 只读视图 | `notifier` | 已接（一方内置，B3） | 4.5（第三方包 B1–B3） |
 | 边缘采集器 | `core/edge/plugins/{hostmetrics,databasemetrics,procmetrics,logs,traces,custommetrics}` | `collector` | 通道就绪，0 贡献 | 4.7 |
 | 7 角色 Worker / persona | `plugins/opskeeper-teamharness`、PiG 包资源 | `tool`（包资源） | 已包化 | `pig-runtime-adapter` 3.x |
 | 拓扑 / CMDB | `biz/topology`（编译内） | `tool` + `adapter` | 候选 | 4.4 |
 | Grafana 自动配置 | `core/domains/biz/grafana` | `adapter` | 候选 | 4.4 |
 | GitArtifact（知识侧） | `core/manager/knowledge/gitartifact` | `adapter`（git 源已注册） | 部分 | 4.4 |
-| 知识检索工具 `query_knowledge` | `aiops/tools` 编译内 | `tool` | 候选 | 4.8 |
+| 知识检索工具 `query_knowledge` | `opskeeper-sre-observability` 0.3.0（随包声明，scope `knowledge.read`） | `tool` | 已完成 | 4.8（S-3 已落） |
 | 告警规则 / 草稿 / 降噪 | `biz/alert`、`aiops/{alertconfig,alertdraft}` | `tool`（extension tool + command） | 候选 | 4.12（§7 结论 5） |
 | ITSM / CMDB / 云资源 / Paperclip 审批桥 | 未实现 | `adapter` + `tool` | 未开始 | 4.4、5.5–5.9 |
 

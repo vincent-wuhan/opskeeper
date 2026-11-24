@@ -85,18 +85,20 @@
 | *（4.1 原文未列出）* | ③ 资产与拓扑 | release 侧边栏“设备”组，独立存在；按 8.4“无未解释的旧业务板块缺口”补入 |
 | *（4.1 原文未列出）* | 平台治理、Edge 执行面、质量保障 | 横切能力，按设计宿主保留或独立模块，补入以便核对 |
 
-## 3. 六扩展点现状（main@86dff884）
+## 3. 六扩展点现状（刷新读数：main@f4b76a36，2026-11-24）
 
-定义见 `core/floor/kernel/kind.go`。
+定义见 `core/floor/kernel/kind.go`。下表在 4.1 初稿（main@86dff884）读数上按
+S-2/S-3（readonly、observability 0.3.0）与 notifier B3（旧 map 删除、内置渠道
+过内核准入）后的树刷新。
 
 | 扩展点 | 宿主侧 | 当前贡献 | 状态 | 证据 |
 |---|---|---|---|---|
-| `tool` | Manager + Edge | 按 manifest `spec.tools` 注册；`plugins/pig-ops` 5 个包共 94 个工具（readonly 20 / observability 12 / middleware 56 / repair 5 / autonomy 1） | **已接入** | `core/manager/middleware/pluginhost/host.go`、`core/edge/pluginhost/host.go` |
+| `tool` | Manager + Edge | 按 manifest `spec.tools` 注册；`plugins/pig-ops` 5 个包共 99 个工具（readonly 23 / observability 14 / middleware 56 / repair 5 / autonomy 1） | **已接入** | `core/manager/middleware/pluginhost/host.go`、`core/edge/pluginhost/host.go`；计数由 `scripts/ledgercheck` 盯住 |
 | `adapter` | Manager | 8 个一方源作为预装插件经内核注册：pg、redis、k8s、mq、kafka、rabbitmq、git、host | **已接入（仅一方）** | `core/manager/middleware/toolset/sources.go`、`sources_plugin.go` |
 | `datasource` | Manager | 3 个一方后端作为预装插件经内核注册：prom、loki、tempo | **已接入（仅一方）** | `core/manager/biz/aiops/datasource/datasource.go` |
 | `collector` | Edge | `CollectorContribution` 与 supervisor sink 已打通，但生产代码无 `RegisterActivator` 调用；内置采集器仍编译内运行 | **通道就绪，0 贡献** | `core/edge/pluginhost/host.go`、`core/edge/plugins/*` |
 | `provider` | Manager | `core/pig/pigmodel` 自有 `providerFactories`（openai、anthropic、zhipu、gemini、deepseek、kimi、custom），未接内核 | **未接内核** | `core/pig/pigmodel/providers.go`、`core/domain/provider.go` |
-| `notifier` | Manager | `core/base/pkg/notify` 自有 `ChannelFactory` 注册表（webhook、slack、feishu、dingtalk、wecom、telegram），未接内核 | **未接内核** | `core/base/pkg/notify/registry.go` |
+| `notifier` | Manager | 6 个内置渠道（webhook、slack、feishu、dingtalk、wecom、telegram）经 `notifybiz.Wire` 以预装插件形态过内核准入；B3 后旧 map 已删，`ChannelResolver` 视图是进程内唯一工厂来源 | **已接入（一方内置；第三方包待 4.5 B1–B3 迁移片）** | `core/manager/biz/notify/notify.go`（`Register(kernel.KindNotifier, …)`）、`core/base/pkg/notify/resolver.go` |
 
 ## 4. 业务板块 → 扩展点映射表
 
@@ -146,17 +148,17 @@
 | Prometheus 写入 / 代理 | `biz/promwrite`、`server/prometheus` | `core/domains/biz/promwrite`、`core/domains/server/prometheus` | — | 宿主保留，已独立成域 | 保留 core | — |
 | Grafana 自动配置 | `biz/grafana` | `core/domains/biz/grafana` | `adapter` 候选 | 未接入 | 待 4.2 | 4.2 |
 | 边缘采集 | `edgeagent/plugins/*` | `core/edge/plugins/{hostmetrics,databasemetrics,procmetrics,logs,traces,custommetrics}` | `collector` | 通道就绪，0 贡献 | 迁移为插件（候选） | 4.7 |
-| 可观测查询工具 | `aiops/tools` 中的 promql / logql / traceql | `opskeeper-sre-observability`（12 工具） | `tool` | 已接入 | 迁移为插件（已完成） | 4.8 |
+| 可观测查询工具 | `aiops/tools` 中的 promql / logql / traceql | `opskeeper-sre-observability`（14 工具） | `tool` | 已接入 | 迁移为插件（已完成） | 4.8 |
 
 ### ⑤ 事件
 
 | 能力 | release 载体 | main 载体 | 扩展点 | 现状 | 归属初判 | 后续任务 |
 |---|---|---|---|---|---|---|
 | 告警规则 / 草稿 / 降噪 | `biz/alert`、`aiops/{alertconfig,alertdraft}` | `core/manager/biz/alert`、`core/manager/biz/aiops/{alertconfig,alertdraft}` | `tool`（§九：可插件化为 extension tool + command） | 未接入 | 迁移为插件（候选） | 4.12（§7 结论 5） |
-| 告警外发通知 | `pkg/notify`（硬编码分支） | `core/base/pkg/notify`（`ChannelFactory` 注册表） | `notifier` | 宿主注册表已有，未接内核 | 迁移为插件 | 4.5 |
+| 告警外发通知 | `pkg/notify`（硬编码分支） | `core/base/pkg/notify`（读 `ChannelResolver` 视图）+ `biz/notify`（6 内置渠道预装插件） | `notifier` | 已接入（一方内置，B3） | 迁移为插件（第三方包待 4.5 B1–B3） | 4.5 |
 | Incident 事件 / 指标 / Runbook | `control/incident`、`server/incident` | `core/domains/control/incident`、`core/domains/server/incident`、`shared/incident-command` | — | 宿主保留，已独立成域；新增 Incident Command UI | 保留 core | 5.3（Paperclip 只读同步） |
 | 闭环 Loop 编排 | `biz/loop` | `core/manager/biz/loop` | —（消费 `tool` / `adapter`） | 宿主保留 | 保留 core | `runtime-management-gap` 2.4 |
-| 诊断 / RCA | `aiops/{investigator,critic}`、`biz/chatdiagnose` | 同名包；`opskeeper-sre-readonly`（20 工具） | `tool` | 已接入（只读工具） | 迁移为插件（已完成） | `pig-runtime-adapter` 3.11 |
+| 诊断 / RCA | `aiops/{investigator,critic}`、`biz/chatdiagnose` | 同名包；`opskeeper-sre-readonly`（23 工具） | `tool` | 已接入（只读工具） | 迁移为插件（已完成） | `pig-runtime-adapter` 3.11 |
 
 ### ⑥ 修复
 
@@ -207,7 +209,7 @@
 | 审计 | `core/domains/biz/audit`、`core/base/pkg/audit`、`core/edge/auditlog` | — | 宿主保留；release 的 1 个文件重写为域内 + 节点本地账本 | 3.9 |
 | 数据分级 DataGuard | `core/manager/dataguard` | — | 宿主保留 | — |
 | 系统健康 / 升级 / 版本 / 集群 | `core/domains/server/{systemupgrade,version,cluster}` | — | 宿主保留，已独立成域 | 6.1 |
-| Runtime 视图 | `web/src/pages/admin/Runtime.tsx`、`core/manager/model/runtimemgmt` | — | 页面空值已修（#97）；任务生命周期模型已落（#98）；inventory / health 未做 | 1.2、1.3、2.x |
+| Runtime 视图 | `web/src/pages/admin/Runtime.tsx`、`core/manager/model/runtimemgmt` | — | 页面空值已修（#97）；任务生命周期已全量交付（§2 六项：准入/认领/租约/worker 接入/failover 矩阵，PR #132/#136/#137）；inventory 只读视图未做 | 1.2、1.3、2.x |
 | 数据迁移 | `core/manager/{migrate,migrator}` | — | 原样搬迁 | — |
 | Edge 执行面 | `core/edge/*`（60 → 80 文件） | `tool`、`collector` | PiG 监督、policygate、toolbroker、gatesocket、离线自治已落地 | 4.7 |
 | 评测 Harness / 故障注入 | `core/harness`、`core/faults` | — | 独立模块，不插件化 | — |
@@ -248,6 +250,19 @@
 │ 【规划外新增】 节点 AI Agent(NodeFleet/llmgw) · 多集群联邦 · 插件市场/发布/导入 + sdk            │
 │                运行时管理模型(runtimemgmt) · PiG 进程驱动(pigruntime) · L3 有限自治              │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+读数刷新（main@f4b76a36，2026-11-24，叠加在上图 main@86dff884 之上）：
+
+- 【渠道】 77 条不变。
+- 【价值流】 统一任务生命周期已全量落地（§2 六项，PR #132/#136/#137）：
+  准入三闸、十二条路由、八表迁移、worker 循环（诊断 + repair-preview +
+  AgentTeams 桥，env 门控默认关）、failover 不重复执行矩阵。
+- 【② 智能体协同】 tool 扩展点 5 包 / **99 工具**（readonly、observability
+  已 0.3.0）；Runtime 0/41 → §2 已交付；PiG 6/33 → 2.x 与 3.1–3.5 已交付
+  （生命周期归一、三方对账、七闸网关、proposal-only）。
+- 【⑨ 企业集成】 notifier 一方内置渠道已过内核准入（B3，旧 map 删除），
+  第三方包待 4.5 B1–B3；provider 仍未接内核。
+- 【平台治理】 runtime inventory 只读视图未做（§2 收口后的下一片）。
 ```
 
 板块评级（高 / 中 / 低）是根据入口、代码落位、扩展点接入和权威 change 勾选情况做的判断，不是测量值。
@@ -257,13 +272,14 @@
 | 缺口 | 影响板块 | 归属 |
 |---|---|---|
 | `provider` 未接内核，模型供应商只能编译内增加 | 企业集成、协同 | 4.6 |
-| `notifier` 未接内核，通知渠道只能编译内增加 | 事件、企业集成 | 4.5 |
+| ~~`notifier` 未接内核，通知渠道只能编译内增加~~ 已闭合（B3：6 内置渠道预装插件过内核准入）；第三方通知包仍无 | 事件、企业集成 | 4.5（B1–B3 剩第三方迁移） |
 | `collector` 无贡献，内置采集器仍编译内 | 观测、Edge | 4.7 |
 | `adapter` / `datasource` 只有一方贡献，没有第三方包 | 观测、企业集成 | 4.3、4.4 |
 | 告警规则 / 草稿、拓扑、知识检索仍以编译内工具存在 | 事件、资产与拓扑、知识 | 4.8、4.12（§7 结论 5） |
-| 修复预览、只读诊断未接共享任务生命周期 | 修复、事件 | `runtime-management-gap` 2.4 |
+| ~~修复预览、只读诊断未接共享任务生命周期~~ 已闭合（§2 全量交付，PR #132/#136/#137） | 修复、事件 | `runtime-management-gap` 2.4 |
 | 外部审批桥、ITSM / CMDB 均未开始 | 审批、企业集成 | 4.4、5.5–5.9 |
 | 团队记忆与事件协同未开始 | 协同 | 5.10–5.13 |
+| runtime inventory 只读视图未做（runtime/health/容量/当前任务一屏） | 平台治理 | `runtime-management-gap` 后续切片 |
 
 另有两项与映射无关、但影响本计划读数的问题：
 
