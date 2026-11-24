@@ -279,10 +279,12 @@ func TestRepairPreviewWithoutContractFailsClosed(t *testing.T) {
 // 且 <task-id>.json 落盘、TaskResult 三元组如实。
 func TestInventorySnapshotWorkerFullPath(t *testing.T) {
 	db := newWorkerTestDB(t)
-	// 种一行 runtime 让快照非空。
-	now := time.Date(2026, 11, 21, 12, 0, 0, 0, time.UTC)
-	if err := db.Exec("INSERT INTO runtimemgmt_runtimes (runtime_id, kind, profile, owner, deployment_location, labels_json, observed_version, version_source, artifact_digest, capability_digest, capabilities_json, health, health_reason, total_slots, free_slots, active_tasks, pending_command_acks_json, registered_at, updated_at) VALUES (?, 'chat_worker', 'test', 'test', 'test', '{}', 'v1', 'manifest', '', '', '{}', 'online', '', 4, 4, 0, '', ?, ?)",
-		"test-runtime", now, now).Error; err != nil {
+	// 种一行 runtime 让快照非空。时间取真实当前值并带 last_heartbeat_at：
+	// Claim 的懒重评按 now 与最近心跳的差推导健康，固定历史日期会让
+	// 这颗种子在交付三天后按 offline 拒绝认领，测试就变成了时间炸弹。
+	now := time.Now().UTC()
+	if err := db.Exec("INSERT INTO runtimemgmt_runtimes (runtime_id, kind, profile, owner, deployment_location, labels_json, observed_version, version_source, artifact_digest, capability_digest, capabilities_json, health, health_reason, total_slots, free_slots, active_tasks, pending_command_acks_json, last_heartbeat_at, registered_at, updated_at) VALUES (?, 'chat_worker', 'test', 'test', 'test', '{}', 'v1', 'manifest', '', '', '{}', 'online', '', 4, 4, 0, '', ?, ?, ?)",
+		"test-runtime", now, now, now).Error; err != nil {
 		t.Fatalf("seed runtime: %v", err)
 	}
 
