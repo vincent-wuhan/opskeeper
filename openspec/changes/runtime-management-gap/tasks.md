@@ -1,5 +1,7 @@
 # Tasks: runtime-management-gap
 
+> §2（Durable Task Lifecycle）已全部交付：三刀 PR #132（2.2+2.3）/ #136（2.4+2.5）/ #139（2.6 收口）。执行任务分别见  /  /  的 OPC 线程与 ADR 附件（执行任务见对应 OPC 线程）。
+
 ## 1. Runtime Inventory and Readback
 
 - [x] 1.1 Define runtime identity, health, capability, capacity, version, artifact-digest, and deployment-location persistence models.
@@ -27,7 +29,8 @@
   - 已交付：`biz/runtimemgmt/worker.go`（ADR D-6）——`TaskHandler` 端口（`Matches` 路由 + `Execute(ctx, task, resume, rt)`，续跑指针与 Reporter 检查点一体滚租约）与 `WorkerRuntime` 通用循环（Poll→Claim→Start→Execute→result/failure，`resumeFor` 取上一尝试最高序检查点做跨代际续跑，零 goroutine 在 biz）。装配根 `cmd/opskeeper/runtimemgmt_worker_wiring.go` 两只 handler：诊断 worker kind=`read_only.runtime_inventory_snapshot`（safety=read_only，`<task-id>.json` 落盘 + OutputRef/Digest/Size 经 `CompiledOutputReporter` 回填）与 repair-preview handler kind=`repair.preview.execute`（safety=disposable，包一层 demo `PreviewExecutor`，契约缺失 fail-closed 为 `no_idempotency_contract`，`ErrDuplicateRun`→成功）。`OPSKEEPER_RUNTIME_TASK_WORKERS` env 门控（默认空=零 worker 零 goroutine）。输出目录 `OPSKEEPER_RUNTIME_TASK_OUTPUT_DIR`（默认 `/var/lib/opskeeper/runtime-tasks`，install manifest 已加 host bind-mount + state-dirs.sh uid 行）。
 - [x] 2.5 Integrate AgentTeams/TeamHarness task reporting while preserving the existing incident-phase ledger as evidence.
   - 已交付：`AgentTeamsReportBridge`（ADR D-7，装配根，`OPSKEEPER_RUNTIME_TASK_WORKERS=agentteams` 门控）——轮询 state.Manager 只读面（LookupProject/Get），incident-phase 任务映射 kind=`agentteams.task` 生命周期行（dispatch→入队+认领+running、in_progress 阶段→progress 检查点、completed→succeeded）。safety 映射硬编码：全阶段 read_only，唯 `repair_execution` mutating（桥只报告已开始阶段的最严值——report 行描述「已经做了什么」，不预支未开始阶段）。**ledger 零写入**：双读断言（字节+mtime）钉在 `runtimemgmt_worker_wiring_test.go`（先例 `runtimemgmt_wiring_test.go`）。认领闸门经 `agentteams:worker-1` runtime 注册行 + 心跳（`ensureRuntimeRow`）。watch 列表 `OPSKEEPER_AGENTTEAMS_WATCH_INCIDENTS` + 从既有 runtimemgmt 行自发现。
-- [ ] 2.6 Add restart/failover tests proving no duplicate read-only or disposable-preview work.
+- [x] 2.6 Add restart/failover tests proving no duplicate read-only or disposable-preview work.
+  - 已交付（执行任务 ，基线 main@2a508e4a）：`biz/runtimemgmt/failover_matrix_test.go`（biz 级，文件型 sqlite——第 8 行需要真重开）+ `cmd/opskeeper/runtimemgmt_worker_wiring_test.go` 增补（wiring 级，真 repair-preview 仓储）。矩阵十行逐行钉死：1 检查点后重启续跑副作用恰一次（`TestMatrix1WorkerRestartAfterCheckpointResumesWithSingleEffect` biz 手工驱动 + `TestMatrix1WorkerLoopRestartSideEffectsOnce` S2 循环自动 resumeFor 驱动）；2 旧代际迟到 checkpoint/result 不落库不复活（`TestMatrix2LateStaleGenerationWritesLeaveNoRows`）；3 stale-recovery 两分支——指纹漂移落终态（`TestMatrix3StaleRecoveryTerminatesNonRetryableClass`）与预算耗尽落终态（`TestMatrix3StaleRecoveryBudgetExhaustedTerminates`）；4 变更型无契约零重试（`TestMatrix4MutatingWithoutContractZeroRetries`：attempt 恰一行、三轮 PollOnce 零认领）；5 变更型有契约回 admitted 可重认领（`TestMatrix5MutatingWithContractRequeuesAndReclaims`）+ 指纹漂移拒绝（`TestMatrix5MutatingFingerprintDriftRefusesRetry`）；6/7/10 沿用 S1 既有测试（`TestAdmissionRejectedLeavesNoClaim` / `TestConcurrentDoubleClaimExactlyOneWinner` / `TestTerminalWritesRejected`）；8 manager 重启 sqlite 重开行存活 + 重校验（`TestMatrix8ManagerRestartKeepsRowsAndRevalidates`）；9 repair-preview 重复执行真 run 表恰一行（`TestMatrix9RepairPreviewDuplicateExecutionLeavesOneRunRow`：UNIQUE(tenant_id, incident_id, run_id) 撞 ErrDuplicateRun→成功，runs/bindings 表各恰一行）。
 
 ## 3. Workspace and Disk Governance
 

@@ -359,3 +359,97 @@ func TestRuntimeTaskWorkersAgentTeamsOnly(t *testing.T) {
 		t.Fatalf("agentteams-only assembly = %+v; want bridge without manager worker", asm)
 	}
 }
+
+// ---- 矩阵第 9 行：repair-preview 重复执行 → 真 run 表恰一行 ----------------
+
+// realStoreExecutor 是接到真 repairpreview.SQLRepository 的 executor：
+// S2 的 TestRepairPreviewDuplicateRunMapsToSuccess 用 stub executor 只
+// 验了「哨兵映射为成功」，没验「run 表恰一行」——D-8 第 9 行的落点是
+// 后者，所以这里把真仓储接进来，第一次执行真落一行，第二次执行由
+// UNIQUE(tenant_id, incident_id, run_id) 撞出 ErrDuplicateRun。
+type realStoreExecutor struct {
+	store repairpreview.Repository
+	calls int
+	input managerbizdemo.PreviewExecutionInput
+}
+
+func (e *realStoreExecutor) Execute(ctx context.Context, input managerbizdemo.PreviewExecutionInput) error {
+	e.calls++
+	e.input = input
+	run := repairpreview.Run{
+		ID: input.RunID, TenantID: input.TenantID, IncidentID: input.IncidentID,
+		ScenarioID: input.ScenarioID, IdempotencyKey: input.IdempotencyKey,
+		TargetFingerprint: input.TargetFingerprint,
+		BranchPrefix:      "preview/" + input.IncidentID,
+		SeedFingerprint:   "sha256:seed-v1",
+		WorkloadFingerprint: "sha256:workload-v1", WorkloadRevision: "workload-v1",
+		ControlledLoad: true, IsolationBoundary: "preview-pg",
+		Status: "finished", StartedAt: time.Now().UTC().Add(-time.Minute), FinishedAt: time.Now().UTC(),
+	}
+	run.BindingFingerprint = repairpreview.WorkloadBinding{
+		RunID: run.ID, TenantID: run.TenantID, IncidentID: run.IncidentID,
+		ScenarioID: run.ScenarioID, IdempotencyKey: run.IdempotencyKey,
+		TargetFingerprint: run.TargetFingerprint,
+	}.Fingerprint()
+	return e.store.Save(ctx, run)
+}
+
+// TestMatrix9RepairPreviewDuplicateExecutionLeavesOneRunRow 是 D-8 第 9 行：
+// 同一确定性 run 绑定被 handler 执行两次（worker 重启后的重复尝试），
+// 第二次撞 ErrDuplicateRun → handler 返回 nil（幂等确认），且
+// repair_preview_runs 表**恰一行**——一次性 preview 工作没有重复执行。
+func TestMatrix9RepairPreviewDuplicateExecutionLeavesOneRunRow(t *testing.T) {
+	db := newWorkerTestDB(t)
+	// 真 repair-preview 仓储（与生产装配同一张表与同一 UNIQUE 约束）。
+	if err := repairpreview.Migrate(db); err != nil {
+		t.Fatalf("migrate repair preview: %v", err)
+	}
+	executor := &realStoreExecutor{store: repairpreview.NewSQLRepository(db)}
+	handler := NewRepairPreviewTaskHandler(executor, runtimemgmtstore.NewBizTaskStore(db), "sha256:workload-v1")
+
+	uc := workerTestUsecase(db)
+	res, err := uc.Enqueue(context.Background(), bizruntimemgmt.EnqueueRequest{
+		TenantID: "t1", Kind: KindRepairPreviewExecute,
+		IncidentID:              "INC-REPAIR-009",
+		Safety:                  runtimemgmtmodel.TaskSafetyDisposable,
+		IdempotencyTargetSystem: "preview-pg",
+		IdempotencyScope:        "binding-summary-fixture",
+		IdempotencyExternalID:   "idem-key-00000009",
+		IssuedBy:                "test",
+	})
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	task, _ := uc.GetTask(context.Background(), res.Task.TaskID, "t1")
+
+	// 第一次执行：真落一行。
+	if err := handler.Execute(context.Background(), task, nil, nil); err != nil {
+		t.Fatalf("first execute: %v", err)
+	}
+	var rows int64
+	db.Table("repair_preview_runs").Where("run_id = ?", executor.input.RunID).Count(&rows)
+	if rows != 1 {
+		t.Fatalf("run rows after first execute = %d, want 1", rows)
+	}
+
+	// 第二次执行：同一绑定（resume 非 nil 等价重复执行尝试）→ 撞唯一约束
+	// → ErrDuplicateRun → handler 成功返回。
+	if err := handler.Execute(context.Background(), task, &runtimemgmtmodel.Checkpoint{
+		TaskID: task.TaskID, AttemptNumber: 1, Sequence: 1, Generation: 1,
+		Phase: "rerun", ResumeHint: "restart-duplicate",
+	}, nil); err != nil {
+		t.Fatalf("duplicate execute must map to success, got %v", err)
+	}
+	if executor.calls != 2 {
+		t.Fatalf("executor called %d times, want 2 (the duplicate attempt happened)", executor.calls)
+	}
+	db.Table("repair_preview_runs").Where("run_id = ?", executor.input.RunID).Count(&rows)
+	if rows != 1 {
+		t.Fatalf("run rows after duplicate = %d, want exactly 1 (no duplicate preview work)", rows)
+	}
+	// 绑定表也恰一行。
+	db.Table("repair_preview_run_bindings").Where("run_id = ?", executor.input.RunID).Count(&rows)
+	if rows != 1 {
+		t.Fatalf("binding rows = %d, want exactly 1", rows)
+	}
+}
