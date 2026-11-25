@@ -13,7 +13,10 @@
 > ③ provider 行维持「未接内核」（`core/pig/pigmodel` 宿主工厂注册表，
 > 第三方 provider 包路径见 4.6 方案）。`query_knowledge` 已随 S-3 进
 > observability 0.3.0（§2 该行从「候选」变「已完成」），新增 scope
-> `knowledge.read`。
+> `knowledge.read`（领域常量 `domain.ScopeKnowledgeRO`），且
+> finance 与 SaaS 两类 profile 的 `Granted` 已同步该 scope
+> （`core/floor/pluginmanifest/profiles.go`），两类角色的工具包
+> 随 0.3.0 一并拿到知识检索能力。
 >
 > 四类定义：
 > - **保留在 core**：按 `docs/opskeeper2-architecture.md` §九 属宿主职责，或平台自身基础设施，不插件化。
