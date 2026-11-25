@@ -2,6 +2,8 @@ package user
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -409,6 +411,60 @@ func (u *Usecase) EnsureSuperuser(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// IMBridgeServiceEmail is the fixed idempotency key of the IM bridge
+// service account (S-2 of the marketplace-imbridge-fail-closed change).
+// The users.email uniqueIndex is what makes "find or create" idempotent
+// across restarts — the id=1 constant this replaces was the bootstrap
+// ORDER's empirical fact, not a schema guarantee.
+const IMBridgeServiceEmail = "imbridge-svc@opskeeper.internal"
+
+// EnsureIMBridgeServiceUser returns the IM bridge's dedicated service
+// account, creating it on first boot. The account is deliberately
+// restricted: role=user (not admin), is_superuser=false (no superuser
+// bypass in authz), status=active. Its pass_hash is the argon2id hash of
+// a random 32-byte value that is never persisted or printed anywhere —
+// an empty hash could be let through by an "empty password logs in"
+// regression, a random one cannot be collided under argon2id, so the
+// account exists for ownership and audit anchoring only, never login.
+//
+// Callers (cmd/opskeeper wiring) treat an error as "disable the IM
+// bridge" rather than "crash the manager": monitoring/alerting do not
+// depend on IM, and a dead bridge is a deployment without IM, whereas
+// the pre-S-2 fallback was IM running as the bootstrap superuser.
+func (u *Usecase) EnsureIMBridgeServiceUser(ctx context.Context) (*model.User, error) {
+	if existing, err := u.repo.GetByEmail(ctx, IMBridgeServiceEmail); err == nil && existing != nil {
+		return existing, nil
+	} else if err != nil && !errors.Is(err, errs.ErrNotFound) {
+		return nil, fmt.Errorf("lookup imbridge service user: %w", err)
+	}
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return nil, fmt.Errorf("imbridge service user: read random password: %w", err)
+	}
+	// The plaintext never leaves this frame; only the hash is stored.
+	ph, err := hashPassword(base64.RawStdEncoding.EncodeToString(raw))
+	if err != nil {
+		return nil, fmt.Errorf("imbridge service user: hash password: %w", err)
+	}
+	user := &model.User{
+		Email:       IMBridgeServiceEmail,
+		DisplayName: "IM Bridge (service)",
+		PassHash:    ph,
+		Role:        model.RoleUser,
+		IsSuperuser: false,
+		Status:      model.StatusActive,
+	}
+	if err := u.repo.Create(ctx, user); err != nil {
+		return nil, fmt.Errorf("imbridge service user: create: %w", err)
+	}
+	if u.log != nil {
+		u.log.Info("imbridge service user created",
+			slog.Uint64("user_id", user.ID),
+			slog.String("email", IMBridgeServiceEmail))
+	}
+	return user, nil
 }
 
 func (u *Usecase) issuePair(user *model.User) (*TokenPair, error) {

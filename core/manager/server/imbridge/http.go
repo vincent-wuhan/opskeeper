@@ -158,19 +158,30 @@ func (h *Handler) handleFeishuEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Signature verification — required when encrypt_key is set
-	// (otherwise events are plaintext and we accept them based on
-	// the platform's network-level reachability rules; weaker
-	// security, but matches what Feishu docs call "non-encrypted mode").
-	if app.EncryptKey != "" {
-		ts := r.Header.Get("X-Lark-Request-Timestamp")
-		nonce := r.Header.Get("X-Lark-Request-Nonce")
-		sig := r.Header.Get("X-Lark-Signature")
-		if err := feishu.VerifyEventSignature(ts, nonce, app.EncryptKey, body, sig); err != nil {
-			h.log.Warn("feishu signature mismatch", slog.String("app_id", appID))
-			http.Error(w, "bad signature", http.StatusUnauthorized)
-			return
-		}
+	// Empty encrypt_key is REJECTED outright (S-3 of the
+	// marketplace-imbridge-fail-closed change). validate() already
+	// refuses it for newly-saved apps, but legacy rows, direct DB
+	// edits, or a stream-mode row switched to webhook all bypass that
+	// gate — and with no key there is no signature to verify, so the
+	// pre-S-3 code accepted the plaintext body and dispatched it to the
+	// agent. Anyone who could reach the endpoint could drive the bot.
+	if app.EncryptKey == "" {
+		h.log.Warn("feishu event rejected: app has no encrypt_key (fail closed)",
+			slog.String("app_id", appID))
+		http.Error(w, "encrypt_key not configured", http.StatusUnauthorized)
+		return
+	}
+
+	// Signature verification. Unconditional: the gate above guarantees
+	// the key is non-empty here, so every event is now verified against
+	// sha256(timestamp + nonce + encryptKey + body).
+	ts := r.Header.Get("X-Lark-Request-Timestamp")
+	nonce := r.Header.Get("X-Lark-Request-Nonce")
+	sig := r.Header.Get("X-Lark-Signature")
+	if err := feishu.VerifyEventSignature(ts, nonce, app.EncryptKey, body, sig); err != nil {
+		h.log.Warn("feishu signature mismatch", slog.String("app_id", appID))
+		http.Error(w, "bad signature", http.StatusUnauthorized)
+		return
 	}
 
 	// Decrypt the event payload when encrypted. The decrypted bytes

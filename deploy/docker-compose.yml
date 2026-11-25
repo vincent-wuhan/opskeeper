@@ -80,6 +80,11 @@ services:
       # tools get redacted schemas (LLM must call ToolSearch to expand).
       # Default 30 is fine until marketplace grows the bag past it.
       OPSKEEPER_TOOLBAG_DEFERRAL_THRESHOLD: ${OPSKEEPER_TOOLBAG_DEFERRAL_THRESHOLD:-30}
+      # Marketplace install gate (S-1 fail-closed). Empty = gates ENFORCED,
+      # same as production. Dev clusters that need the bypass set
+      # OPSKEEPER_MARKETPLACE_DEVMODE=true in deploy/.env — explicit and
+      # auditable, never the default.
+      OPSKEEPER_MARKETPLACE_DEVMODE: ${OPSKEEPER_MARKETPLACE_DEVMODE:-}
       # ADR-009: cloud-side Prometheus. Manager remote_writes open-set
       # samples here and the aiops query_promql tool reads from it.
       OPSKEEPER_PROM_ENABLED: ${OPSKEEPER_PROM_ENABLED:-true}

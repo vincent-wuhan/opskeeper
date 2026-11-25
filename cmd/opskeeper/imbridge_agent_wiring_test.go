@@ -151,3 +151,26 @@ func TestAdapter_runOptions_picksResolverDefault(t *testing.T) {
 		})
 	}
 }
+
+// TestImbridgeCallerRoleIsUserNotAdmin pins the S-2 security property of
+// the marketplace-imbridge-fail-closed change: the IM bridge's caller
+// carries the real restricted role, not a blank one. A blank Role used to
+// fall through every downstream role check as "not viewer" — which
+// granted the IM path the full non-viewer tool surface, admin-gated
+// config apply included. The caller must be neither admin nor blank.
+func TestImbridgeCallerRoleIsUserNotAdmin(t *testing.T) {
+	a := newImbridgeAgentAdapter(nil, 42, nil, nil)
+	c := a.caller()
+	if c.UserID != 42 {
+		t.Errorf("UserID = %d, want 42 (the boot-resolved service account id)", c.UserID)
+	}
+	if c.Role != "user" {
+		t.Errorf("Role = %q, want \"user\" — a blank or misspelled role re-opens the full tool surface", c.Role)
+	}
+	if c.IsAdmin() {
+		t.Error("IsAdmin() = true — the IM path must never carry the admin role")
+	}
+	if c.IsViewer() {
+		t.Error("IsViewer() = true — service account is role=user, not viewer; viewer would silently drop read tools the IM flow legitimately uses")
+	}
+}
