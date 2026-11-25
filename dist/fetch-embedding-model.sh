@@ -45,9 +45,22 @@ else
     trap 'rm -f "$tmp"' EXIT
     url="${FASTEMBED_BASE%/}/${MODEL}.tar.gz"
     log "fetching $url"
-    curl -fL --retry 3 --connect-timeout 15 -o "$tmp" "$url" || die "failed to fetch $url"
     rm -rf "$TARGET"
-    tar -xzf "$tmp" -C "$DEST"
+    if curl -fL --retry 3 --connect-timeout 15 -o "$tmp" "$url"; then
+        tar -xzf "$tmp" -C "$DEST"
+    else
+        # The qdrant-fastembed GCS bucket started denying anonymous reads
+        # (AccessDenied for every object) on 2026-11-25. Qdrant mirrors the
+        # same model, same layout, on HuggingFace - fall back file by file
+        # so the bundle keeps the exact CacheDir shape fastembed-go expects.
+        log "GCS fetch failed; falling back to the HuggingFace mirror"
+        HF_BASE="https://huggingface.co/Qdrant/bge-small-zh-v1.5/resolve/main"
+        mkdir -p "$TARGET"
+        for f in "${FILES[@]}"; do
+            curl -fL --retry 3 --connect-timeout 15 -o "$TARGET/$f" "$HF_BASE/$f" \
+                || die "failed to fetch $f from the HuggingFace mirror"
+        done
+    fi
     for f in "${FILES[@]}"; do
         [[ -s "$TARGET/$f" ]] || die "downloaded model missing $f"
     done
