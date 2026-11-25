@@ -117,6 +117,12 @@ services:
       # tools get redacted schemas (LLM must call ToolSearch to expand).
       # Default 30 is fine until marketplace grows the bag past it.
       OPSKEEPER_TOOLBAG_DEFERRAL_THRESHOLD: ${OPSKEEPER_TOOLBAG_DEFERRAL_THRESHOLD:-30}
+      # Marketplace install gate (S-1 fail-closed). Empty = signature and
+      # source allowlist gates ENFORCED — the production posture. Only an
+      # explicit true/1 from .env opens the dev bypass; the value is passed
+      # through with no default here precisely so "not mentioned" can never
+      # mean "dev mode on" again.
+      OPSKEEPER_MARKETPLACE_DEVMODE: ${OPSKEEPER_MARKETPLACE_DEVMODE:-}
       # Knowledge base / RAG: qdrant vector store + embedding provider.
       # The backend is pinned to qdrant because this package ships the
       # qdrant service below; the default is the embedded chromem engine,

@@ -534,7 +534,7 @@ function IMAppEditor({
 
         {mode === 'webhook' && provider === 'feishu' && (
           <div className="grid grid-cols-2 gap-3">
-            <Field label="verify_token" hint={tr('飞书事件订阅 verification token（可选）', 'Larksuite event subscription verification token (optional)')}>
+            <Field label="verify_token" hint={tr('当前不参与事件校验（仅存档；事件校验依赖 encrypt_key 签名）', 'Not used for event verification today (stored only; event integrity relies on the encrypt_key signature)')}>
               <input
                 value={verifyToken}
                 onChange={(e) => setVerifyToken(e.target.value)}

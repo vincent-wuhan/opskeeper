@@ -2324,40 +2324,51 @@ func main() {
 	// IM bridge: multi-turn chat via Feishu (S1) / DingTalk
 	// (S2 follow-up). Inbound webhooks land outside the bearer-auth
 	// group; signature verification is enforced inside the handler.
-	// Threads map to opskeeper chat_sessions owned by a service-account
-	// user — S3 will replace that with per-IM-user binding.
-	// Service-account user_id: superuser admin (id=1 on every install
-	// thanks to bootstrap). Future: take from cfg.
-	const imBridgeServiceUserID uint64 = 1
-	imbridgeAgentAdapter := newImbridgeAgentAdapter(aiopsSvc, imBridgeServiceUserID, llmSettingsResolver, log)
-	imbridgeSvc := managerbizimbridge.NewBridge(imbridgeRepo, imbridgeAgentAdapter, imBridgeServiceUserID, log)
-	imbridgeHandler := managerserverimbridge.NewHandler(imbridgeSvc, imbridgeRepo, imbridgeUC, log)
+	// Threads map to opskeeper chat_sessions owned by a dedicated
+	// service account — restricted to role=user / is_superuser=false
+	// (S-2 of marketplace-imbridge-fail-closed). The old wiring hardcoded
+	// user_id=1, the bootstrap superuser, which made every group message
+	// run with full admin authority on the tool surface. Failure to
+	// resolve the service account DISABLES the IM bridge (fail closed):
+	// no webhook route, no stream supervisor. The rest of the manager
+	// keeps running — monitoring/alerting do not depend on IM.
+	var imbridgeHandler *managerserverimbridge.Handler
+	imBridgeServiceUserID, svcErr := userUC.EnsureIMBridgeServiceUser(rootCtx)
+	if svcErr != nil {
+		log.Error("imbridge disabled: cannot ensure service account",
+			slog.Any("err", svcErr),
+			slog.String("hint", "check DB connectivity and that the users table is writable; the IM bridge stays off until it is"))
+	} else {
+		imbridgeAgentAdapter := newImbridgeAgentAdapter(aiopsSvc, imBridgeServiceUserID.ID, llmSettingsResolver, log)
+		imbridgeSvc := managerbizimbridge.NewBridge(imbridgeRepo, imbridgeAgentAdapter, imBridgeServiceUserID.ID, log)
+		imbridgeHandler = managerserverimbridge.NewHandler(imbridgeSvc, imbridgeRepo, imbridgeUC, log)
 
-	// Stream supervisor: long-connection mode. Runs one
-	// goroutine per (enabled, stream-mode) ImApp; reconciles every
-	// 30s against the DB. Factories are registered separately so we
-	// don't drag in the Feishu / DingTalk SDKs from this file —
-	// they live under core/manager/biz/imbridge/provider/{feishu,
-	// dingtalk}/stream and self-register via stream_supervisor.go's
-	// RegisterFactory hook. Without a factory the supervisor just
-	// logs "no factory for provider — skipping" and the webhook path
-	// is still available as fallback.
-	imbridgeStreamSupervisor := managerbizimbridge.NewStreamSupervisor(imbridgeRepo, imbridgeSvc, log)
-	// Register the Feishu long-connection factory; DingTalk lands in
-	// Without registration the supervisor logs "no
-	// factory for provider — skipping" and the webhook path still
-	// works as fallback.
-	imbridgeStreamSupervisor.RegisterFactory("feishu", managerbizimbridgefeishu.NewStreamFactory(log))
-	// Telegram is stream-only (getUpdates long-poll, outbound → proxy-
-	// friendly behind GFW). Sender allowlist enforced in the provider
-	// (ADR-031).
-	imbridgeStreamSupervisor.RegisterFactory("telegram", managerbizimbridgetelegram.NewStreamFactory(log))
-	// Slack is stream-only via Socket Mode (outbound WebSocket → same
-	// proxy-friendly philosophy as Telegram getUpdates). Allowlist
-	// enforced in the provider so a misconfigured open workspace can't
-	// turn the agent into an LLM toy for random members.
-	imbridgeStreamSupervisor.RegisterFactory("slack", managerbizimbridgeslack.NewStreamFactory(log))
-	go imbridgeStreamSupervisor.Run(rootCtx)
+		// Stream supervisor: long-connection mode. Runs one
+		// goroutine per (enabled, stream-mode) ImApp; reconciles every
+		// 30s against the DB. Factories are registered separately so we
+		// don't drag in the Feishu / DingTalk SDKs from this file —
+		// they live under core/manager/biz/imbridge/provider/{feishu,
+		// dingtalk}/stream and self-register via stream_supervisor.go's
+		// RegisterFactory hook. Without a factory the supervisor just
+		// logs "no factory for provider — skipping" and the webhook path
+		// is still available as fallback.
+		imbridgeStreamSupervisor := managerbizimbridge.NewStreamSupervisor(imbridgeRepo, imbridgeSvc, log)
+		// Register the Feishu long-connection factory; DingTalk lands in
+		// Without registration the supervisor logs "no
+		// factory for provider — skipping" and the webhook path still
+		// works as fallback.
+		imbridgeStreamSupervisor.RegisterFactory("feishu", managerbizimbridgefeishu.NewStreamFactory(log))
+		// Telegram is stream-only (getUpdates long-poll, outbound → proxy-
+		// friendly behind GFW). Sender allowlist enforced in the provider
+		// (ADR-031).
+		imbridgeStreamSupervisor.RegisterFactory("telegram", managerbizimbridgetelegram.NewStreamFactory(log))
+		// Slack is stream-only via Socket Mode (outbound WebSocket → same
+		// proxy-friendly philosophy as Telegram getUpdates). Allowlist
+		// enforced in the provider so a misconfigured open workspace can't
+		// turn the agent into an LLM toy for random members.
+		imbridgeStreamSupervisor.RegisterFactory("slack", managerbizimbridgeslack.NewStreamFactory(log))
+		go imbridgeStreamSupervisor.Run(rootCtx)
+	}
 
 	// @-mention search backend (HLD: ChatInput @-popover). Wires
 	// device + alert biz + Loki client. Any nil dep just means that
@@ -3145,8 +3156,7 @@ func main() {
 		}
 	}
 	mpRepo := managermarketplacedata.NewRepo(db)
-	mpDevMode := strings.EqualFold(os.Getenv("OPSKEEPER_MARKETPLACE_DEVMODE"), "true") ||
-		os.Getenv("OPSKEEPER_MARKETPLACE_DEVMODE") == ""
+	mpDevMode := marketplaceDevModeFromEnv(os.Getenv("OPSKEEPER_MARKETPLACE_DEVMODE"))
 	mpRequireSigned := []string{"opskeeper-official"}
 	if v := strings.TrimSpace(os.Getenv("OPSKEEPER_MARKETPLACE_REQUIRE_SIGNED_SOURCES")); v != "" {
 		mpRequireSigned = mpRequireSigned[:0]
@@ -3834,8 +3844,13 @@ func main() {
 		promProxyHandler.RegisterPublic(api)
 		// IM webhooks live OUTSIDE the bearer group — Feishu / DingTalk
 		// can't carry our manager JWT. Auth comes from the platform
-		// signature scheme inside the handler.
-		imbridgeHandler.RegisterPublic(api)
+		// signature scheme inside the handler. nil when the service
+		// account could not be ensured at boot (S-2 fail closed): the
+		// route is simply not registered, so no event can reach an
+		// agent run.
+		if imbridgeHandler != nil {
+			imbridgeHandler.RegisterPublic(api)
+		}
 		if cfg.Alert.WebhookToken != "" {
 			alertHandler.RegisterPublic(api)
 		}
@@ -3945,7 +3960,9 @@ func main() {
 			incidentHandler.Register(protected)
 			systemUpgradeHandler.Register(protected)
 			managerservercluster.NewHandler(leaderMgr, probesReg, startedAt).Register(protected)
-			imbridgeHandler.RegisterProtected(protected)
+			if imbridgeHandler != nil {
+				imbridgeHandler.RegisterProtected(protected)
+			}
 			skillHandler.Register(protected)
 			if knowledgeHandler != nil {
 				knowledgeHandler.Register(protected)
@@ -4642,6 +4659,20 @@ func parseRegistryIndexes(v string) []managerbizmarketplace.RegistryIndex {
 		out = append(out, managerbizmarketplace.RegistryIndex{Name: name, URL: url})
 	}
 	return out
+}
+
+// marketplaceDevModeFromEnv resolves the marketplace DevMode flag from the
+// raw OPSKEEPER_MARKETPLACE_DEVMODE value. Fail closed by design (S-1 of the
+// marketplace-imbridge-fail-closed change): only an explicit "true" or "1"
+// (case-insensitive) opens the bypass that skips the source allowlist and the
+// signature gate. Unset, empty, "false", "0", and any misspelling all leave
+// DevMode off — the previous reading treated unset as true, so a deployment
+// that never mentioned the variable shipped with unsigned-pack installs
+// allowed. Extracted as a function so the truth table is unit-testable;
+// main.go's bare statements are not.
+func marketplaceDevModeFromEnv(raw string) bool {
+	v := strings.TrimSpace(raw)
+	return strings.EqualFold(v, "true") || v == "1"
 }
 
 func firstNonEmpty(vals ...string) string {

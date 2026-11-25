@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/vincent-wuhan/opskeeper/core/base/pkg/llm"
+	"github.com/vincent-wuhan/opskeeper/core/base/pkg/tenantctx"
 	managerbizaiopsagent "github.com/vincent-wuhan/opskeeper/core/manager/biz/aiops/agent"
 	managerbizimbridge "github.com/vincent-wuhan/opskeeper/core/manager/biz/imbridge"
 	svcaiops "github.com/vincent-wuhan/opskeeper/core/manager/service/aiops"
@@ -63,9 +64,17 @@ func newImbridgeAgentAdapter(svc *svcaiops.Service, serviceUserID uint64, defaul
 }
 
 func (a imbridgeAgentAdapter) caller() svcaiops.Caller {
-	// Role left blank — backend uses caller.UserID for ownership
-	// checks; admin gating doesn't apply on the IM path.
-	return svcaiops.Caller{UserID: a.serviceUserID}
+	// Role is set explicitly (S-2 of marketplace-imbridge-fail-closed):
+	// the service account is a role=user identity, and saying so here is
+	// what makes the downstream gates see the truth. With Role blank the
+	// chatruntime reads the role from tenantctx (absent on the webhook
+	// path — the handler calls from a bare context.Background), so every
+	// role check downstream evaluated "" == "viewer" false and handed the
+	// IM path the full non-viewer tool surface, admin-gated tools
+	// included. Setting it here does NOT fabricate a tenant: tenantctx's
+	// legitimate producer is the auth middleware, and minting one in the
+	// biz layer would pollute the audit slot the decorators read.
+	return svcaiops.Caller{UserID: a.serviceUserID, Role: tenantctx.RoleUser}
 }
 
 // EnsureSession just creates a fresh session per inbound thread. We

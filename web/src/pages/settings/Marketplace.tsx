@@ -999,8 +999,8 @@ function errorToast(err: unknown, op: 'install' | 'uninstall'): string {
     case 'invalid':
       if (/allow.*list|allow.list|allowed/i.test(apiMsg)) {
         return tr(
-          '该 source 未在允许列表，开发模式 OPSKEEPER_MARKETPLACE_DEVMODE=true 可放开',
-          'This source is not in the allow-list; set OPSKEEPER_MARKETPLACE_DEVMODE=true for dev mode',
+          '该 source 未在允许列表（默认关闭，仅开发环境可显式设 OPSKEEPER_MARKETPLACE_DEVMODE=true 开启）',
+          'This source is not in the allow-list (dev mode is OFF by default; set OPSKEEPER_MARKETPLACE_DEVMODE=true explicitly for dev only)',
         );
       }
       return apiMsg
