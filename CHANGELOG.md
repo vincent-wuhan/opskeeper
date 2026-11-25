@@ -2,6 +2,11 @@
 
 本文件记录 opskeeper 各版本的主要变更。最新在上。
 
+## 2026.11.1 — 2026-11-25
+
+- Bind the release to backend source `b78c4dbdda44cc27898e0fba5df553b6ad0ad84c`.
+- Security patch (the three S-level findings from the v2026.11.0 security review): the marketplace DevMode decision is now explicitly-true-only so the source allowlist and the signature gate are not bypassed in a default deployment; the IM bridge uses a dedicated restricted service account instead of the hardcoded superuser id 1 (and disables the IM face if that account cannot be ensured); Feishu webhook events are refused when EncryptKey is empty.
+
 ## 2026.11.0 — 2026-11-24
 
 - Bind the release to backend source `f4b76a36a28b1c212f0ff242f6784fa0f2143923`, with the source boundary and the two source trees recorded in `RELEASE_VERSION.json`.
