@@ -186,8 +186,8 @@ Two checks, because they catch different things:
   problem leaves the next person free to walk it back with one import. The
   PiG-backed `llm.Client` now lives in `core/manager/llmpig`, which imports
   the floor; the floor imports nothing from the adapter.
-- **`core/floor/skill` registers instances, not mutators** — thirteen of the
-  fourteen built-in skills are zero-value structs registered in `init()`.
+- **`core/floor/skill` registers instances, not mutators** — seventeen of the
+  eighteen built-in skills are zero-value structs registered in `init()`.
   `web_search` was the exception: a package-level singleton behind six
   `SetWebSearch*` functions, mutated after registration. Its configuration
   was therefore a property of the process at the moment of the call rather
@@ -684,7 +684,7 @@ become real at release time.
 
 Two consequences, and both are enforced:
 
-- `make module-standalone-check` builds and tests all thirteen module
+- `make module-standalone-check` builds and tests all nineteen module
   directories with `GOWORK=off`. A workspace build resolves siblings through
   `go.work`; CI and a release do not, and the two only disagree when a
   `go.mod` is wrong. That target exists because a green `make module-test` is a
@@ -735,15 +735,15 @@ handed a client, not a PiG type.
 ## Where a tool's implementation lives
 
 Not in the plugin. The read-only SRE toolset
-(`core/pig/extensions/opskeeper-sre-readonly/`) declares eighteen tools and
-implements none of them:
+(`core/pig/extensions/opskeeper-sre-readonly/`) declares twenty-three tools
+(0.3.0) and implements none of them:
 
-- The thirteen `host_*` probes are the node's own, and
+- The fifteen `host_*` probes are the node's own, and
   `core/floor/skill/builtin` already implements them with permission classes,
   spill handling and tests.
-- The five control-plane queries read the manager's graph and rule table. A
-  subprocess on the node has no legitimate path to either, so the node asks
-  over `tunnel.MethodAgentTool` and the manager answers on the same
+- The eight control-plane queries read the manager's graph, incident and rule
+  tables. A subprocess on the node has no legitimate path to either, so the
+  node asks over `tunnel.MethodAgentTool` and the manager answers on the same
   authenticated edge session.
 
 So the agent process holds no operational code. That is what makes "isolated

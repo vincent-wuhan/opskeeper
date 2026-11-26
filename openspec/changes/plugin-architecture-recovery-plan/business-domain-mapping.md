@@ -263,6 +263,21 @@ S-2/S-3（readonly、observability 0.3.0）与 notifier B3（旧 map 删除、�
 - 【⑨ 企业集成】 notifier 一方内置渠道已过内核准入（B3，旧 map 删除），
   第三方包待 4.5 B1–B3；provider 仍未接内核。
 - 【平台治理】 runtime inventory 只读视图未做（§2 收口后的下一片）。
+
+二次读数（main@cbf8640d = v2026.11.1，2026-11-25，v2026.11.0 发布后基线上
+的安全补丁版；本节修正上图两处沿旧读数遗留的数字）：
+
+- 【② 智能体协同】 tool 扩展点仍为 5 包，但上图「5 包/94 工具」是
+  v2026.11.0 前的读数：readonly/observability 升 0.3.0 后为
+  **5 包 / 99 工具**（readonly 23 / observability 14 / middleware 56 /
+  repair 5 / autonomy 1，`make pig-tool-scoping-check` 真二进制验证）。
+- 【② 智能体协同】 上图「缺：Runtime 0/41 PiG 6/33」同样过期：
+  `runtime-management-gap` §2 六项与 `pig-runtime-adapter` 2.x + 3.1–3.5
+  均已交付（见上一节读数刷新），板块缺口只剩 runtime inventory 只读视图。
+- 【v2026.11.1 增量】 marketplace DevMode 改为显式 true 才生效（默认部署
+  不再旁路来源 allowlist 与签名闸门）；IM 桥改用受限专用服务账号（不再用
+  硬编码超管 id 1，账号无法确保时禁用 IM 面）；飞书 webhook 在 EncryptKey
+  为空时拒绝事件。
 ```
 
 板块评级（高 / 中 / 低）是根据入口、代码落位、扩展点接入和权威 change 勾选情况做的判断，不是测量值。
@@ -283,7 +298,7 @@ S-2/S-3（readonly、observability 0.3.0）与 notifier B3（旧 map 删除、�
 
 另有两项与映射无关、但影响本计划读数的问题：
 
-- `runtime-management-gap` 的 2.1（任务生命周期八类模型）已在 #98 落入 `core/manager/model/runtimemgmt`，但该 change 的 `tasks.md` 仍为 0/41 未勾选。
+- `runtime-management-gap` 的 2.1（任务生命周期八类模型）已在 #98 落入 `core/manager/model/runtimemgmt`，且 §2 六项已随 PR #132/#136/#137 全量交付（见上文读数刷新）；其 `tasks.md` 勾选状态以该 change 自身为准。
 - 旧 release tag 内 `VERSION` 为 `v2026.09.14-rc4`，与 tag 名不一致，属于 1.5 已列出的版本元数据漂移。
 
 ## 7. 评审结论（2026-10-19，用户逐项确认）

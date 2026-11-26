@@ -1068,18 +1068,18 @@ pig-dev-unpin: ## 撤销本地 PiG checkout 覆盖，回到固定 tag
 # 因此 `make pig-dev-pin` 对本目标无效——这条性质本身是判据：修好上游之前
 # 它必须是红的，而能靠本地未推送的提交把它弄绿，等于什么也没测。
 #
-# 它长期是红的（只读包 0/18，红在上游 PiG 的工具来源缺陷，§4.67），于是它既
+# 它长期是红的（只读包当时 0/18，红在上游 PiG 的工具来源缺陷，§4.67），于是它既
 # 不在 `make test` 也不在 CI 里——一个长期红又没人跑的闸门，等于没有闸门。
 # PiG v0.4.0 带上修复之后它自己转绿，本轮把它登记成 CI 决策闸门
 # （scripts/cigate 的 DecisionGates），并把问题从「第一个包」扩到**全部已发布
-# 包**：实测 5 个包 / 90 个声明工具全部被提供。扩问之后当场抓出读取器的一个真
+# 包**：实测 5 个包 / 99 个声明工具全部被提供。扩问之后当场抓出读取器的一个真
 # 缺陷——它把 autonomy 包的签名动作当成工具（§4.104.4）。
 #
 # 仍可喂进一个本地构建的二进制做对照实验（不影响上面那条性质）：
 #
 #     OPSKEEPER_PIG_BIN=/tmp/pig make pig-tool-scoping-check
 .PHONY: pig-tool-scoping-check
-pig-tool-scoping-check: ## 真二进制验证节点 Agent 被提供了插件工具（CI 决策闸门，实测 5 包 / 90 工具）
+pig-tool-scoping-check: ## 真二进制验证节点 Agent 被提供了插件工具（CI 决策闸门，实测 5 包 / 99 工具）
 	cd core/pig && GOWORK=off go test -tags pigscoping -count=1 -timeout 15m ./pigprofile/
 
 # ----------------------------------------------------------------------------
