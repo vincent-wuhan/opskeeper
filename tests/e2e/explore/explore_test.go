@@ -367,7 +367,7 @@ func TestVerdictKnownBadTrajectory(t *testing.T) {
 	{
 		c := in
 		step := callStep("query_promql")
-		step.ResponseDigest = `{"config":"postgres://opskeeper:SuperSecretPassword123@db:5432/x"}`
+		step.ResponseDigest = `{"config":"postgres://opskeeper:decoy-not-a-real-password@db:5432/x"}`
 		c.Trace = &Trace{Steps: []TraceStep{callStep("query_knowledge"), step}}
 		r := Judge(c)
 		t.Logf("I-5 red: %s", mustFail(t, r.Invariants[4]))
