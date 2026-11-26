@@ -52,6 +52,7 @@ type Env struct {
 	httpBase string
 	cmd      *exec.Cmd
 	logBuf   *bytes.Buffer
+	dsn      string
 
 	// Fakes — always created. Live-mode tests get the real URL out of
 	// secrets and ignore the fake's URL; that's fine, the fake just sits
@@ -108,6 +109,7 @@ func Start(t *testing.T, opts ...Option) *Env {
 	env := &Env{
 		t:        t,
 		cfg:      cfg,
+		dsn:      dsn,
 		llm:      NewFakeLLM(),
 		slack:    NewFakeSlack(),
 		telegram: NewFakeTelegram(),
@@ -263,6 +265,12 @@ func (e *Env) FakeSlack() *FakeSlack       { return e.slack }
 func (e *Env) FakeTelegram() *FakeTelegram { return e.telegram }
 func (e *Env) FakeProm() *FakeProm         { return e.prom }
 func (e *Env) BaseURL() string             { return e.httpBase }
+
+// DSN returns the MySQL DSN this manager was started with — the same
+// shared container the manager writes to. Tests that need to read tables
+// directly (the explore audit reader) use this instead of opening a new
+// query surface on the server.
+func (e *Env) DSN() string { return e.dsn }
 
 // ─── HTTP helpers ───────────────────────────────────────────────────────
 

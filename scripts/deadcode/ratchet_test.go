@@ -419,10 +419,18 @@ import (
 // ReadOnly=false 的后续切片点亮）。网关本体（`NewToolGateway`/`Admit`/
 // `Execute`）落 test-only 而非 dead：矩阵测试是它们的调用方，与 S2
 // `NewLifecycleSink` 落点一致——装配根不接 fake 消费点，诚实欠账。
+//
+// 910 → 917 / 614 → 614 / 296 → 303：mcp-ai-test-entry S1 探索通道地基
+// （纯测试侧的新包 `tests/e2e/explore`）。dead 一格不动，unreachable 与
+// test-only 各 +7，全部是新包的对外入口被本包测试调用：审计读口三项
+// （`MaxID`/`CrossCheckWithAdminAPI`/`AdminAPIResponse`）与 harness 四项
+// （`MintToken`/`RunFixedSequence`/`HasToken`/`TokenLength`）。它们记
+// test-only 是正确归类——S2 的真探索者与 S3 的回放生成器是它们的消费方，
+// 在那之前只有测试点亮，与 S2 `NewLifecycleSink` 落点同一形态。
 const (
-	unreachableBudget    = 910
+	unreachableBudget    = 917
 	deadSymbolBudget     = 614
-	testOnlySymbolBudget = 296
+	testOnlySymbolBudget = 303
 )
 
 // TestTheUnreachableSymbolCountNeverGrows is the gate decision 199 declined to

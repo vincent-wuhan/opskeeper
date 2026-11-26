@@ -276,6 +276,18 @@ components:
 
 # 允许依赖的正向清单（未列出 = 禁止）
 deps:
+  # ---------------- 测试面 → 契约层 ----------------
+  #
+  # tests may depend on shared_pkg: the MCP exploration harness
+  # (tests/e2e/explore) drives the contract surface from the outside, and
+  # that surface IS shared_pkg — the MCP client (pkg/mcpclient) it speaks
+  # with and the AgentTeams role matrix (pkg/auth) it mints tokens
+  # against. A test that re-declared either would be testing a copy, which
+  # is how the two drift apart. The authorization is used by real imports
+  # today (tests/e2e/explore/harness.go), which is what decision 74 asks
+  # of every mayDependOn entry in this file.
+  tests:
+    mayDependOn: [shared_pkg]
   # ---------------- 数据源插件面 → 契约层 ----------------
   #
   # VictoriaMetrics 数据源的三条依赖各自都是必须的，且不多一条：

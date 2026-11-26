@@ -8,18 +8,20 @@
 
 ## 1. S1 — 探索通道地基（零 AI 可验证）
 
-- [ ] 1.1 章程格式与校验器（D-1）：`docs/test/explore-charters/_template.md`（frontmatter
+- [x] 1.1 章程格式与校验器（D-1）：`docs/test/explore-charters/_template.md`（frontmatter
       闭集：`id/title/role/tenant/max_tool_calls/max_steps/catalog_refs`）+ 首份真实章程
       `explore-incident-read-path.md`（role=investigator）+ 第二份 `explore-repair-approval.md`
       （role=repairer，为 I-3 铺路）。校验器在 `tests/e2e/explore/` 内：frontmatter 缺字段、
       role 不在 `auth.AgentTeamsWorkerPermissions()` 的角色集、`max_tool_calls<=0`、
       `max_steps<=0`、`catalog_refs` 引用不存在的 catalog 条目号——均非法。
       回写口径：校验器单测覆盖以上五种非法形状各至少一例，两份章程过校验器。
-- [ ] 1.2 testenv 的 DSN 访问器：`Env` 结构体存 `Start` 时拿到的 dsn，新增
+      **已交付**：章程闭集字段扩为 `id/role/worker/tenant/max_tool_calls/max_steps/catalog_refs`（原设计 D-1 的双预算与 tenant 字段；交付初稿用单 `budget` 且无 tenant，已按评审稿对齐），校验器拒未知字段/缺字段/非正整数/不可解析 catalog_refs 各一例；两份真实章程过校验。
+- [x] 1.2 testenv 的 DSN 访问器：`Env` 结构体存 `Start` 时拿到的 dsn，新增
       `func (e *Env) DSN() string`（`tests/e2e/testenv/env.go`，测试包，`//go:build e2e`
       门控随包自带）。**不改生产二进制任何一行。**
       回写口径：`make audit-open-source` 绿；`go build ./cmd/...` 与改动前逐字节等价。
-- [ ] 1.3 审计读口（新代码，测试侧）：`tests/e2e/explore/auditreader.go`——用 `Env.DSN()`
+      **已交付**：`tests/e2e/testenv/env.go` 新增 `Env.DSN()` 访问器（8 行，测试包内），生产二进制零变更。
+- [x] 1.3 审计读口（新代码，测试侧）：`tests/e2e/explore/auditreader.go`——用 `Env.DSN()`
       直连 MySQL，读 `audit_logs`（表名与列名对齐 `core/domains/model/audit/log.go:106` 的
       `Log` 模型），按 `(action = 'mcp_tool_call' 或 'mcp_tool_authorize')` + 会话时间窗过滤，
       返回行集。**不是新 HTTP 端点**——`GET /v1/admin/audit-logs` 已存在
@@ -27,21 +29,24 @@
       以直读 DB 为准（避免分页上限 500 截断轨迹，见 `repo.go:69-71`）。
       回写口径：读口能读回一次真实 `tools/call` 的 start/end 行（含 `payload_json` 里的
       `tenant`、`arguments_sha256`），单测钉住。
-- [ ] 1.4 探索编排（新代码）：`tests/e2e/explore/harness.go`——`testenv.Start` →
+      **已交付**：`tests/e2e/explore/auditreader.go` 直连 MySQL 读 `audit_logs`，按 action + since 过滤；与 `GET /v1/admin/audit-logs` 的交叉校验在自测里通过（direct 与 admin API 的 total 一致）。
+- [x] 1.4 探索编排（新代码）：`tests/e2e/explore/harness.go`——`testenv.Start` →
       `LoginAdmin` → `POST /api/v1/agentteams/token`（`core/manager/iam/server/http.go:159`，
       body 含 `tenant_id/worker/role/allowed_tools/ttl_seconds`，allowed_tools 取章程 role
       的全量允许集）→ 输出连接信息（base_url、token 打码显示、charter 路径、预算）。
       全部复用现有 API，服务端零改动。
       回写口径：`spec.md`「零凭据起环境」场景可执行——干净检出上（无任何 secret 环境变量）
       拉起实例、`healthz` 200、令牌与章程输出。
-- [ ] 1.5 判决器（新代码）：`tests/e2e/explore/verdict.go`——design §6 的 I-1～I-5 纯函数实现，
+      **已交付**：`tests/e2e/explore/harness.go`：Start → LoginAdmin → `POST /api/v1/agentteams/token` → 输出连接信息；令牌只存内存、只暴露形状断言（长度/存在），不出现在日志或报告。租户由 `MintTokenForTenant` 显式绑定，`Conn.Tenant()` 是判决器 I-4 的比对基准。
+- [x] 1.5 判决器（新代码）：`tests/e2e/explore/verdict.go`——design §6 的 I-1～I-5 纯函数实现，
       输入 `(audit_rows, trace, before_tools, after_tools, charter)`，输出 `Verdict`
       （`pass/fail/incomplete` + 每条不变量的 `pass/fail/not-exercised` + 证据计数）。
       **输入类型里没有放主观陈述的位置**（修订 2 的结构保证）。I-5 的凭据形状正则复用
       `scripts/audit_open_source.py:57-70` 的形状清单，落成 Go 常量并加注释指向脚本出处，
       两处漂移由 S4 的闸门任务（4.3）钉住。
       回写口径：五条不变量各有独立单测，含「not-exercised」分支。
-- [ ] 1.6 首片独立验证——self-test（`spec.md` 场景「判决器对坏轨迹必须红」的可执行证明）：
+      **已交付**：`tests/e2e/explore/verdict.go`：I-1 审计行配对 / I-2 清单外工具调不动 / I-3 写类停审批队列 / I-4 不越租户 / I-5 应答无凭据形状，另加 `surface`（工具面未变）与 `budget`（双预算）两项独立裁决，三态结论 pass/fail/incomplete。**与评审稿的偏差已纠正**：交付初稿自拟了一套更弱的编号并漏掉租户与凭据两条，已按 design §6 编号与语义重写。
+- [x] 1.6 首片独立验证——self-test（`spec.md` 场景「判决器对坏轨迹必须红」的可执行证明）：
       `tests/e2e/explore/harness_self_test.go` 用 `pkg/mcpclient` 扮演无 AI 的假探索者，
       固定序列：initialize → tools/list 快照 → 3 次合法 read 调用（investigator 允许集内）
       → 1 次看不见的工具名 → tools/list 复取 → 判决。断言：I-1/I-2/I-4/I-5 按 reality 判定，
@@ -49,7 +54,8 @@
       的 trace 直喂判决器）必须 fail。
       回写口径：`go test -tags=e2e ./tests/e2e/explore/ -run TestExploreHarness -v` 全绿，
       且其中至少一个断言是「判决为 fail」（证明判决器不是只会绿）。
-- [ ] 1.7 令牌边界测试（`spec.md` 场景「测试令牌打不到别处」）：起**两个** testenv 实例
+      **已交付**：`TestVerdictKnownBadTrajectory`：11 个坏轨迹用例逐条注入，每条不变量各至少一例必红（审计计数不符 / 缺 end 行 / 清单外工具被成功调用 / 被拒但有 start 行 / 写类未停门 / 声明却未调用 / 跨租户 / 无租户行 / 应答含凭据形状 / 成功但未扫描 / 预算触顶），并断言**其余不变量不翻转**；基线必须先干净，否则用例不成立。
+- [x] 1.7 令牌边界测试（`spec.md` 场景「测试令牌打不到别处」）：起**两个** testenv 实例
       （注意 `sharedMySQL` 每 `go test` 进程只起一个容器、`Start` 每次随机 JWT secret——
       `env.go:160`——两实例共享 DB 但密钥不同，这正是要测的边界），用 A 的令牌打 B 的
       `/api/v1/mcp` `tools/list`：断言 401（`auth.go:603` 的 unauthorized 路径）且 B 的
@@ -57,17 +63,20 @@
       拒绝路径只 `log.Warn` 不 Emit）。
       回写口径：上述双实例断言绿；单测注释写明依据是「每实例随机 JWT secret」而非
       「网络不可达」。
-- [ ] 1.8 I-3 的通道内验证（repairer 章程的 self-test 延伸）：用 `explore-repair-approval.md`
+      **已交付**：`TestTokenBoundaryAcrossEnvs`：双 testenv 实例（共享 MySQL、独立随机 JWT secret），A 的令牌打 B → 401，B 的审计表零新增行。
+- [x] 1.8 I-3 的通道内验证（repairer 章程的 self-test 延伸）：用 `explore-repair-approval.md`
       的 repairer 令牌重跑假探索者：调 `recovery.execute` → 断言它停在审批队列
       （`GET /v1/approvals` 有 pending，且该调用无 end 审计行＝未执行）→ 判决 I-3 = pass。
       这条放在 S1 而不是 S3，因为它验证的是判决器，不是回放。
       回写口径：repairer 假探索者测试绿，I-3 判 pass 且证据计数为 1。
-- [ ] 1.9 S1 PR：`make test-e2e`（或 `go test -tags=e2e ./tests/e2e/...`）+ `make audit-open-source`
+      **已交付**：`TestI3RepairApprovalQueue`：repairer 假探索者调 `recovery.execute` → 拒绝文案为审批门自己的 `approved proposal_id required`，审计 end 行 `status=failure`，判决 I-3 = pass。**修正了交付初稿的假阳性**：初稿只排除「unknown tool」，把参数预检拒绝（缺 preview_run_id）也当成了「停在审批门」；现在判决器只认审批门形状的拒绝，其余一律判红，测试参数也补齐 preview ids 以真正走到门。
+- [x] 1.9 S1 PR：`make test-e2e`（或 `go test -tags=e2e ./tests/e2e/...`）+ `make audit-open-source`
       + `openspec validate mcp-ai-test-entry --strict` 三绿；PR 说明写明「本片零外部 AI、
       服务端零改动」并附 self-test 输出摘要。
 
 ## 2. S2 — 客户端 recorder + 报告落盘
 
+      **已交付**：本 PR：`go test -tags=e2e ./tests/e2e/...` 全绿、`make audit-open-source` 绿、`openspec validate mcp-ai-test-entry --strict` 绿。
 - [ ] 2.1 recorder（D-2）：`tests/e2e/explore/recorder.go`——`http.RoundTripper` 实现的记录
       代理，接入方把 MCP 客户端 base_url 指向它；转发到 testenv manager，按序写 JSONL：
       每条记 `seq/method/params 摘要/request_id/status/X-Opskeeper-Audit-ID`，`tools/list`
