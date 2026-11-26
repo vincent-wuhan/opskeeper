@@ -49,7 +49,7 @@
 
 ## 3. 台账
 
-基线参照（增量行的出发点，非本计划新增）：五个一方 SRE 包随包发布于 `plugins/pig-ops/<pkg>/pig-ops.yaml`，当前均为 0.2.0——`opskeeper-sre-{middleware,observability,readonly,repair}` v0.2.0 由 finance/SaaS 两个部署 profile 组合（`core/floor/pluginmanifest/profiles.go` `Composes`），`opskeeper-sre-autonomy` v0.2.0 仅 SaaS 组合（finance 的 L2 上限拒它，这是 profile 的既定语义）。
+基线参照（增量行的出发点，非本计划新增）：五个一方 SRE 包随包发布于 `plugins/pig-ops/<pkg>/pig-ops.yaml`——readonly / observability 已随 0.3.0 升级（S-2/S-3 切片，PR #129/#133），middleware / repair / autonomy 仍为 0.2.0；`opskeeper-sre-{middleware,observability,readonly,repair}` 由 finance/SaaS 两个部署 profile 组合（`core/floor/pluginmanifest/profiles.go` `Composes`），`opskeeper-sre-autonomy` 仅 SaaS 组合（finance 的 L2 上限拒它，这是 profile 的既定语义）。
 
 ### 3.1 已落地
 

@@ -280,6 +280,19 @@ OPSKEEPER_PIG_RUNTIME_ID=<runtime id>
 （fail closed）——一个自认启用了 PiG 却悄悄没有它的部署比启动失败更
 危险。禁用方式 = 删掉全部四个 env，回落到既有 runtime 集合。
 
+工件摘要把子进程钉死到发布时审过的那个二进制：驱动只在摘要匹配时才
+启动工件，升级 PiG = 换工件路径 + 换摘要 + 重启，没有运行期热替换。
+
+**子进程环境是白名单闭集**：PiG 子进程只能看到 `PIG_*` 前缀的环境变量
+（`PIG_RUNTIME_ID` / `PIG_TENANT_ID` / `PIG_INCIDENT_ID` / `PIG_TASK_ID` /
+`PIG_ROLE` / `PIG_READ_ONLY`，以及可选的 `PIG_CONVERSATION_ID` /
+`PIG_TEAM_ID` / `PIG_TURN_ID` / `PIG_ALLOWED_HOSTS`）。子进程 env 是
+从零构造再整体赋值（不是继承宿主再过滤），manager 进程里的其余环境
+变量——`PATH`、`HOME`、数据库密码、LLM key——一律不进子进程；这一性质
+由 `sandbox_enforcement_test.go` 钉成契约。沙箱边界
+（`SandboxProfile`：只读网络诊断、无宿主写入/Provider 覆盖/环境发现）
+在发布校验与进程启动前各拦一次。
+
 PiG 生命周期事件（启动、注册、心跳、进度、取消、崩溃、完成）经进程内
 Store 端口归一到 runtime health 与任务事件——它是 Manager 子进程，
 不走 HTTP 自注册（HTTP 自注册留给真远端 runtime）。
