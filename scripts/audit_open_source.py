@@ -84,6 +84,13 @@ DECOY_CREDENTIALS = {
         "a sentinel, not a credential: tests/e2e/node_agent_delivery_test.go sets it "
         "and then asserts no node process ever saw it"
     ),
+    "postgres://opskeeper:decoy-not-a-real-password@": (
+        "a sentinel, not a credential: tests/e2e/explore/explore_test.go plants this URL "
+        "in a response digest to prove the verdict engine's credential-shape scan (I-5) "
+        "turns red on a credential-shaped string. The exemption is by the whole matched "
+        "string, because that is what the rule matches; the password segment says what "
+        "it is"
+    ),
     "ghp_AAAABBBBCCCCDDDDEEEEFFFF": (
         "not a credential, and not a new exemption shape either -- it is the same "
         "reason as the sentinel above, in a second vocabulary. Two tests assert "
