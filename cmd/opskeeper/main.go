@@ -3545,7 +3545,7 @@ func main() {
 		if err != nil {
 			return nil, err
 		}
-		return json.RawMessage(output), nil
+		return normalizeMCPToolOutput(output)
 	}
 	if err := mcpHandler.SetLoopTools(loopMCPAdapter, mcpBaseTools, invokeLoopMCPTool); err != nil {
 		log.Error("loop: MCP adapter init", slog.Any("err", err))
@@ -4673,6 +4673,26 @@ func parseRegistryIndexes(v string) []managerbizmarketplace.RegistryIndex {
 func marketplaceDevModeFromEnv(raw string) bool {
 	v := strings.TrimSpace(raw)
 	return strings.EqualFold(v, "true") || v == "1"
+}
+
+// normalizeMCPToolOutput keeps the MCP evidence chain whole when a BaseTool
+// returns something that is not a JSON document. canonicalDigest (server/mcp)
+// unmarshals the invoker's RawMessage to build the response digest, and the
+// HTTP layer then embeds that digest in the audit-evidenced result — a plain
+// string output (e.g. an HTML error page) would fail the unmarshal and the
+// whole tools/call ends as an RPC error even though the tool ran and its
+// audit pair was already booked. Wrapping here gives every downstream
+// consumer (digest, structuredContent, client) one consistent JSON shape;
+// already-valid JSON documents pass through untouched.
+func normalizeMCPToolOutput(output string) (json.RawMessage, error) {
+	if json.Valid([]byte(output)) {
+		return json.RawMessage(output), nil
+	}
+	envelope, err := json.Marshal(map[string]string{"output": output})
+	if err != nil {
+		return nil, fmt.Errorf("normalize MCP tool output: %w", err)
+	}
+	return envelope, nil
 }
 
 func firstNonEmpty(vals ...string) string {

@@ -96,21 +96,17 @@ func TestExplorerSelfInvestigator(t *testing.T) {
 	// Fixed read-path sequence: PromQL against the env's fake Prom
 	// (returns an empty matrix — success, no data), database-status
 	// analysis over the empty fresh env (all-optional args), and a
-	// knowledge-base search. No tool needs seeded state to succeed.
+	// knowledge-base search.
 	//
-	// query_incidents IS in the sequence, and it fails: the MCP content
-	// canonicalization path (canonicalDigest in core/manager/server/mcp)
-	// unmarshals the tool's output as JSON, and this tool's output is not
-	// a JSON document ("invalid character '<' looking for beginning of
-	// value"). The call is refused with an RPC error.
-	//
-	// It is kept in the sequence on purpose: a refused call still books a
-	// start/end audit pair, so I-1 still holds, and the trace records the
-	// refusal as evidence. The defect is a PRODUCT defect (a read-only
-	// tool is unusable over MCP), not this slice's — S1 changes no
-	// production behaviour, so the fix belongs in its own change. This
-	// line is the marker: when the defect is fixed, the trace stops
-	// carrying the refusal and the log below changes shape.
+	// query_incidents is the BENY-1141 regression marker. It used to fail
+	// with RPC error -32000 ("decode canonical MCP evidence value:
+	// invalid character '<'") because its output was not a JSON document
+	// and the MCP canonicalization path unmarshals it unconditionally;
+	// invokeLoopMCPTool now wraps non-JSON output into a {"output": ...}
+	// envelope. The assertion below pins the real regression: the call
+	// must come back HTTP 200 with a clean result. (query_knowledge's 404
+	// is the fake LLM having no /v1/embeddings — a separate, unrelated
+	// gap in this harness, not this regression's subject.)
 	calls := []CallSpec{
 		{Tool: "query_promql", Args: map[string]any{"expr": "up", "lookback_seconds": 60}},
 		{Tool: "analyze_database_status", Args: map[string]any{}},
@@ -121,6 +117,26 @@ func TestExplorerSelfInvestigator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("explore: run sequence: %v", err)
 	}
+
+	// BENY-1141 regression: query_incidents must complete over MCP. A
+	// refusal here (ErrText set, or the HTTP layer turning it into an RPC
+	// error) is the defect coming back. I-1 below already pins the paired
+	// audit rows; this pins the 200 + clean result.
+	var incidentsStep *TraceStep
+	for i := range trace.Steps {
+		if trace.Steps[i].Tool == "query_incidents" {
+			incidentsStep = &trace.Steps[i]
+		}
+	}
+	if incidentsStep == nil {
+		t.Fatalf("explore: query_incidents step missing from trace: %+v", trace.Steps)
+	}
+	if !incidentsStep.HTTPOK || incidentsStep.ErrText != "" {
+		t.Fatalf("explore: query_incidents failed over MCP (BENY-1141 regression): http_ok=%v err=%q",
+			incidentsStep.HTTPOK, incidentsStep.ErrText)
+	}
+	t.Logf("explore: query_incidents succeeded over MCP (http_ok=%v, digest length %d)",
+		incidentsStep.HTTPOK, len(incidentsStep.ResponseDigest))
 
 	rows, err := reader.Rows(ctx, AuditFilter{SinceID: sinceBefore})
 	if err != nil {
